@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter UI Implementer"
+  short_description: "Build pixel-perfect Flutter UI code"
+  default_prompt: "Use $flutter-ui-implementer to generate production Flutter UI code from a design spec."

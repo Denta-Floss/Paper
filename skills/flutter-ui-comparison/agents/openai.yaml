@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter UI Comparison"
+  short_description: "Compare Flutter UI to design specs"
+  default_prompt: "Use $flutter-ui-comparison to compare implementation screenshots against design and list exact fixes."

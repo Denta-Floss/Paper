@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter UI Designer"
+  short_description: "Plan Flutter widget hierarchies from designs"
+  default_prompt: "Use $flutter-ui-designer to analyze a design and produce an implementable Flutter widget plan."
