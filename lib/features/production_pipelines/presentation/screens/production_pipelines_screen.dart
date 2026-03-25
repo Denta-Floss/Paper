@@ -24,9 +24,6 @@ class ProductionPipelinesScreen extends StatelessWidget {
 class _ProductionPipelinesView extends StatelessWidget {
   const _ProductionPipelinesView();
 
-  static const double _figmaCanvasWidth = 1920;
-  static const double _figmaCanvasHeight = 1080;
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -36,7 +33,6 @@ class _ProductionPipelinesView extends StatelessWidget {
         final isDesktop = width >= 1200;
         final isTablet = width >= 800 && width < 1200;
         final isMobile = width < 800;
-        final useDesignCanvas = width >= 1600 && height >= 900;
         final compactContent = width < 1200;
 
         final sidebarWidth = isDesktop
@@ -85,29 +81,13 @@ class _ProductionPipelinesView extends StatelessWidget {
                   ),
                 ),
               SafeArea(
-                child: useDesignCanvas
-                    ? Center(
-                        child: FittedBox(
-                          fit: BoxFit.contain,
-                          alignment: Alignment.topCenter,
-                          child: SizedBox(
-                            width: _figmaCanvasWidth,
-                            height: _figmaCanvasHeight,
-                            child: _buildMainLayout(
-                              isMobile: false,
-                              isTablet: false,
-                              compactContent: false,
-                              sidebarWidth: 225,
-                            ),
-                          ),
-                        ),
-                      )
-                    : _buildMainLayout(
-                        isMobile: isMobile,
-                        isTablet: isTablet,
-                        compactContent: compactContent,
-                        sidebarWidth: sidebarWidth,
-                      ),
+                top: isMobile,
+                child: _buildMainLayout(
+                  isMobile: isMobile,
+                  isTablet: isTablet,
+                  compactContent: compactContent,
+                  sidebarWidth: sidebarWidth,
+                ),
               ),
             ],
           ),
