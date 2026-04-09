@@ -804,38 +804,33 @@ class _OrdersTableCard extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final width = constraints.maxWidth > _OrdersTableMetrics.totalWidth
-              ? constraints.maxWidth
-              : _OrdersTableMetrics.totalWidth;
+          final layout = _OrdersTableLayout.fromContainerWidth(
+            constraints.maxWidth,
+          );
 
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: width,
-              child: Column(
-                children: [
-                  _TableHeaderRow(),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: orders.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final order = orders[index];
-                        return _OrderDataRow(
-                          order: order,
-                          isSelected: selectedOrderIds.contains(order.id),
-                          isStriped: index.isOdd,
-                          onSelectionChanged: (selected) =>
-                              onToggleSelection(order.id, selected),
-                          onTap: () => onRowTap(order),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+          return Column(
+            children: [
+              _TableHeaderRow(layout: layout),
+              const SizedBox(height: 10),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: orders.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final order = orders[index];
+                    return _OrderDataRow(
+                      order: order,
+                      layout: layout,
+                      isSelected: selectedOrderIds.contains(order.id),
+                      isStriped: index.isOdd,
+                      onSelectionChanged: (selected) =>
+                          onToggleSelection(order.id, selected),
+                      onTap: () => onRowTap(order),
+                    );
+                  },
+                ),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -844,6 +839,10 @@ class _OrdersTableCard extends StatelessWidget {
 }
 
 class _TableHeaderRow extends StatelessWidget {
+  const _TableHeaderRow({required this.layout});
+
+  final _OrdersTableLayout layout;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -855,23 +854,23 @@ class _TableHeaderRow extends StatelessWidget {
         color: const Color(0xFFF5F2FF),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          _HeaderCell('Order ID', width: _OrdersTableMetrics.orderIdWidth),
-          _HeaderCell('Date', width: _OrdersTableMetrics.dateWidth),
-          _HeaderCell('Party', width: _OrdersTableMetrics.partyWidth),
-          _HeaderCell('Item', width: _OrdersTableMetrics.itemWidth),
+          _HeaderCell('Order ID', width: layout.orderIdWidth),
+          _HeaderCell('Date', width: layout.dateWidth),
+          _HeaderCell('Party', width: layout.partyWidth),
+          _HeaderCell('Item', width: layout.itemWidth),
           _HeaderCell(
             'Purchase Order Number',
-            width: _OrdersTableMetrics.poWidth,
+            width: layout.poWidth,
           ),
           _HeaderCell(
             'Order Quantity',
-            width: _OrdersTableMetrics.quantityWidth,
+            width: layout.quantityWidth,
           ),
-          _HeaderCell('Start Date', width: _OrdersTableMetrics.startDateWidth),
-          _HeaderCell('End Date', width: _OrdersTableMetrics.endDateWidth),
-          _HeaderCell('Status', width: _OrdersTableMetrics.statusWidth),
+          _HeaderCell('Start Date', width: layout.startDateWidth),
+          _HeaderCell('End Date', width: layout.endDateWidth),
+          _HeaderCell('Status', width: layout.statusWidth),
         ],
       ),
     );
@@ -903,6 +902,7 @@ class _HeaderCell extends StatelessWidget {
 class _OrderDataRow extends StatelessWidget {
   const _OrderDataRow({
     required this.order,
+    required this.layout,
     required this.isSelected,
     required this.isStriped,
     required this.onSelectionChanged,
@@ -910,6 +910,7 @@ class _OrderDataRow extends StatelessWidget {
   });
 
   final OrderEntry order;
+  final _OrdersTableLayout layout;
   final bool isSelected;
   final bool isStriped;
   final ValueChanged<bool> onSelectionChanged;
@@ -942,16 +943,17 @@ class _OrderDataRow extends StatelessWidget {
                 children: [
                   _DataCell(
                     order.orderNo,
-                    width: _OrdersTableMetrics.orderIdWidth,
+                    width: layout.orderIdWidth,
                     style: const TextStyle(fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   _DataCell(
                     _formatDate(order.createdAt),
-                    width: _OrdersTableMetrics.dateWidth,
+                    width: layout.dateWidth,
                   ),
                   _DataCell(
                     order.clientName,
-                    width: _OrdersTableMetrics.partyWidth,
+                    width: layout.partyWidth,
                     overflow: TextOverflow.ellipsis,
                   ),
                   _DataCell(
@@ -959,27 +961,29 @@ class _OrderDataRow extends StatelessWidget {
                             order.variationPathLabel == order.itemName
                         ? order.itemName
                         : '${order.itemName} · ${order.variationPathLabel}',
-                    width: _OrdersTableMetrics.itemWidth,
+                    width: layout.itemWidth,
                     overflow: TextOverflow.ellipsis,
                   ),
                   _DataCell(
                     order.poNumber.isEmpty ? '—' : order.poNumber,
-                    width: _OrdersTableMetrics.poWidth,
+                    width: layout.poWidth,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   _DataCell(
                     '${order.quantity} Pieces',
-                    width: _OrdersTableMetrics.quantityWidth,
+                    width: layout.quantityWidth,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   _DataCell(
                     _formatDate(order.startDate),
-                    width: _OrdersTableMetrics.startDateWidth,
+                    width: layout.startDateWidth,
                   ),
                   _DataCell(
                     _formatDate(order.endDate),
-                    width: _OrdersTableMetrics.endDateWidth,
+                    width: layout.endDateWidth,
                   ),
                   SizedBox(
-                    width: _OrdersTableMetrics.statusWidth,
+                    width: layout.statusWidth,
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: _StatusPill(status: order.status),
@@ -1107,6 +1111,52 @@ class _OrdersTableMetrics {
       startDateWidth +
       endDateWidth +
       statusWidth;
+}
+
+class _OrdersTableLayout {
+  const _OrdersTableLayout({
+    required this.orderIdWidth,
+    required this.dateWidth,
+    required this.partyWidth,
+    required this.itemWidth,
+    required this.poWidth,
+    required this.quantityWidth,
+    required this.startDateWidth,
+    required this.endDateWidth,
+    required this.statusWidth,
+  });
+
+  final double orderIdWidth;
+  final double dateWidth;
+  final double partyWidth;
+  final double itemWidth;
+  final double poWidth;
+  final double quantityWidth;
+  final double startDateWidth;
+  final double endDateWidth;
+  final double statusWidth;
+
+  static _OrdersTableLayout fromContainerWidth(double containerWidth) {
+    final contentWidth =
+        (containerWidth - (_OrdersTableMetrics.horizontalPadding * 2))
+            .clamp(0.0, double.infinity);
+    final baseContentWidth =
+        _OrdersTableMetrics.totalWidth -
+        (_OrdersTableMetrics.horizontalPadding * 2);
+    final scale = baseContentWidth == 0 ? 1.0 : contentWidth / baseContentWidth;
+
+    return _OrdersTableLayout(
+      orderIdWidth: _OrdersTableMetrics.orderIdWidth * scale,
+      dateWidth: _OrdersTableMetrics.dateWidth * scale,
+      partyWidth: _OrdersTableMetrics.partyWidth * scale,
+      itemWidth: _OrdersTableMetrics.itemWidth * scale,
+      poWidth: _OrdersTableMetrics.poWidth * scale,
+      quantityWidth: _OrdersTableMetrics.quantityWidth * scale,
+      startDateWidth: _OrdersTableMetrics.startDateWidth * scale,
+      endDateWidth: _OrdersTableMetrics.endDateWidth * scale,
+      statusWidth: _OrdersTableMetrics.statusWidth * scale,
+    );
+  }
 }
 
 class _OrderEditorSheet extends StatefulWidget {

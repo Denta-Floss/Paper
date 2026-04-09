@@ -127,73 +127,73 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(0, 6, 0, 18),
-                          child: Text(
-                            'Inventory',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF3F3F3F),
-                                ),
-                          ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(0, 6, 0, 18),
+                        child: Text(
+                          'Inventory',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF3F3F3F),
+                              ),
                         ),
-                        _InventoryWorkspaceHeader(
-                          viewMode: _viewMode,
-                          onViewModeChanged: (value) {
-                            setState(() {
-                              _viewMode = value;
-                            });
-                          },
-                          onNewGroup: () =>
-                              InventoryScreen.openCreateGroupForm(context),
-                          onAddStock: () =>
-                              InventoryScreen.openAddStockForm(context),
-                        ),
-                        const SizedBox(height: 14),
-                        _InventoryControlsRow(
-                          supplierFilter: _supplierFilter,
-                          typeFilter: _typeFilter,
-                          kindFilter: _kindFilter,
-                          suppliers: suppliers,
-                          types: types,
-                          selectedCount: _selectedBarcodes.length,
-                          sortNewestFirst: _sortNewestFirst,
-                          onSupplierSelected: (value) {
-                            setState(() {
-                              _supplierFilter = value;
-                            });
-                          },
-                          onTypeSelected: (value) {
-                            setState(() {
-                              _typeFilter = value;
-                            });
-                          },
-                          onKindSelected: (value) {
-                            setState(() {
-                              _kindFilter = value;
-                            });
-                          },
-                          onClearSelection: () {
-                            setState(_selectedBarcodes.clear);
-                          },
-                          onClearFilters: () {
-                            setState(() {
-                              _supplierFilter = null;
-                              _typeFilter = null;
-                              _kindFilter = null;
-                            });
-                          },
-                          onToggleSort: () {
-                            setState(() {
-                              _sortNewestFirst = !_sortNewestFirst;
-                            });
-                          },
-                        ),
+                      ),
+                      _InventoryWorkspaceHeader(
+                        viewMode: _viewMode,
+                        onViewModeChanged: (value) {
+                          setState(() {
+                            _viewMode = value;
+                          });
+                        },
+                        onNewGroup: () =>
+                            InventoryScreen.openCreateGroupForm(context),
+                        onAddStock: () =>
+                            InventoryScreen.openAddStockForm(context),
+                      ),
+                      const SizedBox(height: 14),
+                      _InventoryControlsRow(
+                        supplierFilter: _supplierFilter,
+                        typeFilter: _typeFilter,
+                        kindFilter: _kindFilter,
+                        suppliers: suppliers,
+                        types: types,
+                        selectedCount: _selectedBarcodes.length,
+                        sortNewestFirst: _sortNewestFirst,
+                        onSupplierSelected: (value) {
+                          setState(() {
+                            _supplierFilter = value;
+                          });
+                        },
+                        onTypeSelected: (value) {
+                          setState(() {
+                            _typeFilter = value;
+                          });
+                        },
+                        onKindSelected: (value) {
+                          setState(() {
+                            _kindFilter = value;
+                          });
+                        },
+                        onClearSelection: () {
+                          setState(_selectedBarcodes.clear);
+                        },
+                        onClearFilters: () {
+                          setState(() {
+                            _supplierFilter = null;
+                            _typeFilter = null;
+                            _kindFilter = null;
+                          });
+                        },
+                        onToggleSort: () {
+                          setState(() {
+                            _sortNewestFirst = !_sortNewestFirst;
+                          });
+                        },
+                      ),
                       const SizedBox(height: 14),
                       const Divider(height: 1, color: Color(0xFFE9E9EE)),
                       const SizedBox(height: 18),
@@ -1546,71 +1546,15 @@ class _InventoryActionsCell extends StatelessWidget {
       height: metrics.rowHeight,
       color: backgroundColor,
       alignment: Alignment.center,
-      child: MenuAnchor(
-        style: MenuStyle(
-          backgroundColor: const WidgetStatePropertyAll(Colors.white),
-          surfaceTintColor: const WidgetStatePropertyAll(Colors.white),
-          shadowColor: const WidgetStatePropertyAll(Color(0x22000000)),
-          elevation: const WidgetStatePropertyAll(8),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          ),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          ),
-        ),
-        menuChildren: _buildMenuItems(context),
-        builder: (context, controller, child) {
-          return InkWell(
-            onTap: () {
-              if (controller.isOpen) {
-                controller.close();
-              } else {
-                controller.open();
-              }
-            },
-            hoverColor: _inventoryHoverColor,
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              width: metrics.actionButtonSize,
-              height: metrics.actionButtonSize,
-              decoration: BoxDecoration(
-                color: _inventoryHoverColor,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Icon(
-                Icons.more_vert,
-                size: 18,
-                color: Color(0xFF58458F),
-              ),
-            ),
-          );
-        },
+      child: _InventoryActionsOverlayAnchor(
+        triggerSize: metrics.actionButtonSize,
+        canAddSubGroup:
+            record.numberOfChildren > 0 || (record.parentBarcode ?? '').isEmpty,
+        onAddSubGroup: onAddSubGroup,
+        onEdit: onEdit,
+        onDelete: onDelete,
       ),
     );
-  }
-
-  List<Widget> _buildMenuItems(BuildContext context) {
-    return [
-      if (record.numberOfChildren > 0 || (record.parentBarcode ?? '').isEmpty)
-        _InventoryActionMenuButton(
-          icon: Icons.add_rounded,
-          label: 'Add Sub-Group',
-          isHighlighted: true,
-          onPressed: onAddSubGroup,
-        ),
-      _InventoryActionMenuButton(
-        icon: Icons.edit_outlined,
-        label: 'Edit',
-        onPressed: onEdit,
-      ),
-      _InventoryActionMenuButton(
-        icon: Icons.delete_outline_rounded,
-        label: 'Delete',
-        isDestructive: true,
-        onPressed: onDelete,
-      ),
-    ];
   }
 }
 
@@ -2100,11 +2044,16 @@ class _ActionMenuLabel extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           label,
-          style: _inventoryInterStyle(
-            color: textColor,
-            size: 14,
-            weight: FontWeight.w400,
-          ),
+          style:
+              _inventoryInterStyle(
+                color: textColor,
+                size: 14,
+                weight: FontWeight.w400,
+              ).copyWith(
+                decoration: TextDecoration.none,
+                decorationColor: Colors.transparent,
+                decorationThickness: 0,
+              ),
         ),
       ],
     );
@@ -2164,33 +2113,242 @@ class _InventoryActionMenuHoverTileState
 
   @override
   Widget build(BuildContext context) {
-    final menuController = MenuController.maybeOf(context);
     return MouseRegion(
+      opaque: true,
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          widget.onPressed();
-          menuController?.close();
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 80),
-            curve: Curves.easeOut,
-            width: 234,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: BoxDecoration(
-              color: _isHovered ? _inventoryHoverColor : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        descendantsAreFocusable: false,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerUp: (_) => widget.onPressed(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Container(
+              width: 234,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: _isHovered ? _inventoryHoverColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: _ActionMenuLabel(
+                icon: widget.icon,
+                label: widget.label,
+                isHighlighted: widget.isHighlighted || _isHovered,
+                isDestructive: widget.isDestructive,
+              ),
             ),
-            child: _ActionMenuLabel(
-              icon: widget.icon,
-              label: widget.label,
-              isHighlighted: widget.isHighlighted || _isHovered,
-              isDestructive: widget.isDestructive,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryActionsOverlayAnchor extends StatefulWidget {
+  const _InventoryActionsOverlayAnchor({
+    required this.triggerSize,
+    required this.canAddSubGroup,
+    required this.onAddSubGroup,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final double triggerSize;
+  final bool canAddSubGroup;
+  final VoidCallback onAddSubGroup;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  State<_InventoryActionsOverlayAnchor> createState() =>
+      _InventoryActionsOverlayAnchorState();
+}
+
+class _InventoryActionsOverlayAnchorState
+    extends State<_InventoryActionsOverlayAnchor> {
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  bool _isOpen = false;
+
+  @override
+  void dispose() {
+    _removeOverlay();
+    super.dispose();
+  }
+
+  void _toggleMenu() {
+    if (_isOpen) {
+      _removeOverlay();
+    } else {
+      _showOverlay();
+    }
+  }
+
+  void _showOverlay() {
+    final overlay = Overlay.of(context);
+    _overlayEntry = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _removeOverlay,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          CompositedTransformFollower(
+            link: _layerLink,
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.topLeft,
+            followerAnchor: Alignment.topRight,
+            offset: const Offset(-12, -8),
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                highlightColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+                focusColor: Colors.transparent,
+                splashFactory: NoSplash.splashFactory,
+              ),
+              child: ExcludeFocus(
+                child: ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: SizedBox(
+                      width: 250,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.canAddSubGroup)
+                              _InventoryActionMenuButton(
+                                icon: Icons.add_rounded,
+                                label: 'Add Sub-Group',
+                                isHighlighted: true,
+                                onPressed: () {
+                                  _removeOverlay();
+                                  widget.onAddSubGroup();
+                                },
+                              ),
+                            _InventoryActionMenuButton(
+                              icon: Icons.edit_outlined,
+                              label: 'Edit',
+                              onPressed: () {
+                                _removeOverlay();
+                                widget.onEdit();
+                              },
+                            ),
+                            _InventoryActionMenuButton(
+                              icon: Icons.delete_outline_rounded,
+                              label: 'Delete',
+                              isDestructive: true,
+                              onPressed: () {
+                                _removeOverlay();
+                                widget.onDelete();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    overlay.insert(_overlayEntry!);
+    setState(() => _isOpen = true);
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    if (mounted && _isOpen) {
+      setState(() => _isOpen = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: _InventoryActionTriggerButton(
+        size: widget.triggerSize,
+        isOpen: _isOpen,
+        onTap: _toggleMenu,
+      ),
+    );
+  }
+}
+
+class _InventoryActionTriggerButton extends StatefulWidget {
+  const _InventoryActionTriggerButton({
+    required this.size,
+    required this.isOpen,
+    required this.onTap,
+  });
+
+  final double size;
+  final bool isOpen;
+  final VoidCallback onTap;
+
+  @override
+  State<_InventoryActionTriggerButton> createState() =>
+      _InventoryActionTriggerButtonState();
+}
+
+class _InventoryActionTriggerButtonState
+    extends State<_InventoryActionTriggerButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.isOpen || _isHovered;
+    return MouseRegion(
+      opaque: true,
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        descendantsAreFocusable: false,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerUp: (_) => widget.onTap(),
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: isActive ? _inventoryHoverColor : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(
+              Icons.more_vert,
+              size: 18,
+              color: Color(0xFF58458F),
             ),
           ),
         ),
