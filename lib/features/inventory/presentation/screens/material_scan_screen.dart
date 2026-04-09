@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
+import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
 import '../../domain/material_record.dart';
 import '../providers/inventory_provider.dart';
 
@@ -529,24 +530,8 @@ class _ScanResultPane extends StatelessWidget {
     final detailPanel = AppInfoPanel(
       title: result.name,
       subtitle: 'Barcode matched successfully',
-      headerTrailing: _ScanTraceBadge(scanCount: result.scanCount),
-      rows: [
-        AppInfoRow(label: 'Barcode', value: result.barcode),
-        AppInfoRow(label: 'Type', value: result.type),
-        AppInfoRow(label: 'Grade', value: result.grade),
-        AppInfoRow(label: 'Thickness', value: result.thickness),
-        AppInfoRow(label: 'Supplier', value: result.supplier),
-        AppInfoRow(
-          label: 'Relationship',
-          value: result.isParent
-              ? 'Parent of ${result.numberOfChildren} children'
-              : 'Child of ${result.parentBarcode}',
-        ),
-        AppInfoRow(
-          label: 'Scan trace',
-          value: 'Scanned ${result.scanCount} times',
-        ),
-      ],
+      headerTrailing: BarcodeTraceBadge(scanCount: result.scanCount),
+      rows: buildMaterialBarcodeInfoRows(result),
       footer: Align(
         alignment: Alignment.centerLeft,
         child: Wrap(
@@ -620,31 +605,6 @@ class _ScanResultPane extends StatelessWidget {
         const SizedBox(width: 20),
         Expanded(flex: 2, child: tracePanel),
       ],
-    );
-  }
-}
-
-class _ScanTraceBadge extends StatelessWidget {
-  const _ScanTraceBadge({required this.scanCount});
-
-  final int scanCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEEEAFE),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        'Scanned $scanCount times',
-        style: const TextStyle(
-          fontSize: 12,
-          color: Color(0xFF5B4FE6),
-          fontWeight: FontWeight.w700,
-        ),
-      ),
     );
   }
 }

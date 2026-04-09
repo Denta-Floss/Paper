@@ -19,6 +19,18 @@ Start the Flutter app:
 flutter run
 ```
 
+Run the app in demo-safe mode with seeded local data and no backend dependency:
+
+```bash
+flutter run --dart-define=PAPER_DEMO_MODE=true
+```
+
+Build a client demo artifact the same way:
+
+```bash
+flutter build web --dart-define=PAPER_DEMO_MODE=true
+```
+
 If you need a different backend URL, override it explicitly:
 
 ```bash

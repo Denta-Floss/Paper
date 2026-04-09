@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test ./test/*.test.js"
+    "test": "node --test ./test/*.test.js",
+    "seed:demo": "node ./scripts/reseed-demo-data.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

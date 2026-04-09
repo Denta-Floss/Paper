@@ -10,6 +10,7 @@ import '../../features/inventory/presentation/screens/material_scan_screen.dart'
 import '../../features/items/presentation/screens/items_screen.dart';
 import '../../features/clients/presentation/screens/clients_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
+import '../../features/pm/presentation/screens/pm_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/units/presentation/screens/units_screen.dart';
 import 'app_sidebar.dart';
@@ -127,12 +128,27 @@ class _ShellContentSwitcher extends StatelessWidget {
       builder: (context, key, _) {
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeOut,
+          layoutBuilder: (currentChild, previousChildren) {
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                ...previousChildren,
+                ...[currentChild].nonNulls,
+              ],
+            );
+          },
+          transitionBuilder: (child, animation) {
+            return FadeTransition(opacity: animation, child: child);
+          },
           child: KeyedSubtree(
             key: ValueKey<String>(key),
             child: switch (key) {
               'inventory' => const InventoryScreen(),
               'inventory_scan' => const MaterialScanScreen(),
               'production_pipelines' => const ProductionPipelinesScreen(),
+              'pm' => const PMScreen(),
               'orders' => const OrdersScreen(),
               'configurator' => const _ModulePlaceholder(
                 title: 'Configurator',

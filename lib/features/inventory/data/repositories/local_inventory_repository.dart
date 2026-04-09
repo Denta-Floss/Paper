@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:path/path.dart' as p;
@@ -5,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 import '../models/inventory_material_model.dart';
 import '../models/scan_event_model.dart';
@@ -23,7 +25,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -42,7 +44,9 @@ class LocalInventoryRepository implements InventoryRepository {
             parent_barcode TEXT,
             number_of_children INTEGER NOT NULL DEFAULT 0,
             linked_child_barcodes TEXT,
-            scan_count INTEGER NOT NULL DEFAULT 0
+            scan_count INTEGER NOT NULL DEFAULT 0,
+            linked_group_id INTEGER,
+            linked_item_id INTEGER
           )
         ''');
         await db.execute('''
@@ -63,8 +67,14 @@ class LocalInventoryRepository implements InventoryRepository {
           );
         }
         if (oldVersion < 3) {
+          await db.execute('ALTER TABLE materials ADD COLUMN unit_id INTEGER');
+        }
+        if (oldVersion < 4) {
           await db.execute(
-            'ALTER TABLE materials ADD COLUMN unit_id INTEGER',
+            'ALTER TABLE materials ADD COLUMN linked_group_id INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN linked_item_id INTEGER',
           );
         }
       },
@@ -147,6 +157,13 @@ class LocalInventoryRepository implements InventoryRepository {
         numberOfChildren: input.numberOfChildren,
         linkedChildBarcodes: childBarcodes,
         scanCount: 0,
+        linkedGroupId: null,
+        linkedItemId: null,
+        displayStock: input.unit.trim().isEmpty
+            ? '${input.numberOfChildren * 100} Pieces'
+            : '${input.numberOfChildren * 100} ${input.unit.trim()}',
+        createdBy: 'Demo Admin',
+        workflowStatus: 'inProgress',
       );
       await txn.insert('materials', parentModel.toMap()..remove('id'));
 
@@ -169,6 +186,13 @@ class LocalInventoryRepository implements InventoryRepository {
           numberOfChildren: 0,
           linkedChildBarcodes: const [],
           scanCount: 0,
+          linkedGroupId: null,
+          linkedItemId: null,
+          displayStock: input.unit.trim().isEmpty
+              ? '100 Pieces'
+              : '100 ${input.unit.trim()}',
+          createdBy: 'Demo Admin',
+          workflowStatus: 'notStarted',
         );
         await txn.insert('materials', childModel.toMap()..remove('id'));
       }
@@ -312,6 +336,156 @@ class LocalInventoryRepository implements InventoryRepository {
     return models.map((model) => model.toRecord()).toList();
   }
 
+  @override
+  Future<MaterialRecord> createChildMaterial(
+    CreateChildMaterialInput input,
+  ) async {
+    final db = await _db;
+    return db.transaction((txn) async {
+      final parent = await _getMaterialMapByBarcode(input.parentBarcode, txn);
+      if (parent == null) {
+        throw Exception('Parent material not found.');
+      }
+      final parentModel = InventoryMaterialModel.fromMap(parent);
+      final childIndex = parentModel.numberOfChildren + 1;
+      final childBarcode = _generateChildBarcode(
+        parentModel.barcode,
+        childIndex,
+      );
+      final childModel = InventoryMaterialModel(
+        id: null,
+        barcode: childBarcode,
+        name: input.name.trim(),
+        type: parentModel.type,
+        grade: parentModel.grade,
+        thickness: parentModel.thickness,
+        supplier: parentModel.supplier,
+        unitId: parentModel.unitId,
+        unit: parentModel.unit,
+        notes: input.notes,
+        createdAt: DateTime.now(),
+        kind: 'child',
+        parentBarcode: parentModel.barcode,
+        numberOfChildren: 0,
+        linkedChildBarcodes: const [],
+        scanCount: 0,
+        linkedGroupId: null,
+        linkedItemId: null,
+        displayStock: parentModel.displayStock,
+        createdBy: parentModel.createdBy,
+        workflowStatus: 'notStarted',
+      );
+      final nextChildren = [...parentModel.linkedChildBarcodes, childBarcode];
+      await txn.insert('materials', childModel.toMap()..remove('id'));
+      await txn.update(
+        'materials',
+        {
+          'number_of_children': nextChildren.length,
+          'linked_child_barcodes': jsonEncode(nextChildren),
+        },
+        where: 'barcode = ?',
+        whereArgs: [parentModel.barcode],
+      );
+      final created = await _getMaterialMapByBarcode(childBarcode, txn);
+      return InventoryMaterialModel.fromMap(created!).toRecord();
+    });
+  }
+
+  @override
+  Future<MaterialRecord> updateMaterial(UpdateMaterialInput input) async {
+    final db = await _db;
+    return db.transaction((txn) async {
+      final existing = await _getMaterialMapByBarcode(input.barcode, txn);
+      if (existing == null) {
+        throw Exception('Material not found.');
+      }
+      await txn.update(
+        'materials',
+        {
+          'name': input.name.trim(),
+          'type': input.type.trim(),
+          'grade': input.grade.trim(),
+          'thickness': input.thickness.trim(),
+          'supplier': input.supplier.trim(),
+          'unit_id': input.unitId,
+          'unit': input.unit.trim(),
+          'notes': input.notes.trim(),
+        },
+        where: 'barcode = ?',
+        whereArgs: [input.barcode],
+      );
+      final updated = await _getMaterialMapByBarcode(input.barcode, txn);
+      return InventoryMaterialModel.fromMap(updated!).toRecord();
+    });
+  }
+
+  @override
+  Future<void> deleteMaterial(String barcode) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      final existing = await _getMaterialMapByBarcode(barcode, txn);
+      if (existing == null) {
+        throw Exception('Material not found.');
+      }
+      final model = InventoryMaterialModel.fromMap(existing);
+      if (model.kind == 'parent') {
+        await txn.delete(
+          'materials',
+          where: 'parent_barcode = ?',
+          whereArgs: [model.barcode],
+        );
+      } else if (model.parentBarcode != null) {
+        final parent = await _getMaterialMapByBarcode(
+          model.parentBarcode!,
+          txn,
+        );
+        if (parent != null) {
+          final parentModel = InventoryMaterialModel.fromMap(parent);
+          final nextChildren = parentModel.linkedChildBarcodes
+              .where((childBarcode) => childBarcode != model.barcode)
+              .toList(growable: false);
+          await txn.update(
+            'materials',
+            {
+              'number_of_children': nextChildren.length,
+              'linked_child_barcodes': jsonEncode(nextChildren),
+            },
+            where: 'barcode = ?',
+            whereArgs: [parentModel.barcode],
+          );
+        }
+      }
+      await txn.delete(
+        'scan_history',
+        where: 'barcode = ?',
+        whereArgs: [model.barcode],
+      );
+      await txn.delete(
+        'materials',
+        where: 'barcode = ?',
+        whereArgs: [model.barcode],
+      );
+    });
+  }
+
+  @override
+  Future<MaterialRecord> linkMaterialToGroup(
+    String barcode,
+    int groupId,
+  ) async {
+    return _updateLink(barcode, linkedGroupId: groupId, linkedItemId: null);
+  }
+
+  @override
+  Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId) async {
+    return _updateLink(barcode, linkedGroupId: null, linkedItemId: itemId);
+  }
+
+  @override
+  Future<MaterialRecord> unlinkMaterial(String barcode) async {
+    return _updateLink(barcode, linkedGroupId: null, linkedItemId: null);
+  }
+
   Future<Database> get _db async {
     await init();
     return _database!;
@@ -335,5 +509,40 @@ class LocalInventoryRepository implements InventoryRepository {
         .replaceAll(RegExp(r'[^\x20-\x7E]'), '')
         .trim()
         .toUpperCase();
+  }
+
+  Future<Map<String, Object?>?> _getMaterialMapByBarcode(
+    String barcode,
+    DatabaseExecutor executor,
+  ) async {
+    final rows = await executor.query(
+      'materials',
+      where: 'barcode = ?',
+      whereArgs: [barcode],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<MaterialRecord> _updateLink(
+    String barcode, {
+    required int? linkedGroupId,
+    required int? linkedItemId,
+  }) async {
+    final db = await _db;
+    return db.transaction((txn) async {
+      final existing = await _getMaterialMapByBarcode(barcode, txn);
+      if (existing == null) {
+        throw Exception('Material not found.');
+      }
+      await txn.update(
+        'materials',
+        {'linked_group_id': linkedGroupId, 'linked_item_id': linkedItemId},
+        where: 'barcode = ?',
+        whereArgs: [barcode],
+      );
+      final updated = await _getMaterialMapByBarcode(barcode, txn);
+      return InventoryMaterialModel.fromMap(updated!).toRecord();
+    });
   }
 }

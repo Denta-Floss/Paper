@@ -21,6 +21,11 @@ class MaterialDto {
     required this.linkedChildBarcodes,
     required this.scanCount,
     required this.createdAt,
+    required this.linkedGroupId,
+    required this.linkedItemId,
+    required this.displayStock,
+    required this.createdBy,
+    required this.workflowStatus,
   });
 
   final int? id;
@@ -39,6 +44,11 @@ class MaterialDto {
   final List<String> linkedChildBarcodes;
   final int scanCount;
   final DateTime createdAt;
+  final int? linkedGroupId;
+  final int? linkedItemId;
+  final String displayStock;
+  final String createdBy;
+  final String workflowStatus;
 
   factory MaterialDto.fromJson(Map<String, dynamic> json) {
     final rawChildren = json['linkedChildBarcodes'];
@@ -65,6 +75,11 @@ class MaterialDto {
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
+      linkedGroupId: json['linkedGroupId'] as int?,
+      linkedItemId: json['linkedItemId'] as int?,
+      displayStock: json['displayStock'] as String? ?? '',
+      createdBy: json['createdBy'] as String? ?? '',
+      workflowStatus: json['workflowStatus'] as String? ?? 'notStarted',
     );
   }
 
@@ -86,6 +101,11 @@ class MaterialDto {
       'linkedChildBarcodes': linkedChildBarcodes,
       'scanCount': scanCount,
       'createdAt': createdAt.toIso8601String(),
+      'linkedGroupId': linkedGroupId,
+      'linkedItemId': linkedItemId,
+      'displayStock': displayStock,
+      'createdBy': createdBy,
+      'workflowStatus': workflowStatus,
     };
   }
 
@@ -107,6 +127,11 @@ class MaterialDto {
       numberOfChildren: numberOfChildren,
       linkedChildBarcodes: linkedChildBarcodes,
       scanCount: scanCount,
+      linkedGroupId: linkedGroupId,
+      linkedItemId: linkedItemId,
+      displayStock: displayStock,
+      createdBy: createdBy,
+      workflowStatus: workflowStatus,
     );
   }
 
@@ -128,6 +153,11 @@ class MaterialDto {
       linkedChildBarcodes: record.linkedChildBarcodes,
       scanCount: record.scanCount,
       createdAt: record.createdAt,
+      linkedGroupId: record.linkedGroupId,
+      linkedItemId: record.linkedItemId,
+      displayStock: record.displayStock,
+      createdBy: record.createdBy,
+      workflowStatus: record.workflowStatus,
     );
   }
 }

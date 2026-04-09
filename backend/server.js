@@ -89,6 +89,10 @@ function parseJson(value, fallback) {
   }
 }
 
+function oneDayAgo(daysAgo = 0) {
+  return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function normalizeUnitValue(value = '') {
   return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -115,6 +119,8 @@ function rowToMaterialDto(row) {
     linkedChildBarcodes: parseJson(row.linked_child_barcodes, []),
     scanCount: row.scan_count || 0,
     createdAt: row.created_at,
+    linkedGroupId: row.linked_group_id || null,
+    linkedItemId: row.linked_item_id || null,
   };
 }
 
@@ -489,7 +495,9 @@ async function initDb() {
       parent_barcode TEXT,
       number_of_children INTEGER NOT NULL DEFAULT 0,
       linked_child_barcodes TEXT,
-      scan_count INTEGER NOT NULL DEFAULT 0
+      scan_count INTEGER NOT NULL DEFAULT 0,
+      linked_group_id INTEGER REFERENCES groups(id),
+      linked_item_id INTEGER REFERENCES items(id)
     )
   `);
 
@@ -617,6 +625,8 @@ async function initDb() {
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
+  await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
+  await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_templates (
@@ -670,6 +680,19 @@ async function initDb() {
   await seedItemsIfEmpty();
   await seedOrdersIfEmpty();
   await seedTemplatesIfEmpty();
+  await ensureDemoDataset();
+}
+
+async function ensureDemoDataset() {
+  await ensureDemoUnitsPresent();
+  await backfillMaterialUnitIds();
+  await ensureDemoClientsPresent();
+  await ensureDemoGroupsPresent();
+  await ensureDemoItemsPresent();
+  await ensureDemoOrdersPresent();
+  await ensureDemoMaterialsPresent();
+  await backfillMaterialUnitIds();
+  await ensureDemoPipelineRunsPresent();
 }
 
 async function ensureColumnExists(tableName, columnName, definition) {
@@ -761,6 +784,85 @@ async function seedUnitsIfEmpty() {
   }
 }
 
+async function findUnitByNameSymbol(name, symbol) {
+  const rows = await getUnitsWithUsage();
+  const normalizedName = normalizeUnitValue(name);
+  const normalizedSymbol = normalizeUnitValue(symbol);
+  return rows.find(
+    (row) =>
+      normalizeUnitValue(row.name) === normalizedName &&
+      normalizeUnitValue(row.symbol) === normalizedSymbol,
+  ) || null;
+}
+
+async function ensureUnitRecord({
+  name,
+  symbol,
+  notes = '',
+  isArchived = false,
+}) {
+  let row = await findUnitByNameSymbol(name, symbol);
+  if (!row) {
+    row = await saveUnit({ name, symbol, notes });
+  }
+
+  await run(
+    'UPDATE units SET notes = ?, is_archived = ?, updated_at = ? WHERE id = ?',
+    [notes, isArchived ? 1 : 0, new Date().toISOString(), row.id],
+  );
+  return getUnitRowById(row.id);
+}
+
+async function ensureDemoUnitsPresent() {
+  const units = [
+    {
+      name: 'Kilogram',
+      symbol: 'Kg',
+      notes: 'Bulk raw materials, powders, and compounds.',
+    },
+    {
+      name: 'Sheet',
+      symbol: 'Sheet',
+      notes: 'Flat paperboard and sheet-based stock.',
+    },
+    {
+      name: 'Piece',
+      symbol: 'Pc',
+      notes: 'Discrete finished goods and components.',
+    },
+    {
+      name: 'Box',
+      symbol: 'Box',
+      notes: 'Packed kits and shipping cartons.',
+    },
+    {
+      name: 'Roll',
+      symbol: 'Roll',
+      notes: 'Coils, reels, and roll-fed substrates.',
+    },
+    {
+      name: 'Set',
+      symbol: 'Set',
+      notes: 'Bundled assemblies sold as one unit.',
+    },
+    {
+      name: 'Meter',
+      symbol: 'Mtr',
+      notes: 'Linear materials like film, tape, and sleeves.',
+    },
+    {
+      name: 'Legacy Lot',
+      symbol: 'Lot',
+      notes: 'Archived legacy measurement kept for historical data.',
+      isArchived: true,
+    },
+  ];
+
+  for (const unit of units) {
+    await ensureUnitRecord(unit);
+  }
+}
+
 async function backfillMaterialUnitIds() {
   const unitRows = await all('SELECT id, symbol FROM units');
   const unitMap = new Map();
@@ -835,8 +937,8 @@ async function createParentWithChildren(payload) {
       INSERT INTO materials (
         barcode, name, type, grade, thickness, supplier, unit_id, unit, notes,
         created_at, kind, parent_barcode, number_of_children,
-        linked_child_barcodes, scan_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0)
+        linked_child_barcodes, scan_count, linked_group_id, linked_item_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0, NULL, NULL)
       `,
       [
         parentBarcode,
@@ -860,8 +962,8 @@ async function createParentWithChildren(payload) {
         INSERT INTO materials (
           barcode, name, type, grade, thickness, supplier, unit_id, unit, notes,
           created_at, kind, parent_barcode, number_of_children,
-          linked_child_barcodes, scan_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, ?, 0)
+          linked_child_barcodes, scan_count, linked_group_id, linked_item_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, ?, 0, NULL, NULL)
         `,
         [
           childBarcodes[index],
@@ -1227,6 +1329,71 @@ async function seedClientsIfEmpty() {
   ]);
 }
 
+async function ensureClientRecord({
+  name,
+  alias = '',
+  gstNumber = '',
+  address = '',
+  isArchived = false,
+}) {
+  const duplicate = await findClientDuplicate({ name, gstNumber });
+  const client = duplicate || await saveClient({ name, alias, gstNumber, address });
+  await run(
+    `
+    UPDATE clients
+    SET name = ?, alias = ?, gst_number = ?, address = ?, is_archived = ?, updated_at = ?
+    WHERE id = ?
+    `,
+    [name, alias, normalizeGstNumber(gstNumber), address, isArchived ? 1 : 0, new Date().toISOString(), client.id],
+  );
+  return getClientRowById(client.id);
+}
+
+async function ensureDemoClientsPresent() {
+  const clients = [
+    {
+      name: 'Acme Packaging Pvt. Ltd.',
+      alias: 'ACME',
+      gstNumber: '27ABCDE1234F1Z5',
+      address: 'MIDC Industrial Area, Pune, Maharashtra 411019',
+    },
+    {
+      name: 'Sunrise Retail LLP',
+      alias: 'SUN',
+      gstNumber: '24AAKCS9988M1Z2',
+      address: 'Satellite Road, Ahmedabad, Gujarat 380015',
+    },
+    {
+      name: 'Northstar Pharma Packs',
+      alias: 'NSP',
+      gstNumber: '29AAACN4455J1Z7',
+      address: 'Peenya Phase II, Bengaluru, Karnataka 560058',
+    },
+    {
+      name: 'Orbit Consumer Goods',
+      alias: 'ORB',
+      gstNumber: '07AACCO7788L1Z1',
+      address: 'Okhla Industrial Estate, New Delhi 110020',
+    },
+    {
+      name: 'BluePeak Exports',
+      alias: 'BPE',
+      gstNumber: '19AAICB5634P1ZV',
+      address: 'Salt Lake Sector V, Kolkata, West Bengal 700091',
+    },
+    {
+      name: 'Legacy Trading Co.',
+      alias: 'LEG',
+      address: 'Old Market Road, Indore, Madhya Pradesh 452001',
+      isArchived: true,
+    },
+  ];
+
+  for (const client of clients) {
+    await ensureClientRecord(client);
+  }
+}
+
 async function getOrderRowById(id) {
   return get('SELECT * FROM orders WHERE id = ?', [id]);
 }
@@ -1527,6 +1694,101 @@ async function seedGroupsIfEmpty() {
   );
 }
 
+async function ensureGroupRecord({
+  name,
+  parentGroupId = null,
+  unitId,
+  isArchived = false,
+}) {
+  const duplicate = await findGroupDuplicate({ name, parentGroupId });
+  const group = duplicate || await saveGroup({ name, parentGroupId, unitId });
+  await run(
+    `
+    UPDATE groups
+    SET name = ?, parent_group_id = ?, unit_id = ?, is_archived = ?, updated_at = ?
+    WHERE id = ?
+    `,
+    [name, parentGroupId, unitId, isArchived ? 1 : 0, new Date().toISOString(), group.id],
+  );
+  return getGroupRowById(group.id);
+}
+
+async function ensureDemoGroupsPresent() {
+  const units = await getUnitsWithUsage();
+  const bySymbol = new Map(
+    units.map((unit) => [normalizeUnitValue(unit.symbol), unit]),
+  );
+  const sheetUnit = bySymbol.get('sheet') || units[0];
+  const kilogramUnit = bySymbol.get('kg') || units[0];
+  const pieceUnit = bySymbol.get('pc') || units[0];
+  const rollUnit = bySymbol.get('roll') || sheetUnit || units[0];
+  const meterUnit = bySymbol.get('mtr') || units[0];
+  if (!sheetUnit || !kilogramUnit || !pieceUnit || !rollUnit || !meterUnit) {
+    return;
+  }
+
+  const paper = await ensureGroupRecord({
+    name: 'Paper',
+    unitId: sheetUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Kraft',
+    parentGroupId: paper.id,
+    unitId: sheetUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Duplex Board',
+    parentGroupId: paper.id,
+    unitId: sheetUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Corrugated',
+    parentGroupId: paper.id,
+    unitId: sheetUnit.id,
+  });
+
+  const chemicals = await ensureGroupRecord({
+    name: 'Chemical',
+    unitId: kilogramUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Adhesives',
+    parentGroupId: chemicals.id,
+    unitId: kilogramUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Coatings',
+    parentGroupId: chemicals.id,
+    unitId: kilogramUnit.id,
+  });
+
+  const packaging = await ensureGroupRecord({
+    name: 'Packaging Components',
+    unitId: pieceUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Caps',
+    parentGroupId: packaging.id,
+    unitId: pieceUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Sleeves',
+    parentGroupId: packaging.id,
+    unitId: meterUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Film Rolls',
+    parentGroupId: packaging.id,
+    unitId: rollUnit.id,
+  });
+
+  await ensureGroupRecord({
+    name: 'Legacy Group',
+    unitId: kilogramUnit.id,
+    isArchived: true,
+  });
+}
+
 function buildItemDisplayName(name, alias, quantity) {
   const parts = [String(name || '').trim(), String(alias || '').trim()].filter(Boolean);
   const base = parts.join(' / ');
@@ -1811,6 +2073,241 @@ async function seedItemsIfEmpty() {
   }
 }
 
+async function findItemByDisplayName(displayName) {
+  const rows = await getItemsWithUsage();
+  return rows.find(
+    (row) => normalizeUnitValue(row.display_name) === normalizeUnitValue(displayName),
+  ) || null;
+}
+
+async function ensureItemRecord({
+  name,
+  alias = '',
+  displayName,
+  quantity,
+  groupId,
+  unitId,
+  variationTree,
+  isArchived = false,
+}) {
+  const existing = await findItemByDisplayName(displayName);
+  const item = existing
+    ? existing
+    : await saveItem({
+        name,
+        alias,
+        displayName,
+        quantity,
+        groupId,
+        unitId,
+        variationTree,
+      });
+
+  if (!existing) {
+    if (isArchived) {
+      const now = new Date().toISOString();
+      await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, item.id]);
+      await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, item.id]);
+    }
+    return getItemRowById(item.id);
+  }
+
+  if (Boolean(existing.is_archived) !== isArchived) {
+    const now = new Date().toISOString();
+    await run('UPDATE items SET is_archived = ?, updated_at = ? WHERE id = ?', [isArchived ? 1 : 0, now, existing.id]);
+    await run('UPDATE item_variation_nodes SET is_archived = ?, updated_at = ? WHERE item_id = ?', [isArchived ? 1 : 0, now, existing.id]);
+  }
+  return getItemRowById(existing.id);
+}
+
+async function ensureDemoItemsPresent() {
+  const groups = await getGroupsWithUsage();
+  const units = await getUnitsWithUsage();
+  const groupByName = new Map(
+    groups.map((group) => [normalizeUnitValue(group.name), group]),
+  );
+  const unitBySymbol = new Map(
+    units.map((unit) => [normalizeUnitValue(unit.symbol), unit]),
+  );
+
+  const kraft = groupByName.get('kraft');
+  const adhesives = groupByName.get('adhesives');
+  const caps = groupByName.get('caps');
+  const sleeves = groupByName.get('sleeves');
+  const duplex = groupByName.get('duplex board') || groupByName.get('paper');
+  const sheetUnit = unitBySymbol.get('sheet');
+  const kilogramUnit = unitBySymbol.get('kg');
+  const pieceUnit = unitBySymbol.get('pc') || unitBySymbol.get('pieces');
+  const meterUnit = unitBySymbol.get('mtr');
+
+  if (!kraft || !adhesives || !caps || !sleeves || !duplex) {
+    return;
+  }
+  if (!sheetUnit || !kilogramUnit || !pieceUnit || !meterUnit) {
+    return;
+  }
+
+  const itemSeeds = [
+    {
+      name: 'Bottle Carton',
+      alias: 'Classic Bottle',
+      displayName: 'Bottle Carton - 100',
+      quantity: 100,
+      groupId: kraft.id,
+      unitId: sheetUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Color',
+          children: [
+            {
+              kind: 'value',
+              name: 'Black',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Finish',
+                  children: [
+                    { kind: 'value', name: 'Matte' },
+                    { kind: 'value', name: 'Glossy' },
+                  ],
+                },
+              ],
+            },
+            {
+              kind: 'value',
+              name: 'Natural',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Print',
+                  children: [
+                    { kind: 'value', name: 'Flexo' },
+                    { kind: 'value', name: 'Offset' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Glue Compound',
+      alias: 'Adhesive',
+      displayName: 'Glue Compound - 25',
+      quantity: 25,
+      groupId: adhesives.id,
+      unitId: kilogramUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Cure Speed',
+          children: [
+            {
+              kind: 'value',
+              name: 'Fast Cure',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Viscosity',
+                  children: [
+                    { kind: 'value', name: 'High' },
+                    { kind: 'value', name: 'Medium' },
+                  ],
+                },
+              ],
+            },
+            { kind: 'value', name: 'Standard Cure' },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Flip-Top Cap',
+      alias: 'Secure Cap',
+      displayName: 'Flip-Top Cap - 500',
+      quantity: 500,
+      groupId: caps.id,
+      unitId: pieceUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Diameter',
+          children: [
+            {
+              kind: 'value',
+              name: '28 mm',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Color',
+                  children: [
+                    { kind: 'value', name: 'White' },
+                    { kind: 'value', name: 'Blue' },
+                  ],
+                },
+              ],
+            },
+            { kind: 'value', name: '32 mm' },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Printed Sleeve',
+      alias: 'Shrink Sleeve',
+      displayName: 'Printed Sleeve - 200',
+      quantity: 200,
+      groupId: sleeves.id,
+      unitId: meterUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Finish',
+          children: [
+            {
+              kind: 'value',
+              name: 'Gloss',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Region',
+                  children: [
+                    { kind: 'value', name: 'Domestic' },
+                    { kind: 'value', name: 'Export' },
+                  ],
+                },
+              ],
+            },
+            { kind: 'value', name: 'Matte' },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Legacy Duplex Carton',
+      alias: 'Old Mono',
+      displayName: 'Legacy Duplex Carton - 50',
+      quantity: 50,
+      groupId: duplex.id,
+      unitId: sheetUnit.id,
+      isArchived: true,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Coating',
+          children: [{ kind: 'value', name: 'None' }],
+        },
+      ],
+    },
+  ];
+
+  for (const itemSeed of itemSeeds) {
+    await ensureItemRecord(itemSeed);
+  }
+}
+
 function findLeafVariationNodes(nodes = [], currentPath = []) {
   const leaves = [];
   for (const node of nodes) {
@@ -1940,6 +2437,148 @@ async function ensureMockOrdersPresent() {
   }
 }
 
+function findLeafByLabel(leaves, labelFragment) {
+  const normalizedFragment = normalizeUnitValue(labelFragment);
+  return (
+    leaves.find((leaf) =>
+      normalizeUnitValue(leaf.displayName).includes(normalizedFragment),
+    ) || leaves[0]
+  );
+}
+
+async function ensureDemoOrdersPresent() {
+  await ensureMockOrdersPresent();
+
+  const clients = (await getClientsWithUsage())
+    .filter((row) => !row.is_archived)
+    .map((row) => rowToClientDto(row));
+  const items = [];
+  for (const row of await getItemsWithUsage()) {
+    if (!row.is_archived) {
+      items.push(await rowToItemDto(row));
+    }
+  }
+
+  if (clients.length < 3 || items.length < 3) {
+    return;
+  }
+
+  const clientByAlias = new Map(clients.map((client) => [client.alias, client]));
+  const itemByDisplayName = new Map(
+    items.map((item) => [item.displayName, item]),
+  );
+
+  const bottleItem = itemByDisplayName.get('Bottle Carton - 100');
+  const glueItem = itemByDisplayName.get('Glue Compound - 25');
+  const capItem = itemByDisplayName.get('Flip-Top Cap - 500');
+  const sleeveItem = itemByDisplayName.get('Printed Sleeve - 200');
+  const acme = clientByAlias.get('ACME');
+  const sunrise = clientByAlias.get('SUN');
+  const northstar = clientByAlias.get('NSP');
+  const orbit = clientByAlias.get('ORB');
+  const bluepeak = clientByAlias.get('BPE');
+
+  if (!bottleItem || !glueItem || !capItem || !sleeveItem) {
+    return;
+  }
+  if (!acme || !sunrise || !northstar || !orbit || !bluepeak) {
+    return;
+  }
+
+  const bottleLeaves = findLeafVariationNodes(bottleItem.variationTree || []);
+  const glueLeaves = findLeafVariationNodes(glueItem.variationTree || []);
+  const capLeaves = findLeafVariationNodes(capItem.variationTree || []);
+  const sleeveLeaves = findLeafVariationNodes(sleeveItem.variationTree || []);
+
+  const orderSeeds = [
+    {
+      orderNo: 'DEMO-2401',
+      poNumber: 'PO-ACME-7781',
+      client: acme,
+      item: bottleItem,
+      leaf: findLeafByLabel(bottleLeaves, 'Matte'),
+      quantity: 1800,
+      status: 'notStarted',
+      startDate: '2026-04-12T00:00:00.000Z',
+      endDate: '2026-04-21T00:00:00.000Z',
+    },
+    {
+      orderNo: 'DEMO-2402',
+      poNumber: 'PO-ACME-7782',
+      client: acme,
+      item: bottleItem,
+      leaf: findLeafByLabel(bottleLeaves, 'Offset'),
+      quantity: 3200,
+      status: 'inProgress',
+      startDate: '2026-04-07T00:00:00.000Z',
+      endDate: '2026-04-18T00:00:00.000Z',
+    },
+    {
+      orderNo: 'DEMO-2403',
+      poNumber: 'PO-SUN-9120',
+      client: sunrise,
+      item: capItem,
+      leaf: findLeafByLabel(capLeaves, 'White'),
+      quantity: 5000,
+      status: 'completed',
+      startDate: '2026-03-28T00:00:00.000Z',
+      endDate: '2026-04-03T00:00:00.000Z',
+    },
+    {
+      orderNo: 'DEMO-2404',
+      poNumber: 'PO-NSP-1148',
+      client: northstar,
+      item: glueItem,
+      leaf: findLeafByLabel(glueLeaves, 'High'),
+      quantity: 750,
+      status: 'delayed',
+      startDate: '2026-04-02T00:00:00.000Z',
+      endDate: '2026-04-15T00:00:00.000Z',
+    },
+    {
+      orderNo: 'DEMO-2405',
+      poNumber: 'PO-ORB-3319',
+      client: orbit,
+      item: sleeveItem,
+      leaf: findLeafByLabel(sleeveLeaves, 'Export'),
+      quantity: 2200,
+      status: 'inProgress',
+      startDate: '2026-04-08T00:00:00.000Z',
+      endDate: '2026-04-23T00:00:00.000Z',
+    },
+    {
+      orderNo: 'DEMO-2406',
+      poNumber: 'PO-BPE-4470',
+      client: bluepeak,
+      item: capItem,
+      leaf: findLeafByLabel(capLeaves, '32 mm'),
+      quantity: 4100,
+      status: 'notStarted',
+      startDate: '2026-04-16T00:00:00.000Z',
+      endDate: '2026-04-28T00:00:00.000Z',
+    },
+  ];
+
+  for (const order of orderSeeds) {
+    await saveOrder({
+      orderNo: order.orderNo,
+      clientId: order.client.id,
+      clientName: order.client.name,
+      poNumber: order.poNumber,
+      clientCode: order.client.alias,
+      itemId: order.item.id,
+      itemName: order.item.displayName,
+      variationLeafNodeId: order.leaf.id,
+      variationPathLabel: order.leaf.displayName,
+      variationPathNodeIds: order.leaf.path,
+      quantity: order.quantity,
+      status: order.status,
+      startDate: order.startDate,
+      endDate: order.endDate,
+    });
+  }
+}
+
 async function getUnitsWithUsage() {
   return all(`
     SELECT
@@ -2032,6 +2671,334 @@ async function incrementMaterialScanCount(barcode) {
   return get('SELECT * FROM materials WHERE id = ?', [row.id]);
 }
 
+async function createChildMaterial(parentBarcode, payload) {
+  const parent = await getMaterialRowByBarcode(parentBarcode);
+  if (!parent || parent.kind !== 'parent') {
+    throw new Error('Parent material not found.');
+  }
+
+  const nextIndex = Number(parent.number_of_children || 0) + 1;
+  const childBarcode = generateChildBarcode(parent.barcode, nextIndex);
+  const createdAt = new Date().toISOString();
+
+  await run(
+    `
+    INSERT INTO materials (
+      barcode, name, type, grade, thickness, supplier, unit_id, unit, notes,
+      created_at, kind, parent_barcode, number_of_children, linked_child_barcodes,
+      scan_count, linked_group_id, linked_item_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, '[]', 0, NULL, NULL)
+    `,
+    [
+      childBarcode,
+      String(payload.name || '').trim(),
+      parent.type || '',
+      parent.grade || '',
+      parent.thickness || '',
+      parent.supplier || '',
+      parent.unit_id || null,
+      parent.unit || '',
+      String(payload.notes || '').trim(),
+      createdAt,
+      parent.barcode,
+    ],
+  );
+
+  const linkedChildren = parseJson(parent.linked_child_barcodes, []);
+  linkedChildren.push(childBarcode);
+  await run(
+    'UPDATE materials SET number_of_children = ?, linked_child_barcodes = ? WHERE id = ?',
+    [linkedChildren.length, JSON.stringify(linkedChildren), parent.id],
+  );
+
+  return getMaterialRowByBarcode(childBarcode);
+}
+
+async function updateMaterialRecord(barcode, payload) {
+  const existing = await getMaterialRowByBarcode(barcode);
+  if (!existing) {
+    throw new Error('Material not found.');
+  }
+
+  const resolvedUnit = await resolveUnitPayload(payload);
+  await run(
+    `
+    UPDATE materials
+    SET name = ?, type = ?, grade = ?, thickness = ?, supplier = ?, unit_id = ?, unit = ?, notes = ?
+    WHERE id = ?
+    `,
+    [
+      String(payload.name || '').trim(),
+      String(payload.type || '').trim(),
+      String(payload.grade || '').trim(),
+      String(payload.thickness || '').trim(),
+      String(payload.supplier || '').trim(),
+      resolvedUnit.unitId,
+      resolvedUnit.unit,
+      String(payload.notes || '').trim(),
+      existing.id,
+    ],
+  );
+  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+}
+
+async function deleteMaterialRecord(barcode) {
+  const existing = await getMaterialRowByBarcode(barcode);
+  if (!existing) {
+    throw new Error('Material not found.');
+  }
+
+  if (existing.kind === 'parent') {
+    const childRows = await all('SELECT barcode FROM materials WHERE parent_barcode = ?', [
+      existing.barcode,
+    ]);
+    for (const child of childRows) {
+      await run('DELETE FROM scan_history WHERE barcode = ?', [child.barcode]);
+    }
+    await run('DELETE FROM materials WHERE parent_barcode = ?', [existing.barcode]);
+  } else if (existing.parent_barcode) {
+    const parent = await getMaterialRowByBarcode(existing.parent_barcode);
+    if (parent) {
+      const linkedChildren = parseJson(parent.linked_child_barcodes, []).filter(
+        (childBarcode) => childBarcode !== existing.barcode,
+      );
+      await run(
+        'UPDATE materials SET number_of_children = ?, linked_child_barcodes = ? WHERE id = ?',
+        [linkedChildren.length, JSON.stringify(linkedChildren), parent.id],
+      );
+    }
+  }
+
+  await run('DELETE FROM scan_history WHERE barcode = ?', [existing.barcode]);
+  await run('DELETE FROM materials WHERE id = ?', [existing.id]);
+}
+
+async function linkMaterialRecordToGroup(barcode, groupId) {
+  const existing = await getMaterialRowByBarcode(barcode);
+  if (!existing) {
+    throw new Error('Material not found.');
+  }
+  const group = await getGroupRowById(Number(groupId));
+  if (!group || group.is_archived) {
+    throw new Error('Selected group is not available.');
+  }
+  await run(
+    'UPDATE materials SET linked_group_id = ?, linked_item_id = NULL WHERE id = ?',
+    [group.id, existing.id],
+  );
+  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+}
+
+async function linkMaterialRecordToItem(barcode, itemId) {
+  const existing = await getMaterialRowByBarcode(barcode);
+  if (!existing) {
+    throw new Error('Material not found.');
+  }
+  const item = await getItemRowById(Number(itemId));
+  if (!item || item.is_archived) {
+    throw new Error('Selected item is not available.');
+  }
+  await run(
+    'UPDATE materials SET linked_group_id = NULL, linked_item_id = ? WHERE id = ?',
+    [item.id, existing.id],
+  );
+  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+}
+
+async function unlinkMaterialRecord(barcode) {
+  const existing = await getMaterialRowByBarcode(barcode);
+  if (!existing) {
+    throw new Error('Material not found.');
+  }
+  await run(
+    'UPDATE materials SET linked_group_id = NULL, linked_item_id = NULL WHERE id = ?',
+    [existing.id],
+  );
+  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+}
+
+async function findParentMaterialByName(name) {
+  return get(
+    'SELECT * FROM materials WHERE kind = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+    ['parent', name],
+  );
+}
+
+async function ensureParentMaterialRecord(seed) {
+  let parent = await findParentMaterialByName(seed.name);
+  if (!parent) {
+    const created = await createParentWithChildren(seed);
+    parent = await getMaterialRowByBarcode(created.barcode);
+  }
+
+  const now = new Date().toISOString();
+  const resolvedUnit = await resolveUnitPayload(seed);
+  const desiredChildren = Number(seed.numberOfChildren || 0);
+  const existingChildren = await all(
+    'SELECT * FROM materials WHERE parent_barcode = ? ORDER BY barcode ASC',
+    [parent.barcode],
+  );
+
+  if (existingChildren.length < desiredChildren) {
+    for (let index = existingChildren.length; index < desiredChildren; index += 1) {
+      await createChildMaterial(parent.barcode, {
+        name: `${seed.name} - Child ${index + 1}`,
+        notes: seed.notes,
+      });
+    }
+  }
+
+  const childRows = await all(
+    'SELECT * FROM materials WHERE parent_barcode = ? ORDER BY barcode ASC',
+    [parent.barcode],
+  );
+  const linkedChildren = childRows.map((row) => row.barcode);
+
+  await run(
+    `
+    UPDATE materials
+    SET name = ?, type = ?, grade = ?, thickness = ?, supplier = ?, unit_id = ?, unit = ?, notes = ?,
+        number_of_children = ?, linked_child_barcodes = ?, scan_count = ?
+    WHERE id = ?
+    `,
+    [
+      seed.name,
+      seed.type,
+      seed.grade || '',
+      seed.thickness || '',
+      seed.supplier || '',
+      resolvedUnit.unitId,
+      resolvedUnit.unit,
+      seed.notes || '',
+      linkedChildren.length,
+      JSON.stringify(linkedChildren),
+      Number(seed.scanCount || 0),
+      parent.id,
+    ],
+  );
+
+  for (let index = 0; index < childRows.length; index += 1) {
+    const child = childRows[index];
+    await run(
+      `
+      UPDATE materials
+      SET name = ?, type = ?, grade = ?, thickness = ?, supplier = ?, unit_id = ?, unit = ?, notes = ?,
+          scan_count = ?
+      WHERE id = ?
+      `,
+      [
+        `${seed.name} - Child ${index + 1}`,
+        seed.type,
+        seed.grade || '',
+        seed.thickness || '',
+        seed.supplier || '',
+        resolvedUnit.unitId,
+        resolvedUnit.unit,
+        seed.notes || '',
+        Array.isArray(seed.childScanCounts) ? Number(seed.childScanCounts[index] || 0) : 0,
+        child.id,
+      ],
+    );
+  }
+
+  parent = await get('SELECT * FROM materials WHERE id = ?', [parent.id]);
+
+  if (seed.linkGroupId) {
+    parent = await linkMaterialRecordToGroup(parent.barcode, seed.linkGroupId);
+  } else if (seed.linkItemId) {
+    parent = await linkMaterialRecordToItem(parent.barcode, seed.linkItemId);
+  } else {
+    parent = await unlinkMaterialRecord(parent.barcode);
+  }
+
+  await run('UPDATE materials SET created_at = ? WHERE id = ?', [seed.createdAt || now, parent.id]);
+  for (let index = 0; index < childRows.length; index += 1) {
+    await run('UPDATE materials SET created_at = ? WHERE id = ?', [seed.createdAt || now, childRows[index].id]);
+  }
+
+  return getMaterialRowByBarcode(parent.barcode);
+}
+
+async function ensureDemoMaterialsPresent() {
+  const groups = await getGroupsWithUsage();
+  const items = [];
+  for (const row of await getItemsWithUsage()) {
+    if (!row.is_archived) {
+      items.push(await rowToItemDto(row));
+    }
+  }
+
+  const groupByName = new Map(
+    groups.map((group) => [normalizeUnitValue(group.name), group]),
+  );
+  const itemByDisplayName = new Map(
+    items.map((item) => [normalizeUnitValue(item.displayName), item]),
+  );
+
+  const materials = [
+    {
+      name: 'Copper Master Roll',
+      type: 'Raw Material',
+      grade: 'A1',
+      thickness: '1.2 mm',
+      supplier: 'Shree Metals',
+      unit: 'Kg',
+      notes: 'Primary copper feed for dolly and frame jobs.',
+      numberOfChildren: 3,
+      scanCount: 5,
+      childScanCounts: [3, 2, 1],
+      createdAt: oneDayAgo(14),
+      linkGroupId: groupByName.get('chemical')?.id || null,
+    },
+    {
+      name: 'Steel Sheet Batch',
+      type: 'Raw Material',
+      grade: 'B2',
+      thickness: '2.0 mm',
+      supplier: 'Metro Steels',
+      unit: 'Sheet',
+      notes: 'Sheet stock for drilled frame support panels.',
+      numberOfChildren: 2,
+      scanCount: 4,
+      childScanCounts: [2, 0],
+      createdAt: oneDayAgo(12),
+      linkItemId: itemByDisplayName.get(normalizeUnitValue('Flip-Top Cap - 500'))?.id || null,
+    },
+    {
+      name: 'Kraft Paper Reel',
+      type: 'Substrate',
+      grade: 'Natural 180 GSM',
+      thickness: '180 GSM',
+      supplier: 'West Coast Paper',
+      unit: 'Roll',
+      notes: 'Used across bottle carton and mono-carton demo orders.',
+      numberOfChildren: 4,
+      scanCount: 9,
+      childScanCounts: [4, 3, 1, 1],
+      createdAt: oneDayAgo(9),
+      linkItemId: itemByDisplayName.get(normalizeUnitValue('Bottle Carton - 100'))?.id || null,
+    },
+    {
+      name: 'Shrink Film Reel',
+      type: 'Packaging Material',
+      grade: 'PET-G',
+      thickness: '40 micron',
+      supplier: 'FlexWrap Industries',
+      unit: 'Roll',
+      notes: 'Supports export sleeve jobs and barcode attachment demos.',
+      numberOfChildren: 3,
+      scanCount: 6,
+      childScanCounts: [2, 2, 1],
+      createdAt: oneDayAgo(7),
+      linkItemId: itemByDisplayName.get(normalizeUnitValue('Printed Sleeve - 200'))?.id || null,
+    },
+  ];
+
+  for (const material of materials) {
+    await ensureParentMaterialRecord(material);
+  }
+}
+
 async function createRunFromTemplate(templateId, name) {
   const templateRow = await get(
     'SELECT * FROM pipeline_templates WHERE id = ?',
@@ -2071,6 +3038,226 @@ async function createRunFromTemplate(templateId, name) {
 
   const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
   return rowToRun(runRow);
+}
+
+async function ensurePipelineRunRecord({
+  id,
+  templateId,
+  name,
+  status,
+  createdAt,
+  startedAt = null,
+  completedAt = null,
+  nodeStatuses,
+  overrides,
+  barcodeAssignments = [],
+}) {
+  const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
+    templateId,
+  ]);
+  if (!templateRow) {
+    return null;
+  }
+
+  const template = rowToTemplate(templateRow);
+  const existing = await get('SELECT * FROM pipeline_runs WHERE id = ?', [id]);
+  const resolvedNodeStatuses =
+    nodeStatuses ||
+    Object.fromEntries(template.nodes.map((node) => [node.id, 'pending']));
+  const resolvedOverrides =
+    overrides || {
+      actualDurationHoursByNode: {},
+      batchQuantityByNode: {},
+      machineOverrideByNode: {},
+    };
+
+  if (!existing) {
+    await run(
+      `
+      INSERT INTO pipeline_runs (
+        id, template_id, template_version, name, status, overrides_json,
+        node_status_json, started_at, completed_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        id,
+        templateId,
+        template.version,
+        name,
+        status,
+        JSON.stringify(resolvedOverrides),
+        JSON.stringify(resolvedNodeStatuses),
+        startedAt,
+        completedAt,
+        createdAt,
+      ],
+    );
+  } else {
+    await run(
+      `
+      UPDATE pipeline_runs
+      SET template_id = ?, template_version = ?, name = ?, status = ?, overrides_json = ?,
+          node_status_json = ?, started_at = ?, completed_at = ?, created_at = ?
+      WHERE id = ?
+      `,
+      [
+        templateId,
+        template.version,
+        name,
+        status,
+        JSON.stringify(resolvedOverrides),
+        JSON.stringify(resolvedNodeStatuses),
+        startedAt,
+        completedAt,
+        createdAt,
+        id,
+      ],
+    );
+  }
+
+  await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [id]);
+  for (const assignment of barcodeAssignments) {
+    const materialRow = await getMaterialRowByBarcode(assignment.barcode);
+    if (!materialRow) {
+      continue;
+    }
+    await run(
+      `
+      INSERT INTO run_barcode_inputs (
+        id, run_id, node_id, barcode, material_id, material_payload_json, scanned_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        assignment.id,
+        id,
+        assignment.nodeId,
+        materialRow.barcode,
+        String(materialRow.id || ''),
+        JSON.stringify({
+          barcode: materialRow.barcode,
+          materialName: materialRow.name,
+          materialType: materialRow.type,
+          scanCount: materialRow.scan_count || 0,
+        }),
+        assignment.scannedAt || createdAt,
+      ],
+    );
+  }
+
+  const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [id]);
+  return rowToRun(runRow);
+}
+
+async function ensureDemoPipelineRunsPresent() {
+  const kraft = await findParentMaterialByName('Kraft Paper Reel');
+  const shrink = await findParentMaterialByName('Shrink Film Reel');
+  const steel = await findParentMaterialByName('Steel Sheet Batch');
+  if (!kraft || !shrink || !steel) {
+    return;
+  }
+
+  await ensurePipelineRunRecord({
+    id: 'demo-dolly-run-active',
+    templateId: 'dolly',
+    name: 'Dolly Morning Batch',
+    status: 'inProgress',
+    createdAt: oneDayAgo(2),
+    startedAt: oneDayAgo(2),
+    nodeStatuses: {
+      'dolly-input-copper': 'completed',
+      'dolly-cut': 'completed',
+      'dolly-input-steel': 'completed',
+      'dolly-drill': 'inProgress',
+      'dolly-weld': 'blocked',
+      'dolly-polish': 'pending',
+    },
+    overrides: {
+      actualDurationHoursByNode: {
+        'dolly-cut': 1.1,
+        'dolly-drill': 1.8,
+      },
+      batchQuantityByNode: {
+        'dolly-cut': 1800,
+        'dolly-drill': 1800,
+      },
+      machineOverrideByNode: {
+        'dolly-drill': 'Drill 02B',
+      },
+    },
+    barcodeAssignments: [
+      {
+        id: 'demo-dolly-barcode-1',
+        nodeId: 'dolly-input-copper',
+        barcode: kraft.barcode,
+        scannedAt: oneDayAgo(2),
+      },
+      {
+        id: 'demo-dolly-barcode-2',
+        nodeId: 'dolly-input-steel',
+        barcode: steel.barcode,
+        scannedAt: oneDayAgo(2),
+      },
+    ],
+  });
+
+  await ensurePipelineRunRecord({
+    id: 'demo-assembly-run-packed',
+    templateId: 'assembly',
+    name: 'Assembly Export Lot',
+    status: 'completed',
+    createdAt: oneDayAgo(5),
+    startedAt: oneDayAgo(5),
+    completedAt: oneDayAgo(4),
+    nodeStatuses: {
+      'assembly-right': 'completed',
+      'assembly-left': 'completed',
+      'assembly-center': 'completed',
+      'assembly-fixture': 'completed',
+      'assembly-pack': 'completed',
+    },
+    overrides: {
+      actualDurationHoursByNode: {
+        'assembly-fixture': 1.3,
+        'assembly-pack': 0.7,
+      },
+      batchQuantityByNode: {
+        'assembly-fixture': 900,
+        'assembly-pack': 900,
+      },
+      machineOverrideByNode: {},
+    },
+    barcodeAssignments: [
+      {
+        id: 'demo-assembly-barcode-1',
+        nodeId: 'assembly-center',
+        barcode: shrink.barcode,
+        scannedAt: oneDayAgo(5),
+      },
+    ],
+  });
+
+  await ensurePipelineRunRecord({
+    id: 'demo-dolly-run-queued',
+    templateId: 'dolly',
+    name: 'Dolly Evening Batch',
+    status: 'planned',
+    createdAt: oneDayAgo(1),
+    nodeStatuses: {
+      'dolly-input-copper': 'pending',
+      'dolly-cut': 'pending',
+      'dolly-input-steel': 'pending',
+      'dolly-drill': 'pending',
+      'dolly-weld': 'pending',
+      'dolly-polish': 'pending',
+    },
+    overrides: {
+      actualDurationHoursByNode: {},
+      batchQuantityByNode: {
+        'dolly-cut': 2400,
+      },
+      machineOverrideByNode: {},
+    },
+  });
 }
 
 app.get('/api/materials', async (req, res) => {
@@ -2470,6 +3657,84 @@ app.post('/api/materials/parent', async (req, res) => {
   }
 });
 
+app.post('/api/materials/:barcode/child', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    if (!String(payload.name || '').trim()) {
+      res.status(400).json({
+        success: false,
+        material: null,
+        error: 'name is required.',
+      });
+      return;
+    }
+    const material = await createChildMaterial(req.params.barcode, payload);
+    res.status(201).json({ success: true, material: rowToMaterialDto(material), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.patch('/api/materials/:barcode', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.name || !payload.type) {
+      res.status(400).json({
+        success: false,
+        material: null,
+        error: 'name and type are required.',
+      });
+      return;
+    }
+    const material = await updateMaterialRecord(req.params.barcode, payload);
+    res.json({ success: true, material: rowToMaterialDto(material), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.delete('/api/materials/:barcode', async (req, res) => {
+  try {
+    await deleteMaterialRecord(req.params.barcode);
+    res.json({ success: true, material: null, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.patch('/api/materials/:barcode/link-group', async (req, res) => {
+  try {
+    const material = await linkMaterialRecordToGroup(
+      req.params.barcode,
+      req.body?.groupId,
+    );
+    res.json({ success: true, material: rowToMaterialDto(material), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.patch('/api/materials/:barcode/link-item', async (req, res) => {
+  try {
+    const material = await linkMaterialRecordToItem(
+      req.params.barcode,
+      req.body?.itemId,
+    );
+    res.json({ success: true, material: rowToMaterialDto(material), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.patch('/api/materials/:barcode/unlink', async (req, res) => {
+  try {
+    const material = await unlinkMaterialRecord(req.params.barcode);
+    res.json({ success: true, material: rowToMaterialDto(material), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
 app.patch('/api/materials/:barcode/scan', async (req, res) => {
   try {
     const materialRow = await incrementMaterialScanCount(req.params.barcode);
@@ -2798,6 +4063,33 @@ app.post('/runs/:id/barcodes', async (req, res) => {
   }
 });
 
+async function resetAndSeedDemoData() {
+  await initDb();
+  await run('DELETE FROM run_barcode_inputs');
+  await run('DELETE FROM pipeline_runs');
+  await run('DELETE FROM pipeline_templates');
+  await run('DELETE FROM orders');
+  await run('DELETE FROM item_variation_values');
+  await run('DELETE FROM item_variations');
+  await run('DELETE FROM item_variation_dimensions');
+  await run('DELETE FROM item_variation_nodes');
+  await run('DELETE FROM items');
+  await run('DELETE FROM clients');
+  await run('DELETE FROM materials');
+  await run('DELETE FROM groups');
+  await run('DELETE FROM units');
+  await seedMaterialsIfEmpty();
+  await seedUnitsIfEmpty();
+  await bootstrapUnitsFromMaterials();
+  await backfillMaterialUnitIds();
+  await seedClientsIfEmpty();
+  await seedGroupsIfEmpty();
+  await seedItemsIfEmpty();
+  await seedOrdersIfEmpty();
+  await seedTemplatesIfEmpty();
+  await ensureDemoDataset();
+}
+
 function startServer() {
   return initDb().then(
     () =>
@@ -2822,11 +4114,16 @@ module.exports = {
   initDb,
   startServer,
   closeDb,
+  all,
+  get,
+  run,
   saveUnit,
   saveClient,
   saveItem,
   saveOrder,
   ensureMockOrdersPresent,
+  ensureDemoDataset,
+  resetAndSeedDemoData,
   updateOrderLifecycle,
   getOrders,
   getUnitsWithUsage,

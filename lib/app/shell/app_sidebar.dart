@@ -89,6 +89,7 @@ class _AppSidebarState extends State<AppSidebar> {
                 'Production',
                 Icons.account_tree_outlined,
               ),
+              _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
             ],
             selectedKey: selectedKey,
             onSelected: (key) {

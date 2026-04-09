@@ -6,6 +6,7 @@ import 'package:paper/features/groups/domain/group_definition.dart';
 import 'package:paper/features/groups/domain/group_inputs.dart';
 import 'package:paper/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:paper/features/inventory/domain/create_parent_material_input.dart';
+import 'package:paper/features/inventory/domain/material_inputs.dart';
 import 'package:paper/features/inventory/domain/material_record.dart';
 import 'package:paper/features/clients/data/repositories/client_repository.dart';
 import 'package:paper/features/clients/domain/client_definition.dart';
@@ -39,6 +40,9 @@ class FakeInventoryRepository extends InventoryRepository {
       numberOfChildren: 2,
       linkedChildBarcodes: const ['CHD-0001-01', 'CHD-0001-02'],
       scanCount: 0,
+      displayStock: '200 Kg',
+      createdBy: 'Seed User',
+      workflowStatus: 'inProgress',
     ),
     MaterialRecord(
       id: 2,
@@ -56,6 +60,9 @@ class FakeInventoryRepository extends InventoryRepository {
       numberOfChildren: 0,
       linkedChildBarcodes: const [],
       scanCount: 0,
+      displayStock: '100 Kg',
+      createdBy: 'Seed User',
+      workflowStatus: 'notStarted',
     ),
     MaterialRecord(
       id: 3,
@@ -73,6 +80,9 @@ class FakeInventoryRepository extends InventoryRepository {
       numberOfChildren: 0,
       linkedChildBarcodes: const [],
       scanCount: 0,
+      displayStock: '100 Kg',
+      createdBy: 'Seed User',
+      workflowStatus: 'notStarted',
     ),
   ];
 
@@ -118,6 +128,9 @@ class FakeInventoryRepository extends InventoryRepository {
         numberOfChildren: input.numberOfChildren,
         linkedChildBarcodes: childBarcodes,
         scanCount: 0,
+        displayStock: '${input.numberOfChildren * 100} ${input.unit}',
+        createdBy: 'Test User',
+        workflowStatus: 'inProgress',
       ),
     );
 
@@ -139,6 +152,9 @@ class FakeInventoryRepository extends InventoryRepository {
           numberOfChildren: 0,
           linkedChildBarcodes: const [],
           scanCount: 0,
+          displayStock: '100 ${input.unit}',
+          createdBy: 'Test User',
+          workflowStatus: 'notStarted',
         ),
       );
     }
@@ -183,6 +199,9 @@ class FakeInventoryRepository extends InventoryRepository {
       numberOfChildren: record.numberOfChildren,
       linkedChildBarcodes: record.linkedChildBarcodes,
       scanCount: record.scanCount + 1,
+      displayStock: record.displayStock,
+      createdBy: record.createdBy,
+      workflowStatus: record.workflowStatus,
     );
     _materials[index] = updated;
     return updated;
@@ -212,6 +231,195 @@ class FakeInventoryRepository extends InventoryRepository {
       numberOfChildren: record.numberOfChildren,
       linkedChildBarcodes: record.linkedChildBarcodes,
       scanCount: 0,
+      displayStock: record.displayStock,
+      createdBy: record.createdBy,
+      workflowStatus: record.workflowStatus,
+    );
+    _materials[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<MaterialRecord> createChildMaterial(
+    CreateChildMaterialInput input,
+  ) async {
+    final parentIndex = _materials.indexWhere(
+      (item) => item.barcode == input.parentBarcode,
+    );
+    if (parentIndex == -1) {
+      throw Exception('Parent material not found.');
+    }
+    final parent = _materials[parentIndex];
+    final childBarcode =
+        'CHD-${_saveCounter.toString().padLeft(4, '0')}-${parent.numberOfChildren + 1}';
+    final created = MaterialRecord(
+      id: _nextId++,
+      barcode: childBarcode,
+      name: input.name,
+      type: parent.type,
+      grade: parent.grade,
+      thickness: parent.thickness,
+      supplier: parent.supplier,
+      unitId: parent.unitId,
+      unit: parent.unit,
+      notes: input.notes,
+      createdAt: DateTime.now(),
+      kind: 'child',
+      parentBarcode: parent.barcode,
+      numberOfChildren: 0,
+      linkedChildBarcodes: const [],
+      scanCount: 0,
+      displayStock: parent.displayStock,
+      createdBy: parent.createdBy,
+      workflowStatus: 'notStarted',
+    );
+    _materials.add(created);
+    return created;
+  }
+
+  @override
+  Future<MaterialRecord> updateMaterial(UpdateMaterialInput input) async {
+    final index = _materials.indexWhere(
+      (item) => item.barcode == input.barcode,
+    );
+    if (index == -1) {
+      throw Exception('Material not found.');
+    }
+    final current = _materials[index];
+    final updated = MaterialRecord(
+      id: current.id,
+      barcode: current.barcode,
+      name: input.name,
+      type: input.type,
+      grade: input.grade,
+      thickness: input.thickness,
+      supplier: input.supplier,
+      unitId: input.unitId,
+      unit: input.unit,
+      notes: input.notes,
+      createdAt: current.createdAt,
+      kind: current.kind,
+      parentBarcode: current.parentBarcode,
+      numberOfChildren: current.numberOfChildren,
+      linkedChildBarcodes: current.linkedChildBarcodes,
+      scanCount: current.scanCount,
+      linkedGroupId: current.linkedGroupId,
+      linkedItemId: current.linkedItemId,
+      displayStock: current.displayStock,
+      createdBy: current.createdBy,
+      workflowStatus: current.workflowStatus,
+    );
+    _materials[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> deleteMaterial(String barcode) async {
+    _materials.removeWhere(
+      (item) => item.barcode == barcode || item.parentBarcode == barcode,
+    );
+  }
+
+  @override
+  Future<MaterialRecord> linkMaterialToGroup(
+    String barcode,
+    int groupId,
+  ) async {
+    final index = _materials.indexWhere((item) => item.barcode == barcode);
+    if (index == -1) {
+      throw Exception('Material not found.');
+    }
+    final current = _materials[index];
+    final updated = MaterialRecord(
+      id: current.id,
+      barcode: current.barcode,
+      name: current.name,
+      type: current.type,
+      grade: current.grade,
+      thickness: current.thickness,
+      supplier: current.supplier,
+      unitId: current.unitId,
+      unit: current.unit,
+      notes: current.notes,
+      createdAt: current.createdAt,
+      kind: current.kind,
+      parentBarcode: current.parentBarcode,
+      numberOfChildren: current.numberOfChildren,
+      linkedChildBarcodes: current.linkedChildBarcodes,
+      scanCount: current.scanCount,
+      linkedGroupId: groupId,
+      linkedItemId: null,
+      displayStock: current.displayStock,
+      createdBy: current.createdBy,
+      workflowStatus: current.workflowStatus,
+    );
+    _materials[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId) async {
+    final index = _materials.indexWhere((item) => item.barcode == barcode);
+    if (index == -1) {
+      throw Exception('Material not found.');
+    }
+    final current = _materials[index];
+    final updated = MaterialRecord(
+      id: current.id,
+      barcode: current.barcode,
+      name: current.name,
+      type: current.type,
+      grade: current.grade,
+      thickness: current.thickness,
+      supplier: current.supplier,
+      unitId: current.unitId,
+      unit: current.unit,
+      notes: current.notes,
+      createdAt: current.createdAt,
+      kind: current.kind,
+      parentBarcode: current.parentBarcode,
+      numberOfChildren: current.numberOfChildren,
+      linkedChildBarcodes: current.linkedChildBarcodes,
+      scanCount: current.scanCount,
+      linkedGroupId: null,
+      linkedItemId: itemId,
+      displayStock: current.displayStock,
+      createdBy: current.createdBy,
+      workflowStatus: current.workflowStatus,
+    );
+    _materials[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<MaterialRecord> unlinkMaterial(String barcode) async {
+    final index = _materials.indexWhere((item) => item.barcode == barcode);
+    if (index == -1) {
+      throw Exception('Material not found.');
+    }
+    final current = _materials[index];
+    final updated = MaterialRecord(
+      id: current.id,
+      barcode: current.barcode,
+      name: current.name,
+      type: current.type,
+      grade: current.grade,
+      thickness: current.thickness,
+      supplier: current.supplier,
+      unitId: current.unitId,
+      unit: current.unit,
+      notes: current.notes,
+      createdAt: current.createdAt,
+      kind: current.kind,
+      parentBarcode: current.parentBarcode,
+      numberOfChildren: current.numberOfChildren,
+      linkedChildBarcodes: current.linkedChildBarcodes,
+      scanCount: current.scanCount,
+      linkedGroupId: null,
+      linkedItemId: null,
+      displayStock: current.displayStock,
+      createdBy: current.createdBy,
+      workflowStatus: current.workflowStatus,
     );
     _materials[index] = updated;
     return updated;
@@ -1070,12 +1278,16 @@ void main() {
   testWidgets('app opens into inventory shell', (tester) async {
     await pumpApp(tester);
 
-    expect(find.text('Inventory Materials'), findsOneWidget);
-    expect(find.text('Add New Big Sheet'), findsOneWidget);
+    expect(find.text('+ Add Stock'), findsOneWidget);
+    expect(find.text('+ New Group'), findsOneWidget);
     expect(find.text('Inventory'), findsWidgets);
     expect(
       find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
-      findsNothing,
+      findsOneWidget,
+    );
+    expect(
+      find.text('Search groups, items, barcode, supplier, or notes'),
+      findsOneWidget,
     );
   });
 
@@ -1087,7 +1299,7 @@ void main() {
     expect(find.text('Inventory'), findsWidgets);
     expect(
       find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
-      findsNothing,
+      findsOneWidget,
     );
 
     await tester.tap(find.text('Clients'));
@@ -1184,12 +1396,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Order No.'),
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
       'ORD-001',
     );
 
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Client'),
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
@@ -1198,30 +1410,35 @@ void main() {
     expect(find.text('Acme'), findsWidgets);
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'P.O. No.'),
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-42',
     );
 
-    await tester.tap(find.widgetWithText(DropdownButtonFormField<int>, 'Item'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bottle - 100').last);
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Color'),
+      find.byKey(const ValueKey<String>('orders-editor-color-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Black').last);
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Finish'),
+      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Matte').last);
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '25');
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      '25',
+    );
 
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Create Order'),
@@ -1251,36 +1468,41 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Order No.'),
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
       'ORD-SHARED-01',
     );
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Client'),
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'P.O. No.'),
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-SHARED',
     );
-    await tester.tap(find.widgetWithText(DropdownButtonFormField<int>, 'Item'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bottle - 100').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Color'),
+      find.byKey(const ValueKey<String>('orders-editor-color-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Black').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Finish'),
+      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Matte').last);
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '11');
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      '11',
+    );
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Create Order'),
     );
@@ -1316,39 +1538,42 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Order No.'),
+        find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
         'ORD-002',
       );
       await tester.tap(
-        find.widgetWithText(DropdownButtonFormField<int>, 'Client'),
+        find.byKey(const ValueKey<String>('orders-editor-client-field')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'P.O. No.'),
+        find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
         'PO-77',
       );
       await tester.tap(
-        find.widgetWithText(DropdownButtonFormField<int>, 'Item'),
+        find.byKey(const ValueKey<String>('orders-editor-item-field')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Bottle - 100').last);
       await tester.pumpAndSettle();
       await tester.tap(
-        find.widgetWithText(DropdownButtonFormField<int>, 'Color'),
+        find.byKey(const ValueKey<String>('orders-editor-color-field')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Black').last);
       await tester.pumpAndSettle();
       await tester.tap(
-        find.widgetWithText(DropdownButtonFormField<int>, 'Finish'),
+        find.byKey(const ValueKey<String>('orders-editor-finish-field')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Matte').last);
       await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), qty);
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+        qty,
+      );
       await tester.ensureVisible(
         find.widgetWithText(ElevatedButton, 'Create Order'),
       );
@@ -1373,40 +1598,45 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Order No.'),
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
       'ORD-004',
     );
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Client'),
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'P.O. No.'),
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-88',
     );
-    await tester.tap(find.widgetWithText(DropdownButtonFormField<int>, 'Item'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bottle - 100').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Color'),
+      find.byKey(const ValueKey<String>('orders-editor-color-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Black').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Finish'),
+      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Matte').last);
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '8');
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      '8',
+    );
 
-    final createStatusField = find
-        .widgetWithText(DropdownButtonFormField<OrderStatus>, 'Status')
-        .last;
+    final createStatusField = find.byKey(
+      const ValueKey<String>('orders-editor-status-field'),
+    );
     await tester.ensureVisible(createStatusField);
     await tester.tap(createStatusField);
     await tester.pumpAndSettle();
@@ -1474,33 +1704,38 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Order No.'),
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
       'ORD-003',
     );
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Client'),
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('No Code Client').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(DropdownButtonFormField<int>, 'Item'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bottle - 100').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Color'),
+      find.byKey(const ValueKey<String>('orders-editor-color-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Black').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(DropdownButtonFormField<int>, 'Finish'),
+      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Matte').last);
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextFormField, 'Qty'), '4');
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      '4',
+    );
 
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Create Order'),
@@ -1521,7 +1756,7 @@ void main() {
       final repository = FakeInventoryRepository();
       await pumpApp(tester, repository: repository);
 
-      await tester.tap(find.text('Add New Big Sheet'));
+      await tester.tap(find.text('+ Add Stock'));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -1558,7 +1793,6 @@ void main() {
           .toList();
 
       expect(find.text('Dolly Sheet'), findsWidgets);
-      expect(find.text('Parent of 4 children'), findsWidgets);
       expect(createdChildren, hasLength(4));
       expect(createdChildren.first.name, 'Dolly Sheet - Child 1');
       expect(createdChildren.last.name, 'Dolly Sheet - Child 4');
@@ -1943,7 +2177,7 @@ void main() {
       unitRepository: unitRepository,
     );
 
-    await tester.tap(find.text('Add New Big Sheet'));
+    await tester.tap(find.text('+ Add Stock'));
     await tester.pumpAndSettle();
 
     await tester.enterText(

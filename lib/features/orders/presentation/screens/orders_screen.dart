@@ -36,7 +36,7 @@ class OrdersScreen extends StatefulWidget {
       builder: (context) => Dialog(
         insetPadding: const EdgeInsets.all(32),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
+          constraints: const BoxConstraints(maxWidth: 847, maxHeight: 680),
           child: body,
         ),
       ),
@@ -85,7 +85,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(10),
               ),
               padding: const EdgeInsets.fromLTRB(0, 14, 0, 18),
               child: Column(
@@ -642,14 +642,12 @@ class _OrdersSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = constraints.maxWidth >= 1100
-            ? (constraints.maxWidth - 40) / 5
-            : 220.0;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
+    const cardWidth = 338.0;
+    return SizedBox(
+      height: 66,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
           children: [
             SizedBox(
               width: cardWidth,
@@ -660,6 +658,7 @@ class _OrdersSummaryRow extends StatelessWidget {
                 onTap: () => onStatusSelected(null),
               ),
             ),
+            const SizedBox(width: 12),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
@@ -669,6 +668,7 @@ class _OrdersSummaryRow extends StatelessWidget {
                 onTap: () => onStatusSelected(OrderStatus.notStarted),
               ),
             ),
+            const SizedBox(width: 12),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
@@ -678,6 +678,7 @@ class _OrdersSummaryRow extends StatelessWidget {
                 onTap: () => onStatusSelected(OrderStatus.inProgress),
               ),
             ),
+            const SizedBox(width: 12),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
@@ -687,6 +688,7 @@ class _OrdersSummaryRow extends StatelessWidget {
                 onTap: () => onStatusSelected(OrderStatus.completed),
               ),
             ),
+            const SizedBox(width: 12),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
@@ -697,8 +699,8 @@ class _OrdersSummaryRow extends StatelessWidget {
               ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1177,191 +1179,292 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         .toList(growable: false);
 
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Add Order',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E2E2))),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Client Code is pulled automatically from the selected client master alias, and orders store both the item and its exact variation.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF6B7280),
+              child: Text(
+                'Create New Order',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF3F3F3F),
                 ),
               ),
-              const SizedBox(height: 24),
-              if (clients.isEmpty || items.isEmpty)
-                _DependencyMessage(
-                  hasClients: clients.isNotEmpty,
-                  hasItems: items.isNotEmpty,
-                )
-              else ...[
-                TextFormField(
-                  controller: _orderNoController,
-                  decoration: _inputDecoration('Order No.'),
-                  textInputAction: TextInputAction.next,
-                  validator: (value) {
-                    if ((value ?? '').trim().isEmpty) {
-                      return 'Enter an order number.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<int>(
-                  initialValue: _selectedClientId,
-                  decoration: _inputDecoration('Client'),
-                  items: clients
-                      .map(
-                        (client) => DropdownMenuItem<int>(
-                          value: client.id,
-                          child: Text(client.displayLabel),
-                        ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(56, 18, 56, 18),
+                child: clients.isEmpty || items.isEmpty
+                    ? _DependencyMessage(
+                        hasClients: clients.isNotEmpty,
+                        hasItems: items.isNotEmpty,
                       )
-                      .toList(growable: false),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedClientId = value;
-                      final selected = _selectedClient(clients);
-                      _clientCodeController.text = _resolveClientCode(selected);
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null) {
-                      return 'Select a client.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _poNumberController,
-                  decoration: _inputDecoration('P.O. No.'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _clientCodeController,
-                  readOnly: true,
-                  decoration: _inputDecoration(
-                    'Client Code',
-                    errorText: _clientCodeError,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<int>(
-                  initialValue: _selectedItemId,
-                  decoration: _inputDecoration('Item'),
-                  items: items
-                      .map(
-                        (item) => DropdownMenuItem<int>(
-                          value: item.id,
-                          child: Text(item.displayName),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedItemId = value;
-                      _selectionState.clear();
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null) {
-                      return 'Select an item.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                ..._buildVariationSelectors(items),
-                TextFormField(
-                  controller: _quantityController,
-                  decoration: _inputDecoration('Qty'),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    final quantity = int.tryParse((value ?? '').trim());
-                    if (quantity == null || quantity <= 0) {
-                      return 'Enter a valid quantity.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<OrderStatus>(
-                  initialValue: _selectedStatus,
-                  decoration: _inputDecoration('Status'),
-                  items: OrderStatus.values
-                      .map(
-                        (status) => DropdownMenuItem<OrderStatus>(
-                          value: status,
-                          child: Text(status.label),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() {
-                      _selectedStatus = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _DateField(
-                        label: 'Start Date',
-                        controller: _startDateController,
-                        onTap: () => _pickDate(
-                          context,
-                          initial: _startDate ?? DateTime.now(),
-                          onSelected: (value) {
-                            setState(() {
-                              _startDate = value;
-                              _startDateController.text = _formatDate(value);
-                            });
-                          },
-                        ),
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final fieldWidth = ((constraints.maxWidth - 24) / 2)
+                              .clamp(260.0, 300.0);
+                          final children = <Widget>[
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Order No',
+                                child: TextFormField(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-order-no-field',
+                                  ),
+                                  controller: _orderNoController,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Enter',
+                                  ),
+                                  textInputAction: TextInputAction.next,
+                                  validator: (value) {
+                                    if ((value ?? '').trim().isEmpty) {
+                                      return 'Enter an order number.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Purchase Order No.',
+                                child: TextFormField(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-po-number-field',
+                                  ),
+                                  controller: _poNumberController,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Enter',
+                                  ),
+                                  textInputAction: TextInputAction.next,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Client',
+                                child: DropdownButtonFormField<int>(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-client-field',
+                                  ),
+                                  isExpanded: true,
+                                  initialValue: _selectedClientId,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Select',
+                                  ),
+                                  items: clients
+                                      .map(
+                                        (client) => DropdownMenuItem<int>(
+                                          value: client.id,
+                                          child: Text(client.displayLabel),
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedClientId = value;
+                                      final selected = _selectedClient(clients);
+                                      _clientCodeController.text =
+                                          _resolveClientCode(selected);
+                                    });
+                                  },
+                                  validator: (value) {
+                                    if (value == null) {
+                                      return 'Select a client.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Client Code',
+                                child: TextFormField(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-client-code-field',
+                                  ),
+                                  controller: _clientCodeController,
+                                  readOnly: true,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Enter',
+                                    errorText: _clientCodeError,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Item',
+                                child: DropdownButtonFormField<int>(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-item-field',
+                                  ),
+                                  isExpanded: true,
+                                  initialValue: _selectedItemId,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Select',
+                                  ),
+                                  items: items
+                                      .map(
+                                        (item) => DropdownMenuItem<int>(
+                                          value: item.id,
+                                          child: Text(item.displayName),
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedItemId = value;
+                                      _selectionState.clear();
+                                    });
+                                  },
+                                  validator: (value) {
+                                    if (value == null) {
+                                      return 'Select an item.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ),
+                            ..._buildVariationSelectors(items, fieldWidth),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Quantity / Unit',
+                                child: TextFormField(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-quantity-field',
+                                  ),
+                                  controller: _quantityController,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Enter',
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  validator: (value) {
+                                    final quantity = int.tryParse(
+                                      (value ?? '').trim(),
+                                    );
+                                    if (quantity == null || quantity <= 0) {
+                                      return 'Enter a valid quantity.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
+                                label: 'Status',
+                                child: DropdownButtonFormField<OrderStatus>(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-status-field',
+                                  ),
+                                  isExpanded: true,
+                                  initialValue: _selectedStatus,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Select',
+                                  ),
+                                  items: OrderStatus.values
+                                      .map(
+                                        (status) =>
+                                            DropdownMenuItem<OrderStatus>(
+                                              value: status,
+                                              child: Text(status.label),
+                                            ),
+                                      )
+                                      .toList(growable: false),
+                                  onChanged: (value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _selectedStatus = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _DateField(
+                                key: const ValueKey<String>(
+                                  'orders-editor-start-date-field',
+                                ),
+                                label: 'Start Date',
+                                controller: _startDateController,
+                                onTap: () => _pickDate(
+                                  context,
+                                  initial: _startDate ?? DateTime.now(),
+                                  onSelected: (value) {
+                                    setState(() {
+                                      _startDate = value;
+                                      _startDateController.text = _formatDate(
+                                        value,
+                                      );
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _DateField(
+                                key: const ValueKey<String>(
+                                  'orders-editor-end-date-field',
+                                ),
+                                label: 'Estimated Completion Date',
+                                controller: _endDateController,
+                                onTap: () => _pickDate(
+                                  context,
+                                  initial:
+                                      _endDate ?? _startDate ?? DateTime.now(),
+                                  onSelected: (value) {
+                                    setState(() {
+                                      _endDate = value;
+                                      _endDateController.text = _formatDate(
+                                        value,
+                                      );
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ];
+                          return Wrap(
+                            spacing: 24,
+                            runSpacing: 18,
+                            children: children,
+                          );
+                        },
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _DateField(
-                        label: 'End Date',
-                        controller: _endDateController,
-                        onTap: () => _pickDate(
-                          context,
-                          initial: _endDate ?? _startDate ?? DateTime.now(),
-                          onSelected: (value) {
-                            setState(() {
-                              _endDate = value;
-                              _endDateController.text = _formatDate(value);
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 24),
-              Row(
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFFE2E2E2))),
+              ),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   AppButton(
@@ -1369,7 +1472,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                     variant: AppButtonVariant.secondary,
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   AppButton(
                     label: 'Create Order',
                     onPressed: clients.isEmpty || items.isEmpty
@@ -1378,8 +1481,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1465,42 +1568,54 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return null;
   }
 
-  List<Widget> _buildVariationSelectors(List<ItemDefinition> items) {
+  List<Widget> _buildVariationSelectors(
+    List<ItemDefinition> items,
+    double fieldWidth,
+  ) {
     final selectedItem = _selectedItem(items);
     if (selectedItem == null) {
       return [
-        DropdownButtonFormField<int>(
-          initialValue: null,
-          decoration: _inputDecoration('Variation Path'),
-          items: const [],
-          onChanged: null,
-          validator: (value) {
-            if (value == null) {
-              return 'Select an item first.';
-            }
-            return null;
-          },
+        SizedBox(
+          width: fieldWidth,
+          child: _OrderEditorField(
+            label: 'Variation Path',
+            child: DropdownButtonFormField<int>(
+              key: const ValueKey<String>('orders-editor-variation-path-field'),
+              isExpanded: true,
+              initialValue: null,
+              decoration: _inputDecoration(hintText: 'Select'),
+              items: const [],
+              onChanged: null,
+              validator: (value) {
+                if (value == null) {
+                  return 'Select an item first.';
+                }
+                return null;
+              },
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
       ];
     }
 
     final steps = _buildSelectionSteps(selectedItem);
     if (steps.isEmpty) {
       return [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF7ED),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFF4C98B)),
-          ),
-          child: const Text(
-            'This item does not have any active orderable leaf paths yet.',
+        SizedBox(
+          width: fieldWidth,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF4C98B)),
+            ),
+            child: const Text(
+              'This item does not have any active orderable leaf paths yet.',
+            ),
           ),
         ),
-        const SizedBox(height: 16),
       ];
     }
 
@@ -1508,52 +1623,63 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     for (var index = 0; index < steps.length; index++) {
       final step = steps[index];
       widgets.add(
-        DropdownButtonFormField<int>(
-          initialValue: step.selectedId,
-          decoration: _inputDecoration(step.label),
-          items: step.options
-              .map(
-                (node) => DropdownMenuItem<int>(
-                  value: node.id,
-                  child: Text(node.name),
-                ),
-              )
-              .toList(growable: false),
-          onChanged: (value) {
-            setState(() {
-              if (value == null) {
-                _selectionState.remove(step.stateKey);
-              } else {
-                _selectionState[step.stateKey] = value;
-              }
-              _clearSelectionAfter(steps, index);
-            });
-          },
-          validator: (value) {
-            if (step.required && value == null) {
-              return 'Select ${step.label.toLowerCase()}.';
-            }
-            return null;
-          },
+        SizedBox(
+          width: fieldWidth,
+          child: _OrderEditorField(
+            label: step.label,
+            child: DropdownButtonFormField<int>(
+              key: ValueKey<String>(
+                'orders-editor-${step.label.toLowerCase().replaceAll(' ', '-')}-field',
+              ),
+              isExpanded: true,
+              initialValue: step.selectedId,
+              decoration: _inputDecoration(hintText: 'Select'),
+              items: step.options
+                  .map(
+                    (node) => DropdownMenuItem<int>(
+                      value: node.id,
+                      child: Text(node.name),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                setState(() {
+                  if (value == null) {
+                    _selectionState.remove(step.stateKey);
+                  } else {
+                    _selectionState[step.stateKey] = value;
+                  }
+                  _clearSelectionAfter(steps, index);
+                });
+              },
+              validator: (value) {
+                if (step.required && value == null) {
+                  return 'Select ${step.label.toLowerCase()}.';
+                }
+                return null;
+              },
+            ),
+          ),
         ),
       );
-      widgets.add(const SizedBox(height: 16));
     }
     final selectedLeaf = _selectedLeafValue(selectedItem);
     if (selectedLeaf != null) {
       widgets.add(
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+        SizedBox(
+          width: fieldWidth,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Text('Selected Path: ${selectedLeaf.displayName}'),
           ),
-          child: Text('Selected Path: ${selectedLeaf.displayName}'),
         ),
       );
-      widgets.add(const SizedBox(height: 16));
     }
     return widgets;
   }
@@ -1703,19 +1829,25 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return client?.alias.trim() ?? '';
   }
 
-  InputDecoration _inputDecoration(String label, {String? errorText}) {
+  InputDecoration _inputDecoration({String? hintText, String? errorText}) {
     return InputDecoration(
-      labelText: label,
+      hintText: hintText,
+      hintStyle: const TextStyle(color: Color(0xFF9D9D9D), fontSize: 14),
       errorText: errorText,
-      filled: true,
-      fillColor: const Color(0xFFF9FAFB),
+      filled: false,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFF6049E3)),
       ),
     );
   }
@@ -2187,8 +2319,35 @@ class _OrdersMessageBanner extends StatelessWidget {
   }
 }
 
+class _OrderEditorField extends StatelessWidget {
+  const _OrderEditorField({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontSize: 14,
+            color: const Color(0xFF373737),
+          ),
+        ),
+        const SizedBox(height: 4),
+        child,
+      ],
+    );
+  }
+}
+
 class _DateField extends StatelessWidget {
   const _DateField({
+    super.key,
     required this.label,
     required this.controller,
     required this.onTap,
@@ -2200,22 +2359,34 @@ class _DateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      readOnly: true,
-      onTap: onTap,
-      decoration: InputDecoration(
-        labelText: label,
-        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
-        filled: true,
-        fillColor: const Color(0xFFF9FAFB),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+    return _OrderEditorField(
+      label: label,
+      child: TextFormField(
+        key: key,
+        controller: controller,
+        readOnly: true,
+        onTap: onTap,
+        decoration: InputDecoration(
+          hintText: 'Enter',
+          hintStyle: const TextStyle(color: Color(0xFF9D9D9D), fontSize: 14),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 11,
+          ),
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF6049E3)),
+          ),
         ),
       ),
     );

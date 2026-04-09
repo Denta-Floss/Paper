@@ -16,6 +16,11 @@ class MaterialRecord {
     required this.numberOfChildren,
     required this.linkedChildBarcodes,
     required this.scanCount,
+    this.linkedGroupId,
+    this.linkedItemId,
+    this.displayStock = '',
+    this.createdBy = '',
+    this.workflowStatus = 'notStarted',
   });
 
   final int? id;
@@ -34,7 +39,13 @@ class MaterialRecord {
   final int numberOfChildren;
   final List<String> linkedChildBarcodes;
   final int scanCount;
+  final int? linkedGroupId;
+  final int? linkedItemId;
+  final String displayStock;
+  final String createdBy;
+  final String workflowStatus;
 
   bool get isParent => kind == 'parent';
   bool get isChild => kind == 'child';
+  bool get hasInheritanceLink => linkedGroupId != null || linkedItemId != null;
 }

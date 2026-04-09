@@ -19,11 +19,16 @@ import 'features/items/presentation/providers/items_provider.dart';
 import 'features/orders/data/repositories/api_order_repository.dart';
 import 'features/orders/data/repositories/order_repository.dart';
 import 'features/orders/presentation/providers/orders_provider.dart';
+import 'features/production_pipelines/data/repositories/mock_pipeline_run_repository.dart';
 import 'features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'features/units/data/repositories/api_unit_repository.dart';
 import 'features/units/data/repositories/unit_repository.dart';
 import 'features/units/presentation/providers/units_provider.dart';
 
+const _isDemoMode = bool.fromEnvironment(
+  'PAPER_DEMO_MODE',
+  defaultValue: false,
+);
 const _defaultApiBaseUrl = kDebugMode
     ? 'http://localhost:18080'
     : 'https://paper-backend.fly.dev';
@@ -45,6 +50,7 @@ class MyApp extends StatelessWidget {
     this.clientRepository,
     this.itemRepository,
     this.orderRepository,
+    this.pipelineRunRepository,
   });
 
   final InventoryRepository? inventoryRepository;
@@ -53,6 +59,7 @@ class MyApp extends StatelessWidget {
   final ClientRepository? clientRepository;
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
+  final PipelineRunRepository? pipelineRunRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +97,7 @@ class MyApp extends StatelessWidget {
           create: (_) => orderRepository ?? _buildOrderRepository(),
         ),
         Provider<PipelineRunRepository>(
-          create: (_) => _buildPipelineRunRepository(),
+          create: (_) => pipelineRunRepository ?? _buildPipelineRunRepository(),
         ),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
@@ -159,31 +166,54 @@ class MyApp extends StatelessWidget {
   InventoryRepository _buildInventoryRepository() {
     return ApiInventoryRepository(
       baseUrl: _apiBaseUrl,
-      useMockResponses: false,
+      useMockResponses: _isDemoMode,
     );
   }
 
   UnitRepository _buildUnitRepository() {
-    return ApiUnitRepository(baseUrl: _apiBaseUrl, useMockResponses: false);
+    return ApiUnitRepository(
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _isDemoMode,
+    );
   }
 
   GroupRepository _buildGroupRepository() {
-    return ApiGroupRepository(baseUrl: _apiBaseUrl, useMockResponses: false);
+    return ApiGroupRepository(
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _isDemoMode,
+    );
   }
 
   ClientRepository _buildClientRepository() {
-    return ApiClientRepository(baseUrl: _apiBaseUrl, useMockResponses: false);
+    return ApiClientRepository(
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _isDemoMode,
+    );
   }
 
   ItemRepository _buildItemRepository() {
-    return ApiItemRepository(baseUrl: _apiBaseUrl, useMockResponses: false);
+    return ApiItemRepository(
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _isDemoMode,
+    );
   }
 
   OrderRepository _buildOrderRepository() {
-    return ApiOrderRepository(baseUrl: _apiBaseUrl, useMockResponses: false);
+    return ApiOrderRepository(
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _isDemoMode,
+    );
   }
 
   PipelineRunRepository _buildPipelineRunRepository() {
+    if (_isDemoMode) {
+      final injectedInventoryRepository = inventoryRepository;
+      final resolvedInventoryRepository =
+          injectedInventoryRepository ?? _buildInventoryRepository();
+      return MockPipelineRunRepository(
+        inventoryRepository: resolvedInventoryRepository,
+      );
+    }
     return ApiPipelineRunRepository(baseUrl: _apiBaseUrl);
   }
 }

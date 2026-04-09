@@ -20,6 +20,11 @@ class InventoryMaterialModel {
     required this.numberOfChildren,
     required this.linkedChildBarcodes,
     required this.scanCount,
+    required this.linkedGroupId,
+    required this.linkedItemId,
+    required this.displayStock,
+    required this.createdBy,
+    required this.workflowStatus,
   });
 
   final int? id;
@@ -38,6 +43,11 @@ class InventoryMaterialModel {
   final int numberOfChildren;
   final List<String> linkedChildBarcodes;
   final int scanCount;
+  final int? linkedGroupId;
+  final int? linkedItemId;
+  final String displayStock;
+  final String createdBy;
+  final String workflowStatus;
 
   factory InventoryMaterialModel.fromMap(Map<String, Object?> map) {
     final rawLinked = map['linked_child_barcodes'] as String?;
@@ -60,6 +70,11 @@ class InventoryMaterialModel {
           ? const []
           : List<String>.from(jsonDecode(rawLinked) as List<dynamic>),
       scanCount: (map['scan_count'] as int?) ?? 0,
+      linkedGroupId: map['linked_group_id'] as int?,
+      linkedItemId: map['linked_item_id'] as int?,
+      displayStock: map['display_stock'] as String? ?? '',
+      createdBy: map['created_by'] as String? ?? '',
+      workflowStatus: map['workflow_status'] as String? ?? 'notStarted',
     );
   }
 
@@ -81,6 +96,11 @@ class InventoryMaterialModel {
       'number_of_children': numberOfChildren,
       'linked_child_barcodes': jsonEncode(linkedChildBarcodes),
       'scan_count': scanCount,
+      'linked_group_id': linkedGroupId,
+      'linked_item_id': linkedItemId,
+      'display_stock': displayStock,
+      'created_by': createdBy,
+      'workflow_status': workflowStatus,
     };
   }
 
@@ -102,6 +122,11 @@ class InventoryMaterialModel {
       numberOfChildren: numberOfChildren,
       linkedChildBarcodes: linkedChildBarcodes,
       scanCount: scanCount,
+      linkedGroupId: linkedGroupId,
+      linkedItemId: linkedItemId,
+      displayStock: displayStock,
+      createdBy: createdBy,
+      workflowStatus: workflowStatus,
     );
   }
 }

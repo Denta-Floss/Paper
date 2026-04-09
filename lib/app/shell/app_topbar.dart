@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/widgets/app_button.dart';
 import '../../features/clients/presentation/providers/clients_provider.dart';
 import '../../features/groups/presentation/providers/groups_provider.dart';
-import '../../features/inventory/presentation/screens/inventory_screen.dart';
+import '../../features/inventory/presentation/providers/inventory_provider.dart';
 import '../../features/items/presentation/providers/items_provider.dart';
 import '../../features/orders/presentation/providers/orders_provider.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
@@ -119,8 +119,13 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
         ),
       );
     case 'inventory':
+      final provider = context.watch<InventoryProvider>();
       return ShellTopStripConfig(
-        title: 'Inventory',
+        search: ShellTopStripSearchConfig(
+          placeholder: 'Search groups, items, barcode, supplier, or notes',
+          initialValue: provider.searchQuery,
+          onChanged: provider.setSearchQuery,
+        ),
         actions: [
           ShellTopStripAction(
             label: 'Open Scan',
@@ -128,12 +133,6 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
             onPressed: () {
               context.read<NavigationProvider>().select('inventory_scan');
             },
-          ),
-          ShellTopStripAction(
-            label: 'Add New Big Sheet',
-            icon: Icons.add,
-            isPrimary: true,
-            onPressed: () => InventoryScreen.openAddMaterialForm(context),
           ),
         ],
       );
