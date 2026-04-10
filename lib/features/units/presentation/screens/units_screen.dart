@@ -181,6 +181,8 @@ class _UnitsTable extends StatelessWidget {
               children: [
                 Expanded(flex: 3, child: _HeaderText('Name')),
                 Expanded(flex: 2, child: _HeaderText('Symbol')),
+                Expanded(flex: 2, child: _HeaderText('Group')),
+                Expanded(flex: 1, child: _HeaderText('Conversion')),
                 Expanded(flex: 1, child: _HeaderText('Used In')),
                 Expanded(flex: 1, child: _HeaderText('Status')),
                 Expanded(flex: 2, child: _HeaderText('Actions')),
@@ -254,6 +256,28 @@ class _UnitRow extends StatelessWidget {
             ),
           ),
           Expanded(flex: 2, child: Text(unit.symbol)),
+          Expanded(
+            flex: 2,
+            child: Text(
+              unit.unitGroupName ?? 'Individual',
+              style: TextStyle(
+                color: unit.isGrouped
+                    ? const Color(0xFF111827)
+                    : const Color(0xFF6B7280),
+                fontWeight: unit.isGrouped ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Text(
+              unit.isGrouped
+                  ? (unit.isBaseUnit
+                        ? 'Base'
+                        : '${unit.conversionFactor}x')
+                  : '-',
+            ),
+          ),
           Expanded(flex: 1, child: Text('${unit.usageCount}')),
           Expanded(
             flex: 1,
@@ -359,15 +383,19 @@ class _UnitEditorSheet extends StatefulWidget {
   State<_UnitEditorSheet> createState() => _UnitEditorSheetState();
 }
 
+enum _UnitGroupingMode { individual, existingFamily, newFamily }
+
 class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _symbolController;
   late final TextEditingController _notesController;
+  late final TextEditingController _groupController;
+  late final TextEditingController _conversionController;
   String? _localError;
+  late _UnitGroupingMode _groupingMode;
 
-  bool get _isReadOnly => widget.unit?.isUsed ?? false;
-
+  bool get _isDetailsLocked => widget.unit?.isUsed ?? false;
   @override
   void initState() {
     super.initState();
@@ -376,8 +404,27 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     );
     _symbolController = TextEditingController(text: widget.unit?.symbol ?? '');
     _notesController = TextEditingController(text: widget.unit?.notes ?? '');
+    _groupController = TextEditingController(
+      text: widget.unit?.unitGroupName ?? '',
+    );
+    _conversionController = TextEditingController(
+      text: widget.unit?.conversionFactor.toString() ?? '1',
+    );
     _nameController.addListener(_handleChange);
     _symbolController.addListener(_handleChange);
+    _groupController.addListener(_handleChange);
+    _conversionController.addListener(_handleChange);
+    _groupingMode = _initialGroupingMode();
+  }
+
+  _UnitGroupingMode _initialGroupingMode() {
+    if (_groupController.text.trim().isEmpty) {
+      return _UnitGroupingMode.individual;
+    }
+    if (widget.unit?.conversionBaseUnitId == null) {
+      return _UnitGroupingMode.newFamily;
+    }
+    return _UnitGroupingMode.existingFamily;
   }
 
   void _handleChange() {
@@ -390,134 +437,380 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   void dispose() {
     _nameController.removeListener(_handleChange);
     _symbolController.removeListener(_handleChange);
+    _groupController.removeListener(_handleChange);
+    _conversionController.removeListener(_handleChange);
     _nameController.dispose();
     _symbolController.dispose();
     _notesController.dispose();
+    _groupController.dispose();
+    _conversionController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<UnitsProvider>();
+    final isNarrow = MediaQuery.of(context).size.width < 900;
+    final groupName = _resolvedGroupName();
+    final baseUnit = provider.findBaseUnitForGroupName(
+      groupName,
+      excludeId: widget.unit?.id,
+    );
+    final requiresConversion =
+        _groupingMode == _UnitGroupingMode.existingFamily && baseUnit != null;
     final title = widget.unit == null
         ? 'Create Unit'
-        : _isReadOnly
-        ? 'View Unit'
+        : _isDetailsLocked
+        ? 'Update Unit Group'
         : 'Edit Unit';
 
     return Material(
       color: Colors.white,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+      borderRadius: BorderRadius.circular(isNarrow ? 28 : 32),
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
           child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(28, 28, 20, 24),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFF8FAFF), Color(0xFFF5F3FF)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFE6EAF4)),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: AppSectionTitle(
-                          title: title,
-                          subtitle: _isReadOnly
-                              ? 'This unit is already used in materials, so its details are locked.'
-                              : 'Define the reusable name and symbol your team will pick in transaction forms.',
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF6C63FF),
+                                        Color(0xFF8B5CF6),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x336C63FF),
+                                        blurRadius: 20,
+                                        offset: Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.straighten_rounded,
+                                    color: Colors.white,
+                                    size: 26,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _DialogEyebrow(
+                                        icon: widget.unit == null
+                                            ? Icons.auto_awesome_rounded
+                                            : Icons.tune_rounded,
+                                        label: _isDetailsLocked
+                                            ? 'Used unit'
+                                            : 'Reusable unit',
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        title,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF1E293B),
+                                            ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _isDetailsLocked
+                                            ? 'This unit is already used in materials. Core details stay locked, but you can still reorganize its family and compatibility.'
+                                            : 'Shape how this unit appears in forms, where it belongs, and how it converts inside a broader unit family.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              color: const Color(0xFF667085),
+                                              height: 1.5,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).maybePop(),
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.82,
+                              ),
+                              foregroundColor: const Color(0xFF334155),
+                              side: const BorderSide(
+                                color: Color(0xFFD9E2F2),
+                              ),
+                            ),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.close),
+                      const SizedBox(height: 18),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          const _DialogInfoPill(
+                            icon: Icons.inventory_2_outlined,
+                            label: 'Shows up across inventory and configurator',
+                          ),
+                          _DialogInfoPill(
+                            icon: Icons.rule_folder_outlined,
+                            label: _groupingMode ==
+                                    _UnitGroupingMode.individual
+                                ? 'Currently standalone'
+                                : 'Family-aware and compatibility-ready',
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  if (_localError != null) ...[
-                    const SizedBox(height: 12),
-                    _UnitsMessageBanner(message: _localError!, isError: true),
-                  ],
-                  if (provider.errorMessage != null &&
-                      provider.isSaving == false) ...[
-                    const SizedBox(height: 12),
-                    _UnitsMessageBanner(
-                      message: provider.errorMessage!,
-                      isError: true,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_localError != null) ...[
+                        _UnitsMessageBanner(
+                          message: _localError!,
+                          isError: true,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (provider.errorMessage != null &&
+                          provider.isSaving == false) ...[
+                        _UnitsMessageBanner(
+                          message: provider.errorMessage!,
+                          isError: true,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      _EditorSectionCard(
+                        icon: Icons.edit_note_rounded,
+                        title: 'Unit basics',
+                        subtitle:
+                            'Give the unit a clear label and symbol your team will recognize at a glance.',
+                        child: Column(
+                          children: [
+                            _UnitTextField(
+                              controller: _nameController,
+                              label: 'Unit name',
+                              helper: 'Shown in pickers and configurator lists',
+                              readOnly: _isDetailsLocked,
+                            ),
+                            const SizedBox(height: 14),
+                            _UnitTextField(
+                              controller: _symbolController,
+                              label: 'Symbol',
+                              helper:
+                                  'Shown beside quantities and on material records',
+                              readOnly: _isDetailsLocked,
+                            ),
+                            const SizedBox(height: 14),
+                            _UnitTextField(
+                              controller: _notesController,
+                              label: 'Notes',
+                              helper: 'Optional context for operators',
+                              readOnly: _isDetailsLocked,
+                              maxLines: 3,
+                              required: false,
+                            ),
+                            if (!_isDetailsLocked) ...[
+                              const SizedBox(height: 14),
+                              _WarningText(
+                                warning: provider
+                                    .checkDuplicate(
+                                      name: _nameController.text,
+                                      symbol: _symbolController.text,
+                                      excludeId: widget.unit?.id,
+                                    )
+                                    .warning,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _EditorSectionCard(
+                        icon: Icons.account_tree_outlined,
+                        title: 'Usage and family',
+                        subtitle:
+                            'Decide whether this unit stays independent or belongs to a group with shared compatibility.',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _UnitGroupingSection(
+                              mode: _groupingMode,
+                              onModeChanged: (mode) {
+                                setState(() {
+                                  _groupingMode = mode;
+                                  if (mode == _UnitGroupingMode.individual) {
+                                    _groupController.text = '';
+                                    _conversionController.text = '1';
+                                  } else if (mode ==
+                                          _UnitGroupingMode.newFamily &&
+                                      _groupController.text.trim().isEmpty) {
+                                    _groupController.text =
+                                        _nameController.text.trim();
+                                    _conversionController.text = '1';
+                                  }
+                                });
+                              },
+                              controller: _groupController,
+                              suggestions: provider.availableGroupNames,
+                              currentUnitName: _nameController.text.trim(),
+                            ),
+                            if (_groupingMode !=
+                                _UnitGroupingMode.individual) ...[
+                              const SizedBox(height: 16),
+                              _ConversionField(
+                                controller: _conversionController,
+                                readOnly: !requiresConversion,
+                                helper: baseUnit == null
+                                    ? 'This unit becomes the base unit for the new family. Conversion stays 1.'
+                                    : '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${baseUnit.symbol}.',
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                _groupingMode == _UnitGroupingMode.newFamily
+                                    ? 'This creates a new unit family with this unit as the reference point.'
+                                    : 'Units in the same family can be used interchangeably anywhere that family is allowed.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: const Color(0xFF475569),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _EditorSectionCard(
+                        icon: Icons.visibility_outlined,
+                        title: 'Live preview',
+                        subtitle:
+                            'A quick glance at how this unit will read inside forms and records.',
+                        child: _PreviewCard(
+                          name: _nameController.text.trim(),
+                          symbol: _symbolController.text.trim(),
+                          groupName: groupName,
+                          conversionText:
+                              _groupingMode == _UnitGroupingMode.individual
+                              ? null
+                              : (baseUnit == null
+                                    ? 'Base unit (1x)'
+                                    : '${_conversionController.text.trim().isEmpty ? '1' : _conversionController.text.trim()}x of ${baseUnit.symbol}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFCFCFF),
+                    border: Border(
+                      top: BorderSide(color: Color(0xFFE7EAF3)),
                     ),
-                  ],
-                  const SizedBox(height: 16),
-                  _UnitTextField(
-                    controller: _nameController,
-                    label: 'Unit name',
-                    helper: 'Shown in pickers and configurator lists',
-                    readOnly: _isReadOnly,
                   ),
-                  const SizedBox(height: 12),
-                  _UnitTextField(
-                    controller: _symbolController,
-                    label: 'Symbol',
-                    helper: 'Shown beside quantities and on material records',
-                    readOnly: _isReadOnly,
-                  ),
-                  const SizedBox(height: 12),
-                  _UnitTextField(
-                    controller: _notesController,
-                    label: 'Notes',
-                    helper: 'Optional context for operators',
-                    readOnly: _isReadOnly,
-                    maxLines: 3,
-                    required: false,
-                  ),
-                  const SizedBox(height: 16),
-                  _PreviewCard(
-                    name: _nameController.text.trim(),
-                    symbol: _symbolController.text.trim(),
-                  ),
-                  const SizedBox(height: 16),
-                  _WarningText(
-                    warning: provider
-                        .checkDuplicate(
-                          name: _nameController.text,
-                          symbol: _symbolController.text,
-                          excludeId: widget.unit?.id,
-                        )
-                        .warning,
-                  ),
-                  const SizedBox(height: 20),
-                  Wrap(
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    runAlignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     spacing: 12,
                     runSpacing: 12,
                     children: [
-                      if (!_isReadOnly)
-                        AppButton(
-                          label: widget.unit == null
-                              ? 'Create Unit'
-                              : 'Save Changes',
-                          isLoading: provider.isSaving,
-                          onPressed: () => _submit(context),
+                      Text(
+                        widget.unit == null
+                            ? 'New units become available immediately in pickers.'
+                            : _isDetailsLocked
+                            ? 'Core details are locked because this unit is already in use.'
+                            : 'Changes apply anywhere this unit is available.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
                         ),
-                      if (widget.unit != null)
-                        AppButton(
-                          label: widget.unit!.isArchived
-                              ? 'Restore'
-                              : 'Archive',
-                          variant: AppButtonVariant.secondary,
-                          isLoading: provider.isSaving,
-                          onPressed: () async {
-                            final result = widget.unit!.isArchived
-                                ? await provider.restoreUnit(widget.unit!.id)
-                                : await provider.archiveUnit(widget.unit!.id);
-                            if (context.mounted && result != null) {
-                              Navigator.of(context).pop(result);
-                            }
-                          },
-                        ),
+                      ),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          if (widget.unit != null)
+                            AppButton(
+                              label: widget.unit!.isArchived
+                                  ? 'Restore'
+                                  : 'Archive',
+                              variant: AppButtonVariant.secondary,
+                              isLoading: provider.isSaving,
+                              onPressed: () async {
+                                final result = widget.unit!.isArchived
+                                    ? await provider.restoreUnit(widget.unit!.id)
+                                    : await provider.archiveUnit(widget.unit!.id);
+                                if (context.mounted && result != null) {
+                                  Navigator.of(context).pop(result);
+                                }
+                              },
+                            ),
+                          AppButton(
+                            label: widget.unit == null
+                                ? 'Create Unit'
+                                : _isDetailsLocked
+                                ? 'Update Group'
+                                : 'Save Changes',
+                            isLoading: provider.isSaving,
+                            onPressed: () => _submit(context),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -526,24 +819,37 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   }
 
   Future<void> _submit(BuildContext context) async {
-    if (_isReadOnly) {
-      return;
-    }
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
     final provider = context.read<UnitsProvider>();
-    final duplicate = provider.checkDuplicate(
-      name: _nameController.text,
-      symbol: _symbolController.text,
+    final baseUnit = provider.findBaseUnitForGroupName(
+      _resolvedGroupName(),
       excludeId: widget.unit?.id,
     );
-    if (duplicate.blockingDuplicate) {
+    final conversionFactor =
+        double.tryParse(_conversionController.text.trim()) ?? 0;
+    if (_groupingMode == _UnitGroupingMode.existingFamily &&
+        baseUnit != null &&
+        conversionFactor <= 0) {
       setState(() {
-        _localError = 'A unit with the same name and symbol already exists.';
+        _localError = 'Enter a conversion factor greater than 0.';
       });
       return;
+    }
+    if (!_isDetailsLocked) {
+      final duplicate = provider.checkDuplicate(
+        name: _nameController.text,
+        symbol: _symbolController.text,
+        excludeId: widget.unit?.id,
+      );
+      if (duplicate.blockingDuplicate) {
+        setState(() {
+          _localError = 'A unit with the same name and symbol already exists.';
+        });
+        return;
+      }
     }
 
     setState(() {
@@ -556,6 +862,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               name: _nameController.text.trim(),
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
+              unitGroupName: _resolvedGroupName(),
+              conversionFactor: baseUnit == null ? 1 : conversionFactor,
             ),
           )
         : await provider.updateUnit(
@@ -564,12 +872,20 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               name: _nameController.text.trim(),
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
+              unitGroupName: _resolvedGroupName(),
+              conversionFactor: baseUnit == null ? 1 : conversionFactor,
             ),
           );
 
     if (context.mounted && result != null) {
       Navigator.of(context).pop(result);
     }
+  }
+
+  String _resolvedGroupName() {
+    return _groupingMode == _UnitGroupingMode.individual
+        ? ''
+        : _groupController.text.trim();
   }
 }
 
@@ -601,13 +917,21 @@ class _UnitTextField extends StatelessWidget {
         helperText: helper,
         filled: true,
         fillColor: readOnly ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 18,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.4),
         ),
       ),
       validator: (value) {
@@ -624,10 +948,17 @@ class _UnitTextField extends StatelessWidget {
 }
 
 class _PreviewCard extends StatelessWidget {
-  const _PreviewCard({required this.name, required this.symbol});
+  const _PreviewCard({
+    required this.name,
+    required this.symbol,
+    required this.groupName,
+    required this.conversionText,
+  });
 
   final String name;
   final String symbol;
+  final String groupName;
+  final String? conversionText;
 
   @override
   Widget build(BuildContext context) {
@@ -635,30 +966,582 @@ class _PreviewCard extends StatelessWidget {
     final previewSymbol = symbol.isEmpty ? 'sym' : symbol;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFF8FAFF), Color(0xFFF7F7FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFDCE3F1)),
+                ),
+                child: Text(
+                  'Preview',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF5B5BD6),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Icon(
+                Icons.visibility_outlined,
+                color: Color(0xFF94A3B8),
+                size: 18,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '12 $previewSymbol',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: const Color(0xFF1E293B),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$previewName ($previewSymbol)',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: const Color(0xFF475569),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _PreviewMetaPill(
+                label: groupName.isEmpty ? 'Mode' : 'Family',
+                value: groupName.isEmpty ? 'Individual' : groupName,
+              ),
+              if (conversionText != null)
+                _PreviewMetaPill(label: 'Conversion', value: conversionText!),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConversionField extends StatelessWidget {
+  const _ConversionField({
+    required this.controller,
+    required this.readOnly,
+    required this.helper,
+  });
+
+  final TextEditingController controller;
+  final bool readOnly;
+  final String helper;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      readOnly: readOnly,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: 'Conversion to group base',
+        helperText: helper,
+        filled: true,
+        fillColor: readOnly ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 18,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.4),
+        ),
+      ),
+      validator: (value) {
+        if (readOnly) {
+          return null;
+        }
+        final parsed = double.tryParse((value ?? '').trim());
+        if (parsed == null || parsed <= 0) {
+          return 'Enter a number greater than 0';
+        }
+        return null;
+      },
+    );
+  }
+}
+
+class _UnitGroupField extends StatelessWidget {
+  const _UnitGroupField({
+    required this.controller,
+    required this.readOnly,
+    required this.suggestions,
+    this.label = 'Unit group',
+    this.helper =
+        'Optional. Type an existing group or a new one. Clear the field to make this unit individual.',
+  });
+
+  final TextEditingController controller;
+  final bool readOnly;
+  final List<String> suggestions;
+  final String label;
+  final String helper;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: controller,
+          readOnly: readOnly,
+          decoration: InputDecoration(
+            labelText: label,
+            helperText: helper,
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 18,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.4),
+            ),
+          ),
+        ),
+        if (suggestions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: suggestions
+                .where((name) => name != controller.text.trim())
+                .take(6)
+                .map(
+                  (name) => InkWell(
+                    onTap: () => controller.text = name,
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Text(
+                        name,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _UnitGroupingSection extends StatelessWidget {
+  const _UnitGroupingSection({
+    required this.mode,
+    required this.onModeChanged,
+    required this.controller,
+    required this.suggestions,
+    required this.currentUnitName,
+  });
+
+  final _UnitGroupingMode mode;
+  final ValueChanged<_UnitGroupingMode> onModeChanged;
+  final TextEditingController controller;
+  final List<String> suggestions;
+  final String currentUnitName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'How should this unit be used?',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1F2937),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Pick the simplest behavior first. You can keep it standalone, join an existing family, or start a new one.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: const Color(0xFF667085),
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _ModeChip(
+              label: 'Keep individual',
+              subtitle: 'Use it as a standalone unit',
+              icon: Icons.looks_one_outlined,
+              selected: mode == _UnitGroupingMode.individual,
+              onTap: () => onModeChanged(_UnitGroupingMode.individual),
+            ),
+            _ModeChip(
+              label: 'Use existing family',
+              subtitle: 'Join a family already in use',
+              icon: Icons.merge_type_rounded,
+              selected: mode == _UnitGroupingMode.existingFamily,
+              onTap: () => onModeChanged(_UnitGroupingMode.existingFamily),
+            ),
+            _ModeChip(
+              label: 'Start new family',
+              subtitle: 'Create a new compatibility set',
+              icon: Icons.add_chart_rounded,
+              selected: mode == _UnitGroupingMode.newFamily,
+              onTap: () => onModeChanged(_UnitGroupingMode.newFamily),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (mode == _UnitGroupingMode.existingFamily)
+          _UnitGroupField(
+            controller: controller,
+            readOnly: false,
+            suggestions: suggestions,
+            label: 'Existing family',
+            helper: 'Pick an existing family name. This unit will inherit compatibility with that family.',
+          ),
+        if (mode == _UnitGroupingMode.newFamily)
+          _UnitGroupField(
+            controller: controller,
+            readOnly: false,
+            suggestions: const [],
+            label: 'New family name',
+            helper: currentUnitName.isEmpty
+                ? 'Give this new family a name like Length, Mass, or Quantity.'
+                : 'A simple family name like "$currentUnitName" or "Length" works well.',
+          ),
+      ],
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 180, maxWidth: 220),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEEF2FF) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? const Color(0xFF6C63FF) : const Color(0xFFD7DBE7),
+          ),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x1A6C63FF),
+                    blurRadius: 16,
+                    offset: Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: selected ? Colors.white : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 18,
+                color: selected
+                    ? const Color(0xFF5145E5)
+                    : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: selected
+                          ? const Color(0xFF4338CA)
+                          : const Color(0xFF0F172A),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: selected
+                          ? const Color(0xFF5B5BD6)
+                          : const Color(0xFF64748B),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditorSectionCard extends StatelessWidget {
+  const _EditorSectionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFCFF),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE5EAF5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: const Color(0xFF5145E5), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: const Color(0xFF1E293B),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF667085),
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _DialogEyebrow extends StatelessWidget {
+  const _DialogEyebrow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD9E2F2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF5145E5)),
+          const SizedBox(width: 6),
           Text(
-            'Preview',
+            label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF6B7280),
+              color: const Color(0xFF4F46E5),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DialogInfoPill extends StatelessWidget {
+  const _DialogInfoPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD9E2F2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: const Color(0xFF64748B)),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF475569),
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 8),
-          Text('12 $previewSymbol'),
-          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewMetaPill extends StatelessWidget {
+  const _PreviewMetaPill({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDCE3F1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Text(
-            '$previewName ($previewSymbol)',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF64748B),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF1E293B),
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),

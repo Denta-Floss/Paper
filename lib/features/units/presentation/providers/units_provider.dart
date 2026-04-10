@@ -54,6 +54,7 @@ class UnitsProvider extends ChangeNotifier {
       }
       return _normalize(unit.name).contains(query) ||
           _normalize(unit.symbol).contains(query) ||
+          _normalize(unit.unitGroupName ?? '').contains(query) ||
           _normalize(unit.notes).contains(query);
     }).toList(growable: false);
   }
@@ -61,6 +62,65 @@ class UnitsProvider extends ChangeNotifier {
   List<UnitDefinition> get activeUnits => _units
       .where((unit) => !unit.isArchived)
       .toList(growable: false);
+
+  List<String> get availableGroupNames {
+    final names = _units
+        .map((unit) => unit.unitGroupName?.trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return names;
+  }
+
+  UnitDefinition? findById(int? id) {
+    if (id == null) {
+      return null;
+    }
+    return _units.where((unit) => unit.id == id).firstOrNull;
+  }
+
+  UnitDefinition? findBaseUnitForGroupName(
+    String groupName, {
+    int? excludeId,
+  }) {
+    final normalized = _normalize(groupName);
+    if (normalized.isEmpty) {
+      return null;
+    }
+    return _units.where((unit) {
+      if (excludeId != null && unit.id == excludeId) {
+        return false;
+      }
+      return _normalize(unit.unitGroupName ?? '') == normalized &&
+          unit.conversionBaseUnitId == null;
+    }).firstOrNull;
+  }
+
+  bool areUnitsCompatible(int? groupUnitId, int? candidateUnitId) {
+    if (groupUnitId == null || candidateUnitId == null) {
+      return false;
+    }
+    if (groupUnitId == candidateUnitId) {
+      return true;
+    }
+    final groupUnit = findById(groupUnitId);
+    final candidate = findById(candidateUnitId);
+    if (groupUnit == null || candidate == null) {
+      return false;
+    }
+    return groupUnit.unitGroupId != null &&
+        groupUnit.unitGroupId == candidate.unitGroupId;
+  }
+
+  List<UnitDefinition> compatibleActiveUnitsForGroupUnitId(int? groupUnitId) {
+    if (groupUnitId == null) {
+      return activeUnits;
+    }
+    return activeUnits
+        .where((unit) => areUnitsCompatible(groupUnitId, unit.id))
+        .toList(growable: false);
+  }
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -84,6 +144,12 @@ class UnitsProvider extends ChangeNotifier {
         final nameCompare = a.name.toLowerCase().compareTo(b.name.toLowerCase());
         if (nameCompare != 0) {
           return nameCompare;
+        }
+        final groupCompare = (a.unitGroupName ?? '').toLowerCase().compareTo(
+          (b.unitGroupName ?? '').toLowerCase(),
+        );
+        if (groupCompare != 0) {
+          return groupCompare;
         }
         return a.symbol.toLowerCase().compareTo(b.symbol.toLowerCase());
       });

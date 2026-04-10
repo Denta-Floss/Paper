@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../items/domain/item_definition.dart';
@@ -534,15 +535,29 @@ class _FilterChipButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<T>(
-      onSelected: onSelected,
-      position: PopupMenuPosition.under,
-      itemBuilder: (context) => values
-          .map(
-            (entry) =>
-                PopupMenuItem<T>(value: entry.value, child: Text(entry.label)),
-          )
-          .toList(growable: false),
+    return InkWell(
+      borderRadius: BorderRadius.horizontal(
+        left: Radius.circular(isFirst ? 10 : 0),
+        right: Radius.circular(isLast ? 10 : 0),
+      ),
+      onTap: () async {
+        final selected = await showSearchableSelectDialog<T>(
+          context: context,
+          title: label,
+          searchHintText: 'Search $label',
+          options: values
+              .map(
+                (entry) => SearchableSelectOption<T>(
+                  value: entry.value,
+                  label: entry.label,
+                ),
+              )
+              .toList(growable: false),
+        );
+        if (selected != null) {
+          onSelected(selected.value);
+        }
+      },
       child: Container(
         height: 34,
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -860,14 +875,8 @@ class _TableHeaderRow extends StatelessWidget {
           _HeaderCell('Date', width: layout.dateWidth),
           _HeaderCell('Party', width: layout.partyWidth),
           _HeaderCell('Item', width: layout.itemWidth),
-          _HeaderCell(
-            'Purchase Order Number',
-            width: layout.poWidth,
-          ),
-          _HeaderCell(
-            'Order Quantity',
-            width: layout.quantityWidth,
-          ),
+          _HeaderCell('Purchase Order Number', width: layout.poWidth),
+          _HeaderCell('Order Quantity', width: layout.quantityWidth),
           _HeaderCell('Start Date', width: layout.startDateWidth),
           _HeaderCell('End Date', width: layout.endDateWidth),
           _HeaderCell('Status', width: layout.statusWidth),
@@ -1138,8 +1147,10 @@ class _OrdersTableLayout {
 
   static _OrdersTableLayout fromContainerWidth(double containerWidth) {
     final contentWidth =
-        (containerWidth - (_OrdersTableMetrics.horizontalPadding * 2))
-            .clamp(0.0, double.infinity);
+        (containerWidth - (_OrdersTableMetrics.horizontalPadding * 2)).clamp(
+          0.0,
+          double.infinity,
+        );
     final baseContentWidth =
         _OrdersTableMetrics.totalWidth -
         (_OrdersTableMetrics.horizontalPadding * 2);
@@ -1307,20 +1318,24 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               width: fieldWidth,
                               child: _OrderEditorField(
                                 label: 'Client',
-                                child: DropdownButtonFormField<int>(
+                                child: SearchableSelectField<int>(
                                   key: const ValueKey<String>(
                                     'orders-editor-client-field',
                                   ),
-                                  isExpanded: true,
-                                  initialValue: _selectedClientId,
+                                  tapTargetKey: const ValueKey<String>(
+                                    'orders-editor-client-field',
+                                  ),
+                                  value: _selectedClientId,
                                   decoration: _inputDecoration(
                                     hintText: 'Select',
                                   ),
-                                  items: clients
+                                  dialogTitle: 'Client',
+                                  searchHintText: 'Search client',
+                                  options: clients
                                       .map(
-                                        (client) => DropdownMenuItem<int>(
+                                        (client) => SearchableSelectOption<int>(
                                           value: client.id,
-                                          child: Text(client.displayLabel),
+                                          label: client.displayLabel,
                                         ),
                                       )
                                       .toList(growable: false),
@@ -1362,20 +1377,24 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               width: fieldWidth,
                               child: _OrderEditorField(
                                 label: 'Item',
-                                child: DropdownButtonFormField<int>(
+                                child: SearchableSelectField<int>(
                                   key: const ValueKey<String>(
                                     'orders-editor-item-field',
                                   ),
-                                  isExpanded: true,
-                                  initialValue: _selectedItemId,
+                                  tapTargetKey: const ValueKey<String>(
+                                    'orders-editor-item-field',
+                                  ),
+                                  value: _selectedItemId,
                                   decoration: _inputDecoration(
                                     hintText: 'Select',
                                   ),
-                                  items: items
+                                  dialogTitle: 'Item',
+                                  searchHintText: 'Search item',
+                                  options: items
                                       .map(
-                                        (item) => DropdownMenuItem<int>(
+                                        (item) => SearchableSelectOption<int>(
                                           value: item.id,
-                                          child: Text(item.displayName),
+                                          label: item.displayName,
                                         ),
                                       )
                                       .toList(growable: false),
@@ -1424,21 +1443,25 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               width: fieldWidth,
                               child: _OrderEditorField(
                                 label: 'Status',
-                                child: DropdownButtonFormField<OrderStatus>(
+                                child: SearchableSelectField<OrderStatus>(
                                   key: const ValueKey<String>(
                                     'orders-editor-status-field',
                                   ),
-                                  isExpanded: true,
-                                  initialValue: _selectedStatus,
+                                  tapTargetKey: const ValueKey<String>(
+                                    'orders-editor-status-field',
+                                  ),
+                                  value: _selectedStatus,
                                   decoration: _inputDecoration(
                                     hintText: 'Select',
                                   ),
-                                  items: OrderStatus.values
+                                  dialogTitle: 'Status',
+                                  searchHintText: 'Search status',
+                                  options: OrderStatus.values
                                       .map(
                                         (status) =>
-                                            DropdownMenuItem<OrderStatus>(
+                                            SearchableSelectOption<OrderStatus>(
                                               value: status,
-                                              child: Text(status.label),
+                                              label: status.label,
                                             ),
                                       )
                                       .toList(growable: false),
@@ -1629,13 +1652,16 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           width: fieldWidth,
           child: _OrderEditorField(
             label: 'Variation Path',
-            child: DropdownButtonFormField<int>(
+            child: SearchableSelectField<int>(
               key: const ValueKey<String>('orders-editor-variation-path-field'),
-              isExpanded: true,
-              initialValue: null,
+              tapTargetKey: const ValueKey<String>(
+                'orders-editor-variation-path-field',
+              ),
+              value: null,
               decoration: _inputDecoration(hintText: 'Select'),
-              items: const [],
-              onChanged: null,
+              options: const <SearchableSelectOption<int>>[],
+              fieldEnabled: false,
+              onChanged: (_) {},
               validator: (value) {
                 if (value == null) {
                   return 'Select an item first.';
@@ -1677,18 +1703,22 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           width: fieldWidth,
           child: _OrderEditorField(
             label: step.label,
-            child: DropdownButtonFormField<int>(
+            child: SearchableSelectField<int>(
               key: ValueKey<String>(
                 'orders-editor-${step.label.toLowerCase().replaceAll(' ', '-')}-field',
               ),
-              isExpanded: true,
-              initialValue: step.selectedId,
+              tapTargetKey: ValueKey<String>(
+                'orders-editor-${step.label.toLowerCase().replaceAll(' ', '-')}-field',
+              ),
+              value: step.selectedId,
               decoration: _inputDecoration(hintText: 'Select'),
-              items: step.options
+              dialogTitle: step.label,
+              searchHintText: 'Search ${step.label.toLowerCase()}',
+              options: step.options
                   .map(
-                    (node) => DropdownMenuItem<int>(
+                    (node) => SearchableSelectOption<int>(
                       value: node.id,
-                      child: Text(node.name),
+                      label: node.name,
                     ),
                   )
                   .toList(growable: false),
@@ -1990,18 +2020,24 @@ class _OrderLifecycleEditorSheetState
             ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF6B7280)),
           ),
           const SizedBox(height: 20),
-          DropdownButtonFormField<OrderStatus>(
-            initialValue: _status,
+          SearchableSelectField<OrderStatus>(
+            key: const ValueKey<String>('orders-lifecycle-status-field'),
+            tapTargetKey: const ValueKey<String>(
+              'orders-lifecycle-status-field',
+            ),
+            value: _status,
             decoration: const InputDecoration(
               labelText: 'Status',
               filled: true,
               fillColor: Color(0xFFF9FAFB),
             ),
-            items: OrderStatus.values
+            dialogTitle: 'Status',
+            searchHintText: 'Search status',
+            options: OrderStatus.values
                 .map(
-                  (status) => DropdownMenuItem<OrderStatus>(
+                  (status) => SearchableSelectOption<OrderStatus>(
                     value: status,
-                    child: Text(status.label),
+                    label: status.label,
                   ),
                 )
                 .toList(growable: false),

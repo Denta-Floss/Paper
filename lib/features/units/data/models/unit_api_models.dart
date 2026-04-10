@@ -7,6 +7,11 @@ class UnitDto {
     required this.name,
     required this.symbol,
     required this.notes,
+    required this.unitGroupId,
+    required this.unitGroupName,
+    required this.conversionFactor,
+    required this.conversionBaseUnitId,
+    required this.conversionBaseUnitName,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -17,6 +22,11 @@ class UnitDto {
   final String name;
   final String symbol;
   final String notes;
+  final int? unitGroupId;
+  final String? unitGroupName;
+  final double conversionFactor;
+  final int? conversionBaseUnitId;
+  final String? conversionBaseUnitName;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;
@@ -28,6 +38,11 @@ class UnitDto {
       name: json['name'] as String? ?? '',
       symbol: json['symbol'] as String? ?? '',
       notes: json['notes'] as String? ?? '',
+      unitGroupId: json['unitGroupId'] as int?,
+      unitGroupName: json['unitGroupName'] as String?,
+      conversionFactor: (json['conversionFactor'] as num? ?? 1).toDouble(),
+      conversionBaseUnitId: json['conversionBaseUnitId'] as int?,
+      conversionBaseUnitName: json['conversionBaseUnitName'] as String?,
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
       createdAt:
@@ -45,6 +60,11 @@ class UnitDto {
       name: name,
       symbol: symbol,
       notes: notes,
+      unitGroupId: unitGroupId,
+      unitGroupName: unitGroupName,
+      conversionFactor: conversionFactor,
+      conversionBaseUnitId: conversionBaseUnitId,
+      conversionBaseUnitName: conversionBaseUnitName,
       isArchived: isArchived,
       usageCount: usageCount,
       createdAt: createdAt,
@@ -92,22 +112,34 @@ class CreateUnitRequest {
     required this.name,
     required this.symbol,
     required this.notes,
+    required this.unitGroupName,
+    required this.conversionFactor,
   });
 
   final String name;
   final String symbol;
   final String notes;
+  final String unitGroupName;
+  final double conversionFactor;
 
   factory CreateUnitRequest.fromInput(CreateUnitInput input) {
     return CreateUnitRequest(
       name: input.name,
       symbol: input.symbol,
       notes: input.notes,
+      unitGroupName: input.unitGroupName,
+      conversionFactor: input.conversionFactor,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'symbol': symbol, 'notes': notes};
+    return {
+      'name': name,
+      'symbol': symbol,
+      'notes': notes,
+      'unitGroupName': unitGroupName,
+      'conversionFactor': conversionFactor,
+    };
   }
 }
 
@@ -116,21 +148,33 @@ class UpdateUnitRequest {
     required this.name,
     required this.symbol,
     required this.notes,
+    required this.unitGroupName,
+    required this.conversionFactor,
   });
 
   final String name;
   final String symbol;
   final String notes;
+  final String unitGroupName;
+  final double conversionFactor;
 
   factory UpdateUnitRequest.fromInput(UpdateUnitInput input) {
     return UpdateUnitRequest(
       name: input.name,
       symbol: input.symbol,
       notes: input.notes,
+      unitGroupName: input.unitGroupName,
+      conversionFactor: input.conversionFactor,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'symbol': symbol, 'notes': notes};
+    return {
+      'name': name,
+      'symbol': symbol,
+      'notes': notes,
+      'unitGroupName': unitGroupName,
+      'conversionFactor': conversionFactor,
+    };
   }
 }

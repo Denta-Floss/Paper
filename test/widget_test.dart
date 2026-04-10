@@ -434,6 +434,11 @@ class FakeUnitRepository extends UnitRepository {
       name: 'Kilogram',
       symbol: 'Kg',
       notes: 'Seeded unit',
+      unitGroupId: 1,
+      unitGroupName: 'Mass',
+      conversionFactor: 1,
+      conversionBaseUnitId: null,
+      conversionBaseUnitName: null,
       isArchived: false,
       usageCount: 3,
       createdAt: DateTime(2024),
@@ -444,6 +449,11 @@ class FakeUnitRepository extends UnitRepository {
       name: 'Sheet',
       symbol: 'Sheet',
       notes: 'Seeded unit',
+      unitGroupId: null,
+      unitGroupName: null,
+      conversionFactor: 1,
+      conversionBaseUnitId: null,
+      conversionBaseUnitName: null,
       isArchived: false,
       usageCount: 2,
       createdAt: DateTime(2024),
@@ -454,6 +464,11 @@ class FakeUnitRepository extends UnitRepository {
       name: 'Legacy',
       symbol: 'lg',
       notes: 'Archived unit',
+      unitGroupId: null,
+      unitGroupName: null,
+      conversionFactor: 1,
+      conversionBaseUnitId: null,
+      conversionBaseUnitName: null,
       isArchived: true,
       usageCount: 0,
       createdAt: DateTime(2024),
@@ -485,6 +500,17 @@ class FakeUnitRepository extends UnitRepository {
       name: input.name.trim(),
       symbol: input.symbol.trim(),
       notes: input.notes.trim(),
+      unitGroupId: input.unitGroupName.trim().isEmpty ? null : 99,
+      unitGroupName: input.unitGroupName.trim().isEmpty
+          ? null
+          : input.unitGroupName.trim(),
+      conversionFactor: input.unitGroupName.trim().isEmpty
+          ? 1
+          : input.conversionFactor,
+      conversionBaseUnitId: input.unitGroupName.trim().isEmpty ? null : 1,
+      conversionBaseUnitName: input.unitGroupName.trim().isEmpty
+          ? null
+          : 'Kilogram',
       isArchived: false,
       usageCount: 0,
       createdAt: DateTime.now(),
@@ -499,13 +525,32 @@ class FakeUnitRepository extends UnitRepository {
     final index = _units.indexWhere((unit) => unit.id == input.id);
     final current = _units[index];
     if (current.usageCount > 0) {
-      throw Exception('Used units cannot be edited.');
+      final detailsChanged =
+          current.name != input.name.trim() ||
+          current.symbol != input.symbol.trim() ||
+          current.notes != input.notes.trim();
+      if (detailsChanged) {
+        throw Exception('Used units cannot change name, symbol, or notes.');
+      }
     }
     final updated = UnitDefinition(
       id: current.id,
       name: input.name.trim(),
       symbol: input.symbol.trim(),
       notes: input.notes.trim(),
+      unitGroupId: input.unitGroupName.trim().isEmpty
+          ? null
+          : current.unitGroupId ?? 99,
+      unitGroupName: input.unitGroupName.trim().isEmpty
+          ? null
+          : input.unitGroupName.trim(),
+      conversionFactor: input.unitGroupName.trim().isEmpty
+          ? 1
+          : input.conversionFactor,
+      conversionBaseUnitId: input.unitGroupName.trim().isEmpty ? null : 1,
+      conversionBaseUnitName: input.unitGroupName.trim().isEmpty
+          ? null
+          : 'Kilogram',
       isArchived: current.isArchived,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -524,6 +569,11 @@ class FakeUnitRepository extends UnitRepository {
       name: current.name,
       symbol: current.symbol,
       notes: current.notes,
+      unitGroupId: current.unitGroupId,
+      unitGroupName: current.unitGroupName,
+      conversionFactor: current.conversionFactor,
+      conversionBaseUnitId: current.conversionBaseUnitId,
+      conversionBaseUnitName: current.conversionBaseUnitName,
       isArchived: true,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -542,6 +592,11 @@ class FakeUnitRepository extends UnitRepository {
       name: current.name,
       symbol: current.symbol,
       notes: current.notes,
+      unitGroupId: current.unitGroupId,
+      unitGroupName: current.unitGroupName,
+      conversionFactor: current.conversionFactor,
+      conversionBaseUnitId: current.conversionBaseUnitId,
+      conversionBaseUnitName: current.conversionBaseUnitName,
       isArchived: false,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -1708,9 +1763,9 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Edit'));
     await tester.pumpAndSettle();
 
-    final editStatusField = find
-        .widgetWithText(DropdownButtonFormField<OrderStatus>, 'Status')
-        .last;
+    final editStatusField = find.byKey(
+      const ValueKey<String>('orders-lifecycle-status-field'),
+    );
     await tester.ensureVisible(editStatusField);
     await tester.tap(editStatusField);
     await tester.pumpAndSettle();
@@ -1894,11 +1949,11 @@ void main() {
       'Brown',
     );
 
-    final parentDropdown = find.byWidgetPredicate(
-      (widget) => widget is DropdownButtonFormField<int?>,
+    final parentDropdown = find.byKey(
+      const ValueKey<String>('groups-parent-field'),
     );
-    final unitDropdown = find.byWidgetPredicate(
-      (widget) => widget is DropdownButtonFormField<int>,
+    final unitDropdown = find.byKey(
+      const ValueKey<String>('groups-unit-field'),
     );
 
     await tester.tap(parentDropdown.first);
@@ -2051,15 +2106,12 @@ void main() {
       '200',
     );
 
-    final dropdowns = find.byWidgetPredicate(
-      (widget) => widget is DropdownButtonFormField<int>,
-    );
-    await tester.tap(dropdowns.at(0));
+    await tester.tap(find.byKey(const ValueKey<String>('items-unit-field')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sheet (Sheet)').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(dropdowns.at(1));
+    await tester.tap(find.byKey(const ValueKey<String>('items-group-field')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Paper').last);
     await tester.pumpAndSettle();
@@ -2144,15 +2196,12 @@ void main() {
       '100',
     );
 
-    final dropdowns = find.byWidgetPredicate(
-      (widget) => widget is DropdownButtonFormField<int>,
-    );
-    await tester.tap(dropdowns.at(0));
+    await tester.tap(find.byKey(const ValueKey<String>('items-unit-field')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sheet (Sheet)').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(dropdowns.at(1));
+    await tester.tap(find.byKey(const ValueKey<String>('items-group-field')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Paper').last);
     await tester.pumpAndSettle();

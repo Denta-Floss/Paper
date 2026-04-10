@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/searchable_select.dart';
+
 class PPFilterToolbar extends StatelessWidget {
   const PPFilterToolbar({
     super.key,
@@ -374,65 +376,18 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
   bool _open = false;
 
   Future<void> _openMenu() async {
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) {
-      return;
-    }
-
-    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final bottomRight = box.localToGlobal(
-      box.size.bottomRight(Offset.zero),
-      ancestor: overlay,
-    );
-    final rect = Rect.fromPoints(topLeft, bottomRight);
-    final menuWidth = box.size.width;
-
     setState(() => _open = true);
-    final selected = await showMenu<String>(
+    final selected = await showSearchableSelectDialog<String>(
       context: context,
-      color: Colors.white,
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(rect.left, rect.bottom + 4, menuWidth, 0),
-        Offset.zero & overlay.size,
-      ),
-      items: widget.options
+      title: widget.label,
+      searchHintText: 'Search ${widget.label}',
+      selectedValue: widget.value,
+      options: widget.options
           .map(
-            (option) => PopupMenuItem<String>(
-              value: option,
-              height: 34,
-              child: SizedBox(
-                width: menuWidth - 32,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        option,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: const Color(0xFF2F3744),
-                          fontWeight: option == widget.value
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                    if (option == widget.value)
-                      const Icon(
-                        Icons.check,
-                        size: 14,
-                        color: Color(0xFF6049E3),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+            (option) =>
+                SearchableSelectOption<String>(value: option, label: option),
           )
-          .toList(),
+          .toList(growable: false),
     );
 
     if (!mounted) {
@@ -440,7 +395,7 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
     }
     setState(() => _open = false);
     if (selected != null) {
-      widget.onChanged(selected);
+      widget.onChanged(selected.value);
     }
   }
 
@@ -561,64 +516,25 @@ class _AnimatedFilterSelectorState extends State<_AnimatedFilterSelector> {
   bool _open = false;
 
   Future<void> _openAnchoredMenu() async {
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) {
-      return;
-    }
-
-    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final bottomRight = box.localToGlobal(
-      box.size.bottomRight(Offset.zero),
-      ancestor: overlay,
-    );
-    final rect = Rect.fromPoints(topLeft, bottomRight);
-
     setState(() => _open = true);
-    final selected = await showMenu<String>(
+    final selected = await showSearchableSelectDialog<String>(
       context: context,
-      color: Colors.white,
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(rect.left, rect.bottom + 6, rect.width, 0),
-        Offset.zero & overlay.size,
-      ),
-      items: widget.options
+      title: widget.label,
+      searchHintText: 'Search ${widget.label}',
+      selectedValue: widget.selectedValue,
+      options: widget.options
           .map(
-            (option) => PopupMenuItem<String>(
-              value: option,
-              height: 38,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      option,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: widget.compact ? 13 : 11,
-                        color: const Color(0xFF2F3744),
-                        fontWeight: option == widget.selectedValue
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                  if (option == widget.selectedValue)
-                    const Icon(Icons.check, size: 14, color: Color(0xFF6049E3)),
-                ],
-              ),
-            ),
+            (option) =>
+                SearchableSelectOption<String>(value: option, label: option),
           )
-          .toList(),
+          .toList(growable: false),
     );
     if (!mounted) {
       return;
     }
     setState(() => _open = false);
     if (selected != null) {
-      widget.onChanged(selected);
+      widget.onChanged(selected.value);
     }
   }
 

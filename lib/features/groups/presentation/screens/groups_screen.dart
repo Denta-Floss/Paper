@@ -5,6 +5,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/group_definition.dart';
@@ -484,8 +485,9 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     readOnly: _isReadOnly,
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<int?>(
-                    initialValue:
+                  SearchableSelectField<int?>(
+                    tapTargetKey: const ValueKey<String>('groups-parent-field'),
+                    value:
                         availableParents.any(
                           (group) => group.id == _selectedParentId,
                         )
@@ -495,29 +497,31 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                       label: 'Parent group',
                       helper: 'Optional. Leave empty for top-level groups',
                     ),
-                    items: [
-                      const DropdownMenuItem<int?>(
+                    dialogTitle: 'Parent group',
+                    searchHintText: 'Search parent group',
+                    fieldEnabled: !_isReadOnly,
+                    options: [
+                      const SearchableSelectOption<int?>(
                         value: null,
-                        child: Text('Top level'),
+                        label: 'Top level',
                       ),
                       ...availableParents.map(
-                        (group) => DropdownMenuItem<int?>(
+                        (group) => SearchableSelectOption<int?>(
                           value: group.id,
-                          child: Text(group.name),
+                          label: group.name,
                         ),
                       ),
                     ],
-                    onChanged: _isReadOnly
-                        ? null
-                        : (value) {
-                            setState(() {
-                              _selectedParentId = value;
-                            });
-                          },
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedParentId = value;
+                      });
+                    },
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    initialValue:
+                  SearchableSelectField<int>(
+                    tapTargetKey: const ValueKey<String>('groups-unit-field'),
+                    value:
                         availableUnits.any((unit) => unit.id == _selectedUnitId)
                         ? _selectedUnitId
                         : selectedUnit?.id,
@@ -525,31 +529,30 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                       label: 'Unit of group',
                       helper: 'Required. Comes from active Configurator Units',
                     ),
-                    items: [
+                    dialogTitle: 'Unit of group',
+                    searchHintText: 'Search unit',
+                    fieldEnabled: !_isReadOnly,
+                    options: [
                       ...availableUnits.map(
-                        (unit) => DropdownMenuItem<int>(
+                        (unit) => SearchableSelectOption<int>(
                           value: unit.id,
-                          child: Text(unit.displayLabel),
+                          label: unit.displayLabel,
                         ),
                       ),
                       if (selectedUnit != null &&
                           availableUnits.every(
                             (unit) => unit.id != selectedUnit.id,
                           ))
-                        DropdownMenuItem<int>(
+                        SearchableSelectOption<int>(
                           value: selectedUnit.id,
-                          child: Text(
-                            '${selectedUnit.displayLabel} (archived)',
-                          ),
+                          label: '${selectedUnit.displayLabel} (archived)',
                         ),
                     ],
-                    onChanged: _isReadOnly
-                        ? null
-                        : (value) {
-                            setState(() {
-                              _selectedUnitId = value;
-                            });
-                          },
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedUnitId = value;
+                      });
+                    },
                     validator: (value) {
                       if (value == null) {
                         return 'Required';

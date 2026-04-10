@@ -57,6 +57,21 @@ class ApiUnitRepository implements UnitRepository {
         name: input.name.trim(),
         symbol: input.symbol.trim(),
         notes: input.notes.trim(),
+        unitGroupId: input.unitGroupName.trim().isEmpty
+            ? null
+            : _mockGroupIdForName(input.unitGroupName.trim()),
+        unitGroupName: input.unitGroupName.trim().isEmpty
+            ? null
+            : input.unitGroupName.trim(),
+        conversionFactor: input.unitGroupName.trim().isEmpty
+            ? 1
+            : input.conversionFactor,
+        conversionBaseUnitId: _mockResolveBaseUnitId(
+          input.unitGroupName.trim(),
+        ),
+        conversionBaseUnitName: _mockResolveBaseUnitName(
+          input.unitGroupName.trim(),
+        ),
         isArchived: false,
         usageCount: 0,
         createdAt: DateTime.now(),
@@ -101,6 +116,25 @@ class ApiUnitRepository implements UnitRepository {
         name: input.name.trim(),
         symbol: input.symbol.trim(),
         notes: input.notes.trim(),
+        unitGroupId: input.unitGroupName.trim().isEmpty
+            ? null
+            : _mockGroupIdForName(input.unitGroupName.trim()),
+        unitGroupName: input.unitGroupName.trim().isEmpty
+            ? null
+            : input.unitGroupName.trim(),
+        conversionFactor: input.unitGroupName.trim().isEmpty
+            ? 1
+            : (_mockResolveBaseUnitId(input.unitGroupName.trim()) == null
+                  ? 1
+                  : input.conversionFactor),
+        conversionBaseUnitId: _mockResolveBaseUnitId(
+          input.unitGroupName.trim(),
+          excludeId: current.id,
+        ),
+        conversionBaseUnitName: _mockResolveBaseUnitName(
+          input.unitGroupName.trim(),
+          excludeId: current.id,
+        ),
         isArchived: current.isArchived,
         usageCount: current.usageCount,
         createdAt: current.createdAt,
@@ -151,6 +185,11 @@ class ApiUnitRepository implements UnitRepository {
         name: current.name,
         symbol: current.symbol,
         notes: current.notes,
+        unitGroupId: current.unitGroupId,
+        unitGroupName: current.unitGroupName,
+        conversionFactor: current.conversionFactor,
+        conversionBaseUnitId: current.conversionBaseUnitId,
+        conversionBaseUnitName: current.conversionBaseUnitName,
         isArchived: archive,
         usageCount: current.usageCount,
         createdAt: current.createdAt,
@@ -188,6 +227,11 @@ class ApiUnitRepository implements UnitRepository {
           name: 'Kilogram',
           symbol: 'Kg',
           notes: 'Seeded unit',
+          unitGroupId: 1,
+          unitGroupName: 'Mass',
+          conversionFactor: 1,
+          conversionBaseUnitId: null,
+          conversionBaseUnitName: null,
           isArchived: false,
           usageCount: 3,
           createdAt: now,
@@ -198,6 +242,11 @@ class ApiUnitRepository implements UnitRepository {
           name: 'Sheet',
           symbol: 'Sheet',
           notes: 'Seeded unit',
+          unitGroupId: null,
+          unitGroupName: null,
+          conversionFactor: 1,
+          conversionBaseUnitId: null,
+          conversionBaseUnitName: null,
           isArchived: false,
           usageCount: 2,
           createdAt: now,
@@ -227,6 +276,49 @@ class ApiUnitRepository implements UnitRepository {
             : body.trim(),
       };
     }
+  }
+
+  int _mockGroupIdForName(String name) {
+    final normalized = name.toLowerCase();
+    final existing = _mockUnits
+        .where((unit) => (unit.unitGroupName ?? '').toLowerCase() == normalized)
+        .map((unit) => unit.unitGroupId)
+        .whereType<int>()
+        .toList();
+    if (existing.isNotEmpty) {
+      return existing.first;
+    }
+    return (_mockUnits.map((unit) => unit.unitGroupId ?? 0).fold<int>(
+          0,
+          (previous, value) => value > previous ? value : previous,
+        )) +
+        1;
+  }
+
+  int? _mockResolveBaseUnitId(String groupName, {int? excludeId}) {
+    if (groupName.trim().isEmpty) {
+      return null;
+    }
+    final normalized = groupName.trim().toLowerCase();
+    final existing = _mockUnits.where((unit) {
+      if (excludeId != null && unit.id == excludeId) {
+        return false;
+      }
+      return (unit.unitGroupName ?? '').toLowerCase() == normalized &&
+          unit.conversionBaseUnitId == null;
+    }).toList();
+    return existing.isEmpty ? null : existing.first.id;
+  }
+
+  String? _mockResolveBaseUnitName(String groupName, {int? excludeId}) {
+    final baseId = _mockResolveBaseUnitId(groupName, excludeId: excludeId);
+    if (baseId == null) {
+      return null;
+    }
+    return _mockUnits
+        .where((unit) => unit.id == baseId)
+        .firstOrNull
+        ?.name;
   }
 }
 

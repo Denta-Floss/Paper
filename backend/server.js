@@ -134,6 +134,11 @@ function rowToUnitDto(row) {
     name: row.name || '',
     symbol: row.symbol || '',
     notes: row.notes || '',
+    unitGroupId: row.unit_group_id || null,
+    unitGroupName: row.unit_group_name || null,
+    conversionFactor: Number(row.conversion_factor || 1),
+    conversionBaseUnitId: row.conversion_base_unit_id || null,
+    conversionBaseUnitName: row.conversion_base_unit_name || null,
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -502,10 +507,22 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS unit_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS units (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       symbol TEXT NOT NULL,
+      unit_group_id INTEGER REFERENCES unit_groups(id),
+      conversion_factor REAL NOT NULL DEFAULT 1,
+      conversion_base_unit_id INTEGER REFERENCES units(id),
       notes TEXT DEFAULT '',
       is_archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -625,6 +642,9 @@ async function initDb() {
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
+  await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
+  await ensureColumnExists('units', 'conversion_factor', 'REAL NOT NULL DEFAULT 1');
+  await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
 
@@ -751,8 +771,8 @@ async function bootstrapUnitsFromMaterials() {
     seen.add(normalized);
     await run(
       `
-      INSERT INTO units (name, symbol, notes, is_archived, created_at, updated_at)
-      VALUES (?, ?, '', 0, ?, ?)
+      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, notes, is_archived, created_at, updated_at)
+      VALUES (?, ?, NULL, 1, NULL, '', 0, ?, ?)
       `,
       [value, value, now, now],
     );
@@ -776,8 +796,8 @@ async function seedUnitsIfEmpty() {
   for (const unit of units) {
     await run(
       `
-      INSERT INTO units (name, symbol, notes, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, ?)
+      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, notes, is_archived, created_at, updated_at)
+      VALUES (?, ?, NULL, 1, NULL, ?, 0, ?, ?)
       `,
       [unit.name, unit.symbol, unit.notes, now, now],
     );
@@ -1017,8 +1037,12 @@ async function getUnitRowById(id) {
     `
     SELECT
       units.*,
+      unit_groups.name AS unit_group_name,
+      base_unit.name AS conversion_base_unit_name,
       COUNT(materials.id) AS usage_count
     FROM units
+    LEFT JOIN unit_groups ON unit_groups.id = units.unit_group_id
+    LEFT JOIN units AS base_unit ON base_unit.id = units.conversion_base_unit_id
     LEFT JOIN materials ON materials.unit_id = units.id
     WHERE units.id = ?
     GROUP BY units.id
@@ -1581,6 +1605,14 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
   const unitRow = await get('SELECT * FROM units WHERE id = ?', [normalizedUnitId]);
   if (!unitRow || unitRow.is_archived) {
     const error = new Error('Selected unit does not exist or is archived.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const groupUnitRow = await get('SELECT * FROM units WHERE id = ?', [groupRow.unit_id]);
+  if (!areUnitsCompatible(groupUnitRow, unitRow)) {
+    const error = new Error(
+      'Selected unit is not compatible with the chosen group. Use the group unit or another unit from the same unit family.',
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -2583,11 +2615,15 @@ async function getUnitsWithUsage() {
   return all(`
     SELECT
       units.*,
+      unit_groups.name AS unit_group_name,
+      base_unit.name AS conversion_base_unit_name,
       COUNT(materials.id) AS usage_count
     FROM units
+    LEFT JOIN unit_groups ON unit_groups.id = units.unit_group_id
+    LEFT JOIN units AS base_unit ON base_unit.id = units.conversion_base_unit_id
     LEFT JOIN materials ON materials.unit_id = units.id
     GROUP BY units.id
-    ORDER BY units.is_archived ASC, LOWER(units.name) ASC, LOWER(units.symbol) ASC
+    ORDER BY units.is_archived ASC, LOWER(COALESCE(unit_groups.name, '')) ASC, LOWER(units.name) ASC, LOWER(units.symbol) ASC
   `);
 }
 
@@ -2606,10 +2642,23 @@ async function findUnitDuplicate({ name, symbol, excludeId = null }) {
   }) || null;
 }
 
-async function saveUnit({ name, symbol, notes = '', id = null }) {
+async function saveUnit({
+  name,
+  symbol,
+  notes = '',
+  unitGroupName = '',
+  conversionFactor = 1,
+  id = null,
+}) {
   const trimmedName = String(name || '').trim();
   const trimmedSymbol = String(symbol || '').trim();
   const trimmedNotes = String(notes || '').trim();
+  const resolvedUnitGroupId = await resolveUnitGroupId(unitGroupName);
+  const resolvedConversion = await resolveUnitConversion({
+    unitGroupId: resolvedUnitGroupId,
+    conversionFactor,
+    excludeId: id,
+  });
   if (!trimmedName || !trimmedSymbol) {
     throw new Error('name and symbol are required.');
   }
@@ -2629,10 +2678,19 @@ async function saveUnit({ name, symbol, notes = '', id = null }) {
   if (id == null) {
     const result = await run(
       `
-      INSERT INTO units (name, symbol, notes, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, ?)
+      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, notes, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
-      [trimmedName, trimmedSymbol, trimmedNotes, now, now],
+      [
+        trimmedName,
+        trimmedSymbol,
+        resolvedUnitGroupId,
+        resolvedConversion.conversionFactor,
+        resolvedConversion.conversionBaseUnitId,
+        trimmedNotes,
+        now,
+        now,
+      ],
     );
     return getUnitRowById(result.lastID);
   }
@@ -2644,16 +2702,103 @@ async function saveUnit({ name, symbol, notes = '', id = null }) {
     throw error;
   }
   if ((existing.usage_count || 0) > 0) {
-    const error = new Error('Used units cannot be edited.');
-    error.statusCode = 409;
-    throw error;
+    const detailsChanged =
+      normalizeUnitValue(existing.name) !== normalizeUnitValue(trimmedName) ||
+      normalizeUnitValue(existing.symbol) !== normalizeUnitValue(trimmedSymbol) ||
+      String(existing.notes || '').trim() !== trimmedNotes;
+    if (detailsChanged) {
+      const error = new Error('Used units cannot change name, symbol, or notes.');
+      error.statusCode = 409;
+      throw error;
+    }
   }
 
   await run(
-    'UPDATE units SET name = ?, symbol = ?, notes = ?, updated_at = ? WHERE id = ?',
-    [trimmedName, trimmedSymbol, trimmedNotes, now, id],
+    'UPDATE units SET name = ?, symbol = ?, unit_group_id = ?, conversion_factor = ?, conversion_base_unit_id = ?, notes = ?, updated_at = ? WHERE id = ?',
+    [
+      trimmedName,
+      trimmedSymbol,
+      resolvedUnitGroupId,
+      resolvedConversion.conversionFactor,
+      resolvedConversion.conversionBaseUnitId,
+      trimmedNotes,
+      now,
+      id,
+    ],
   );
   return getUnitRowById(id);
+}
+
+async function getUnitGroupRowByName(name) {
+  const normalized = normalizeUnitValue(name);
+  if (!normalized) {
+    return null;
+  }
+  const rows = await all('SELECT * FROM unit_groups');
+  return rows.find((row) => normalizeUnitValue(row.name) === normalized) || null;
+}
+
+async function resolveUnitGroupId(unitGroupName) {
+  const trimmed = String(unitGroupName || '').trim();
+  if (!trimmed) {
+    return null;
+  }
+  const existing = await getUnitGroupRowByName(trimmed);
+  if (existing) {
+    return existing.id;
+  }
+  const now = new Date().toISOString();
+  const result = await run(
+    'INSERT INTO unit_groups (name, created_at, updated_at) VALUES (?, ?, ?)',
+    [trimmed, now, now],
+  );
+  return result.lastID;
+}
+
+async function resolveUnitConversion({
+  unitGroupId,
+  conversionFactor,
+  excludeId = null,
+}) {
+  if (!unitGroupId) {
+    return { conversionFactor: 1, conversionBaseUnitId: null };
+  }
+  const rows = await all(
+    `
+    SELECT * FROM units
+    WHERE unit_group_id = ?
+    ${excludeId != null ? 'AND id != ?' : ''}
+    ORDER BY conversion_base_unit_id ASC, id ASC
+    `,
+    excludeId != null ? [unitGroupId, excludeId] : [unitGroupId],
+  );
+  const baseUnit = rows.find((row) => row.conversion_base_unit_id == null) || null;
+  if (!baseUnit) {
+    return { conversionFactor: 1, conversionBaseUnitId: null };
+  }
+  const normalizedFactor = Number(conversionFactor);
+  if (!normalizedFactor || normalizedFactor <= 0) {
+    const error = new Error('conversionFactor must be greater than 0 for grouped units.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    conversionFactor: normalizedFactor,
+    conversionBaseUnitId: baseUnit.id,
+  };
+}
+
+function areUnitsCompatible(groupUnitRow, itemUnitRow) {
+  if (!groupUnitRow || !itemUnitRow) {
+    return false;
+  }
+  if (groupUnitRow.id === itemUnitRow.id) {
+    return true;
+  }
+  return (
+    groupUnitRow.unit_group_id != null &&
+    groupUnitRow.unit_group_id === itemUnitRow.unit_group_id
+  );
 }
 
 async function getMaterialRowByBarcode(barcode) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/searchable_select.dart';
 import '../../domain/pipeline_run.dart';
 import '../../presentation/pipelines_provider.dart';
 
@@ -27,8 +28,8 @@ class PipelineModeDropdown extends StatelessWidget {
         ? '__template__'
         : activeRunId ?? '__template__';
 
-    return DropdownButtonFormField<String>(
-      initialValue: activeValue,
+    return SearchableSelectField<String>(
+      value: activeValue,
       decoration: InputDecoration(
         labelText: 'Canvas Context',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -45,18 +46,20 @@ class PipelineModeDropdown extends StatelessWidget {
           vertical: 12,
         ),
       ),
-      items: [
-        const DropdownMenuItem<String>(
+      dialogTitle: 'Canvas Context',
+      searchHintText: 'Search context',
+      options: [
+        const SearchableSelectOption<String>(
           value: '__template__',
-          child: Text('Edit template'),
+          label: 'Edit template',
         ),
         ...runs.map(
           (run) =>
-              DropdownMenuItem<String>(value: run.id, child: Text(run.name)),
+              SearchableSelectOption<String>(value: run.id, label: run.name),
         ),
-        const DropdownMenuItem<String>(
+        const SearchableSelectOption<String>(
           value: '__start__',
-          child: Text('+ Start new run'),
+          label: '+ Start new run',
         ),
       ],
       onChanged: (value) {

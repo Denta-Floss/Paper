@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
@@ -798,15 +799,29 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<T>(
-      onSelected: onSelected,
-      position: PopupMenuPosition.under,
-      itemBuilder: (context) => values
-          .map(
-            (entry) =>
-                PopupMenuItem<T>(value: entry.value, child: Text(entry.label)),
-          )
-          .toList(growable: false),
+    return InkWell(
+      borderRadius: BorderRadius.horizontal(
+        left: Radius.circular(isFirst ? 8 : 0),
+        right: Radius.circular(isLast ? 8 : 0),
+      ),
+      onTap: () async {
+        final selected = await showSearchableSelectDialog<T>(
+          context: context,
+          title: label,
+          searchHintText: 'Search $label',
+          options: values
+              .map(
+                (entry) => SearchableSelectOption<T>(
+                  value: entry.value,
+                  label: entry.label,
+                ),
+              )
+              .toList(growable: false),
+        );
+        if (selected != null) {
+          onSelected(selected.value);
+        }
+      },
       child: Container(
         height: 34,
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -2751,15 +2766,24 @@ class _CreateGroupDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      onSelected: onSelected,
-      position: PopupMenuPosition.under,
-      itemBuilder: (context) => options
-          .map(
-            (option) =>
-                PopupMenuItem<String>(value: option, child: Text(option)),
-          )
-          .toList(growable: false),
+    return InkWell(
+      onTap: () async {
+        final selected = await showSearchableSelectDialog<String>(
+          context: context,
+          title: placeholder,
+          searchHintText: 'Search option',
+          selectedValue: value,
+          options: options
+              .map(
+                (option) => SearchableSelectOption<String>(
+                  value: option,
+                  label: option,
+                ),
+              )
+              .toList(growable: false),
+        );
+        onSelected(selected?.value);
+      },
       child: Row(
         children: [
           Expanded(

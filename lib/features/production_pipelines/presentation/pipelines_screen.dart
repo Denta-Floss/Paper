@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_info_panel.dart';
 import '../../../core/widgets/app_section_title.dart';
+import '../../../core/widgets/searchable_select.dart';
 import '../../inventory/data/repositories/inventory_repository.dart';
 import '../../inventory/domain/material_record.dart';
 import '../../inventory/presentation/screens/material_scan_screen.dart';
@@ -646,14 +647,16 @@ class _RunDetailsPanelState extends State<_RunDetailsPanel> {
               ],
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<NodeRunStatus>(
-              initialValue: _status,
+            SearchableSelectField<NodeRunStatus>(
+              value: _status,
               decoration: _fieldDecoration('Node status'),
-              items: NodeRunStatus.values
+              dialogTitle: 'Node status',
+              searchHintText: 'Search status',
+              options: NodeRunStatus.values
                   .map(
-                    (status) => DropdownMenuItem<NodeRunStatus>(
+                    (status) => SearchableSelectOption<NodeRunStatus>(
                       value: status,
-                      child: Text(status.label),
+                      label: status.label,
                     ),
                   )
                   .toList(growable: false),

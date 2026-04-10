@@ -5,6 +5,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
@@ -551,8 +552,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       excludeId: widget.item?.id,
     );
     final availableGroups = groupsProvider.activeGroups;
-    final availableUnits = unitsProvider.activeUnits;
     final selectedGroup = groupsProvider.findById(_selectedGroupId);
+    final availableUnits = unitsProvider.compatibleActiveUnitsForGroupUnitId(
+      selectedGroup?.unitId,
+    );
     final selectedUnit = unitsProvider.units
         .where((unit) => unit.id == _selectedUnitId)
         .firstOrNull;
@@ -642,8 +645,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                     decimal: true,
                                   ),
                             ),
-                            DropdownButtonFormField<int>(
-                              initialValue:
+                            SearchableSelectField<int>(
+                              tapTargetKey: const ValueKey<String>(
+                                'items-unit-field',
+                              ),
+                              value:
                                   availableUnits.any(
                                     (unit) => unit.id == _selectedUnitId,
                                   )
@@ -651,35 +657,41 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   : selectedUnit?.id,
                               decoration: _fieldDecoration(
                                 label: 'Unit',
-                                helper: 'Inherited by the variation tree',
+                                helper:
+                                    selectedGroup == null
+                                    ? 'Inherited by the variation tree'
+                                    : 'Only units compatible with the selected group are available',
                               ),
-                              items: [
+                              dialogTitle: 'Unit',
+                              searchHintText: 'Search unit',
+                              fieldEnabled: !_isReadOnly,
+                              options: [
                                 ...availableUnits.map(
-                                  (unit) => DropdownMenuItem<int>(
+                                  (unit) => SearchableSelectOption<int>(
                                     value: unit.id,
-                                    child: Text(unit.displayLabel),
+                                    label: unit.displayLabel,
                                   ),
                                 ),
                                 if (selectedUnit != null &&
                                     availableUnits.every(
                                       (unit) => unit.id != selectedUnit.id,
                                     ))
-                                  DropdownMenuItem<int>(
+                                  SearchableSelectOption<int>(
                                     value: selectedUnit.id,
-                                    child: Text(
-                                      '${selectedUnit.displayLabel} (archived)',
-                                    ),
+                                    label:
+                                        '${selectedUnit.displayLabel} (archived)',
                                   ),
                               ],
-                              onChanged: _isReadOnly
-                                  ? null
-                                  : (value) =>
-                                        setState(() => _selectedUnitId = value),
+                              onChanged: (value) =>
+                                  setState(() => _selectedUnitId = value),
                               validator: (value) =>
                                   value == null ? 'Required' : null,
                             ),
-                            DropdownButtonFormField<int>(
-                              initialValue:
+                            SearchableSelectField<int>(
+                              tapTargetKey: const ValueKey<String>(
+                                'items-group-field',
+                              ),
+                              value:
                                   availableGroups.any(
                                     (group) => group.id == _selectedGroupId,
                                   )
@@ -689,29 +701,37 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 label: 'Group',
                                 helper: 'Required catalog group',
                               ),
-                              items: [
+                              dialogTitle: 'Group',
+                              searchHintText: 'Search group',
+                              fieldEnabled: !_isReadOnly,
+                              options: [
                                 ...availableGroups.map(
-                                  (group) => DropdownMenuItem<int>(
+                                  (group) => SearchableSelectOption<int>(
                                     value: group.id,
-                                    child: Text(group.name),
+                                    label: group.name,
                                   ),
                                 ),
                                 if (selectedGroup != null &&
                                     availableGroups.every(
                                       (group) => group.id != selectedGroup.id,
                                     ))
-                                  DropdownMenuItem<int>(
+                                  SearchableSelectOption<int>(
                                     value: selectedGroup.id,
-                                    child: Text(
-                                      '${selectedGroup.name} (archived)',
-                                    ),
+                                    label: '${selectedGroup.name} (archived)',
                                   ),
                               ],
-                              onChanged: _isReadOnly
-                                  ? null
-                                  : (value) => setState(
-                                      () => _selectedGroupId = value,
-                                    ),
+                              onChanged: (value) => setState(
+                                () {
+                                  _selectedGroupId = value;
+                                  final group = groupsProvider.findById(value);
+                                  if (!unitsProvider.areUnitsCompatible(
+                                    group?.unitId,
+                                    _selectedUnitId,
+                                  )) {
+                                    _selectedUnitId = null;
+                                  }
+                                },
+                              ),
                               validator: (value) =>
                                   value == null ? 'Required' : null,
                             ),

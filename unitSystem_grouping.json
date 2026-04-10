@@ -1,0 +1,176 @@
+{
+  "unit_groups": [
+
+    {
+      "group": "Length",
+      "base_unit_id": "m",
+      "units": [
+        {
+          "id": "nm",
+          "name": "Nanometer",
+          "symbol": "nm",
+          "type": "system",
+          "is_base": false,
+          "factor": 1e-9,
+          "precision": 6,
+          "is_active": true,
+          "aliases": [],
+          "conversion_type": "linear",
+          "parent_unit_id": "m",
+          "usage_context": ["inventory", "production"],
+          "description": ""
+        },
+        {
+          "id": "mm",
+          "name": "Millimeter",
+          "symbol": "mm",
+          "type": "system",
+          "is_base": false,
+          "factor": 0.001,
+          "precision": 3,
+          "is_active": true,
+          "aliases": [],
+          "conversion_type": "linear",
+          "parent_unit_id": "m",
+          "usage_context": ["inventory", "production"],
+          "description": ""
+        },
+        {
+          "id": "m",
+          "name": "Meter",
+          "symbol": "m",
+          "type": "system",
+          "is_base": true,
+          "factor": 1,
+          "precision": 3,
+          "is_active": true,
+          "aliases": ["meter"],
+          "conversion_type": "linear",
+          "parent_unit_id": null,
+          "usage_context": ["inventory", "production", "sales"],
+          "description": "Base unit of length"
+        },
+        {
+          "id": "inch",
+          "name": "Inch",
+          "symbol": "in",
+          "type": "system",
+          "is_base": false,
+          "factor": 0.0254,
+          "precision": 4,
+          "is_active": true,
+          "aliases": ["inches"],
+          "conversion_type": "linear",
+          "parent_unit_id": "m",
+          "usage_context": ["production"],
+          "description": ""
+        }
+      ]
+    },
+
+    {
+      "group": "Mass",
+      "base_unit_id": "kg",
+      "units": [
+        {
+          "id": "g",
+          "name": "Gram",
+          "symbol": "g",
+          "type": "system",
+          "is_base": false,
+          "factor": 0.001,
+          "precision": 3,
+          "is_active": true,
+          "aliases": [],
+          "conversion_type": "linear",
+          "parent_unit_id": "kg",
+          "usage_context": ["inventory", "production"],
+          "description": ""
+        },
+        {
+          "id": "kg",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "type": "system",
+          "is_base": true,
+          "factor": 1,
+          "precision": 3,
+          "is_active": true,
+          "aliases": ["kgs"],
+          "conversion_type": "linear",
+          "parent_unit_id": null,
+          "usage_context": ["inventory", "production", "sales"],
+          "description": "Base unit of mass"
+        },
+        {
+          "id": "tonne",
+          "name": "Tonne",
+          "symbol": "t",
+          "type": "system",
+          "is_base": false,
+          "factor": 1000,
+          "precision": 3,
+          "is_active": true,
+          "aliases": [],
+          "conversion_type": "linear",
+          "parent_unit_id": "kg",
+          "usage_context": ["inventory"],
+          "description": ""
+        }
+      ]
+    },
+
+    {
+      "group": "Quantity",
+      "base_unit_id": "pcs",
+      "units": [
+        {
+          "id": "pcs",
+          "name": "Piece",
+          "symbol": "pcs",
+          "type": "system",
+          "is_base": true,
+          "factor": 1,
+          "precision": 0,
+          "is_active": true,
+          "aliases": ["piece"],
+          "conversion_type": "linear",
+          "parent_unit_id": null,
+          "usage_context": ["inventory", "production", "sales"],
+          "description": "Base unit for count"
+        },
+        {
+          "id": "dozen",
+          "name": "Dozen",
+          "symbol": "dozen",
+          "type": "system",
+          "is_base": false,
+          "factor": 12,
+          "precision": 0,
+          "is_active": true,
+          "aliases": [],
+          "conversion_type": "linear",
+          "parent_unit_id": "pcs",
+          "usage_context": ["sales"],
+          "description": ""
+        },
+        {
+          "id": "gross",
+          "name": "Gross",
+          "symbol": "gross",
+          "type": "system",
+          "is_base": false,
+          "factor": 144,
+          "precision": 0,
+          "is_active": true,
+          "aliases": [],
+          "conversion_type": "linear",
+          "parent_unit_id": "pcs",
+          "usage_context": ["sales"],
+          "description": ""
+        }
+      ]
+    }
+
+  ]
+}
