@@ -6,10 +6,34 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
-const db = new sqlite3.Database(DB_PATH);
+const db = new sqlite3.Database(DB_PATH, (error) => {
+  if (error) {
+    console.error('Failed to open SQLite database:', error);
+    return;
+  }
+  console.log(`SQLite database opened at ${DB_PATH}`);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+});
+
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled rejection:', error);
+});
 
 app.use(cors());
 app.use(express.json());
+
+app.get('/health', (_req, res) => {
+  res.json({
+    success: true,
+    status: 'ok',
+    port: PORT,
+    dbPath: DB_PATH,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -4236,15 +4260,17 @@ async function resetAndSeedDemoData() {
 }
 
 function startServer() {
-  return initDb().then(
-    () =>
-      new Promise((resolve) => {
-        const server = app.listen(PORT, '0.0.0.0', () => {
-          console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
-          resolve(server);
-        });
-      }),
-  );
+  console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);
+  console.log('Initializing database schema...');
+  return initDb().then(() => {
+    console.log('Database schema ready.');
+    return new Promise((resolve) => {
+      const server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
+        resolve(server);
+      });
+    });
+  });
 }
 
 if (require.main === module) {
