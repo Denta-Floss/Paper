@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../barcode/material_barcode_toolkit.dart';
 
@@ -13,8 +14,34 @@ class PMScreen extends StatefulWidget {
 }
 
 class _PMScreenState extends State<PMScreen> {
+  final _sandboxNameController = TextEditingController(text: 'Paper Cone');
+  final _sandboxPropertyController = TextEditingController();
   String _selectedSegment = 'group';
   String _selectedSegmentSoft = 'group';
+  String _sandboxType = 'Primary';
+  bool _sandboxAddSubGroup = true;
+  bool _sandboxAddItem = false;
+  bool _sandboxAddProperties = true;
+  String? _sandboxSubGroup = 'Cone';
+  String? _sandboxItem;
+  final List<String> _sandboxProperties = <String>['GSM', 'Width'];
+  String _sandboxLayout = 'workspace';
+
+  @override
+  void initState() {
+    super.initState();
+    _sandboxNameController.addListener(_refreshSandbox);
+    _sandboxPropertyController.addListener(_refreshSandbox);
+  }
+
+  @override
+  void dispose() {
+    _sandboxNameController.removeListener(_refreshSandbox);
+    _sandboxPropertyController.removeListener(_refreshSandbox);
+    _sandboxNameController.dispose();
+    _sandboxPropertyController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +72,79 @@ class _PMScreenState extends State<PMScreen> {
               },
             ),
             const SizedBox(height: 24),
+            _PMInventorySandboxSection(
+              nameController: _sandboxNameController,
+              propertyController: _sandboxPropertyController,
+              groupType: _sandboxType,
+              addSubGroup: _sandboxAddSubGroup,
+              addItem: _sandboxAddItem,
+              addProperties: _sandboxAddProperties,
+              selectedSubGroup: _sandboxSubGroup,
+              selectedItem: _sandboxItem,
+              properties: _sandboxProperties,
+              layout: _sandboxLayout,
+              onLayoutChanged: (value) {
+                setState(() {
+                  _sandboxLayout = value;
+                });
+              },
+              onGroupTypeChanged: (value) {
+                setState(() {
+                  _sandboxType = value;
+                });
+              },
+              onAddSubGroupChanged: (value) {
+                setState(() {
+                  _sandboxAddSubGroup = value;
+                  if (!value) {
+                    _sandboxSubGroup = null;
+                  } else {
+                    _sandboxSubGroup ??= 'Cone';
+                  }
+                });
+              },
+              onAddItemChanged: (value) {
+                setState(() {
+                  _sandboxAddItem = value;
+                  if (!value) {
+                    _sandboxItem = null;
+                  } else {
+                    _sandboxItem ??= 'Funnel Small';
+                  }
+                });
+              },
+              onAddPropertiesChanged: (value) {
+                setState(() {
+                  _sandboxAddProperties = value;
+                  if (!value) {
+                    _sandboxPropertyController.clear();
+                  }
+                });
+              },
+              onSubGroupChanged: (value) {
+                setState(() {
+                  _sandboxSubGroup = value;
+                });
+              },
+              onItemChanged: (value) {
+                setState(() {
+                  _sandboxItem = value;
+                });
+              },
+              onQuickAddItem: _quickAddSandboxItem,
+              onAddProperty: _addSandboxProperty,
+              onRemoveProperty: (property) {
+                setState(() {
+                  _sandboxProperties.remove(property);
+                });
+              },
+              onReset: _resetSandbox,
+            ),
+            const SizedBox(height: 24),
+            const _PMInventoryUxExplorationSection(),
+            const SizedBox(height: 24),
+            const _PMDatabaseIdeasSection(),
+            const SizedBox(height: 24),
             const _ButtonLibrarySection(),
             const SizedBox(height: 24),
             const _BarcodeToolkitSection(),
@@ -52,6 +152,49 @@ class _PMScreenState extends State<PMScreen> {
         ),
       ),
     );
+  }
+
+  void _refreshSandbox() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _addSandboxProperty() {
+    final value = _sandboxPropertyController.text.trim();
+    if (value.isEmpty || _sandboxProperties.contains(value)) {
+      return;
+    }
+
+    setState(() {
+      _sandboxProperties.add(value);
+      _sandboxPropertyController.clear();
+      _sandboxAddProperties = true;
+    });
+  }
+
+  void _resetSandbox() {
+    setState(() {
+      _sandboxNameController.text = 'Paper Cone';
+      _sandboxPropertyController.clear();
+      _sandboxType = 'Primary';
+      _sandboxAddSubGroup = true;
+      _sandboxAddItem = false;
+      _sandboxAddProperties = true;
+      _sandboxSubGroup = 'Cone';
+      _sandboxItem = null;
+      _sandboxProperties
+        ..clear()
+        ..addAll(['GSM', 'Width']);
+      _sandboxLayout = 'workspace';
+    });
+  }
+
+  void _quickAddSandboxItem() {
+    setState(() {
+      _sandboxAddItem = true;
+      _sandboxItem = 'New Inline Item';
+    });
   }
 }
 
@@ -700,6 +843,1363 @@ class _SpecRow extends StatelessWidget {
   }
 }
 
+class _PMInventoryUxExplorationSection extends StatelessWidget {
+  const _PMInventoryUxExplorationSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionTitle(
+            title: 'Inventory group UX explorations',
+            subtitle:
+                'Same "New Group" form, shown as concept studies only. Nothing here saves.',
+          ),
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 980;
+              return Flex(
+                direction: isNarrow ? Axis.vertical : Axis.horizontal,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Expanded(
+                    child: _PMUxConceptCard(
+                      eyebrow: 'Concept 01',
+                      title: 'Split workspace',
+                      description:
+                          'A left-side builder with a right-side live summary. Best when the form has optional sections and users need confidence before committing.',
+                      accent: Color(0xFFEEF2FF),
+                      child: _PMSplitWorkspaceMock(),
+                    ),
+                  ),
+                  SizedBox(width: 16, height: 16),
+                  Expanded(
+                    child: _PMUxConceptCard(
+                      eyebrow: 'Concept 02',
+                      title: 'Stepper flow',
+                      description:
+                          'A calmer progression: identity first, attachments second, properties third. Best when we want less visual overload.',
+                      accent: Color(0xFFECFDF3),
+                      child: _PMStepperMock(),
+                    ),
+                  ),
+                  SizedBox(width: 16, height: 16),
+                  Expanded(
+                    child: _PMUxConceptCard(
+                      eyebrow: 'Concept 03',
+                      title: 'Command sheet',
+                      description:
+                          'A quick-add panel that feels lighter than a full dialog. Best for power users who create lots of groups rapidly.',
+                      accent: Color(0xFFFFF7ED),
+                      child: _PMCommandSheetMock(),
+                    ),
+                  ),
+                  SizedBox(width: 16, height: 16),
+                  Expanded(
+                    child: _PMUxConceptCard(
+                      eyebrow: 'Concept 04',
+                      title: 'Right-side drawer',
+                      description:
+                          'Keep users on the Inventory page and let the form slide in from the side. Best when context from the current table should remain visible.',
+                      accent: Color(0xFFEFF6FF),
+                      child: _PMDrawerMock(),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 18),
+          const AppInfoPanel(
+            title: 'How these differ from the current dialog',
+            subtitle:
+                'The current Inventory modal is efficient. These ideas trade speed for clarity, guidance, or repeatability.',
+            rows: [
+              AppInfoRow(
+                label: 'Split workspace',
+                value:
+                    'Shows structure and consequences at the same time. Strongest option if group creation gets more complex.',
+              ),
+              AppInfoRow(
+                label: 'Stepper flow',
+                value:
+                    'Reduces intimidation by revealing one decision layer at a time. Strongest option for new users.',
+              ),
+              AppInfoRow(
+                label: 'Command sheet',
+                value:
+                    'Feels nimble and fast, especially for teams repeatedly creating similar groups. Strongest option for frequent operators.',
+              ),
+              AppInfoRow(
+                label: 'Right-side drawer',
+                value:
+                    'Preserves surrounding context while editing. Strongest option if users need to compare the new group against existing inventory rows.',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMInventorySandboxSection extends StatelessWidget {
+  const _PMInventorySandboxSection({
+    required this.nameController,
+    required this.propertyController,
+    required this.groupType,
+    required this.addSubGroup,
+    required this.addItem,
+    required this.addProperties,
+    required this.selectedSubGroup,
+    required this.selectedItem,
+    required this.properties,
+    required this.layout,
+    required this.onLayoutChanged,
+    required this.onGroupTypeChanged,
+    required this.onAddSubGroupChanged,
+    required this.onAddItemChanged,
+    required this.onAddPropertiesChanged,
+    required this.onSubGroupChanged,
+    required this.onItemChanged,
+    required this.onQuickAddItem,
+    required this.onAddProperty,
+    required this.onRemoveProperty,
+    required this.onReset,
+  });
+
+  final TextEditingController nameController;
+  final TextEditingController propertyController;
+  final String groupType;
+  final bool addSubGroup;
+  final bool addItem;
+  final bool addProperties;
+  final String? selectedSubGroup;
+  final String? selectedItem;
+  final List<String> properties;
+  final String layout;
+  final ValueChanged<String> onLayoutChanged;
+  final ValueChanged<String> onGroupTypeChanged;
+  final ValueChanged<bool> onAddSubGroupChanged;
+  final ValueChanged<bool> onAddItemChanged;
+  final ValueChanged<bool> onAddPropertiesChanged;
+  final ValueChanged<String?> onSubGroupChanged;
+  final ValueChanged<String?> onItemChanged;
+  final VoidCallback onQuickAddItem;
+  final VoidCallback onAddProperty;
+  final ValueChanged<String> onRemoveProperty;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = <String>[
+      'Group Type: $groupType',
+      if (addSubGroup && selectedSubGroup != null)
+        'Sub-Group: $selectedSubGroup',
+      if (addItem && selectedItem != null) 'Item: $selectedItem',
+      if (addProperties && properties.isNotEmpty)
+        'Properties: ${properties.join(', ')}',
+    ];
+
+    return AppCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionTitle(
+            title: 'Inventory group sandbox',
+            subtitle:
+                'Interactive, but fake. Tinker with the same form ideas here without touching the real database.',
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _PMChoiceChip(
+                label: 'Split workspace',
+                selected: layout == 'workspace',
+                onTap: () => onLayoutChanged('workspace'),
+              ),
+              _PMChoiceChip(
+                label: 'Stepper',
+                selected: layout == 'stepper',
+                onTap: () => onLayoutChanged('stepper'),
+              ),
+              _PMChoiceChip(
+                label: 'Drawer',
+                selected: layout == 'drawer',
+                onTap: () => onLayoutChanged('drawer'),
+              ),
+              AppButton(
+                label: 'Reset Sandbox',
+                onPressed: onReset,
+                variant: AppButtonVariant.secondary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 980;
+              final form = _PMSandboxEditor(
+                nameController: nameController,
+                propertyController: propertyController,
+                groupType: groupType,
+                addSubGroup: addSubGroup,
+                addItem: addItem,
+                addProperties: addProperties,
+                selectedSubGroup: selectedSubGroup,
+                selectedItem: selectedItem,
+                properties: properties,
+                onGroupTypeChanged: onGroupTypeChanged,
+                onAddSubGroupChanged: onAddSubGroupChanged,
+                onAddItemChanged: onAddItemChanged,
+                onAddPropertiesChanged: onAddPropertiesChanged,
+                onSubGroupChanged: onSubGroupChanged,
+                onItemChanged: onItemChanged,
+                onQuickAddItem: onQuickAddItem,
+                onAddProperty: onAddProperty,
+                onRemoveProperty: onRemoveProperty,
+              );
+              final preview = _PMSandboxPreview(
+                name: nameController.text.trim(),
+                groupType: groupType,
+                addSubGroup: addSubGroup,
+                addItem: addItem,
+                selectedSubGroup: selectedSubGroup,
+                selectedItem: selectedItem,
+                properties: properties,
+                notes: notes,
+                layout: layout,
+              );
+
+              if (isNarrow) {
+                return Column(
+                  children: [form, const SizedBox(height: 16), preview],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 3, child: form),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 2, child: preview),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMSandboxEditor extends StatelessWidget {
+  const _PMSandboxEditor({
+    required this.nameController,
+    required this.propertyController,
+    required this.groupType,
+    required this.addSubGroup,
+    required this.addItem,
+    required this.addProperties,
+    required this.selectedSubGroup,
+    required this.selectedItem,
+    required this.properties,
+    required this.onGroupTypeChanged,
+    required this.onAddSubGroupChanged,
+    required this.onAddItemChanged,
+    required this.onAddPropertiesChanged,
+    required this.onSubGroupChanged,
+    required this.onItemChanged,
+    required this.onQuickAddItem,
+    required this.onAddProperty,
+    required this.onRemoveProperty,
+  });
+
+  final TextEditingController nameController;
+  final TextEditingController propertyController;
+  final String groupType;
+  final bool addSubGroup;
+  final bool addItem;
+  final bool addProperties;
+  final String? selectedSubGroup;
+  final String? selectedItem;
+  final List<String> properties;
+  final ValueChanged<String> onGroupTypeChanged;
+  final ValueChanged<bool> onAddSubGroupChanged;
+  final ValueChanged<bool> onAddItemChanged;
+  final ValueChanged<bool> onAddPropertiesChanged;
+  final ValueChanged<String?> onSubGroupChanged;
+  final ValueChanged<String?> onItemChanged;
+  final VoidCallback onQuickAddItem;
+  final VoidCallback onAddProperty;
+  final ValueChanged<String> onRemoveProperty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Sandbox editor',
+            style: TextStyle(
+              color: Color(0xFF111827),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _PMFieldLabel(label: 'Group name'),
+          const SizedBox(height: 6),
+          TextField(
+            controller: nameController,
+            decoration: _pmInputDecoration('Enter group name'),
+          ),
+          const SizedBox(height: 14),
+          _PMFieldLabel(label: 'Group type'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            key: ValueKey<String>('type-$groupType'),
+            initialValue: groupType,
+            decoration: _pmInputDecoration('Select type'),
+            items: const ['Primary', 'Secondary', 'Material', 'Assembly']
+                .map(
+                  (option) =>
+                      DropdownMenuItem(value: option, child: Text(option)),
+                )
+                .toList(growable: false),
+            onChanged: (value) {
+              if (value != null) {
+                onGroupTypeChanged(value);
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _PMSandboxToggleCard(
+                  label: 'Sub-group',
+                  value: addSubGroup,
+                  onChanged: onAddSubGroupChanged,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey<String>('sub-$selectedSubGroup-$addSubGroup'),
+                    initialValue: selectedSubGroup,
+                    decoration: _pmInputDecoration('Choose sub-group'),
+                    items: const ['Cone', 'Tube', 'Core']
+                        .map(
+                          (option) => DropdownMenuItem(
+                            value: option,
+                            child: Text(option),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: addSubGroup ? onSubGroupChanged : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _PMSandboxToggleCard(
+                  label: 'Item',
+                  value: addItem,
+                  onChanged: onAddItemChanged,
+                  headerAction: _PMInlineAddAction(
+                    label: '+ Add Item',
+                    onTap: onQuickAddItem,
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey<String>('item-$selectedItem-$addItem'),
+                    initialValue: selectedItem,
+                    decoration: _pmInputDecoration('Choose item'),
+                    items: const ['Funnel Small', 'Funnel Large', 'Insert']
+                        .map(
+                          (option) => DropdownMenuItem(
+                            value: option,
+                            child: Text(option),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: addItem ? onItemChanged : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _PMSandboxToggleCard(
+            label: 'Properties',
+            value: addProperties,
+            onChanged: onAddPropertiesChanged,
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: propertyController,
+                        enabled: addProperties,
+                        decoration: _pmInputDecoration('Enter property'),
+                        onSubmitted: (_) => onAddProperty(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    AppButton(
+                      label: 'Add',
+                      onPressed: addProperties ? onAddProperty : null,
+                      variant: AppButtonVariant.secondary,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: properties
+                      .map(
+                        (property) => _PMPropertyPill(
+                          label: property,
+                          onRemove: () => onRemoveProperty(property),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMSandboxPreview extends StatelessWidget {
+  const _PMSandboxPreview({
+    required this.name,
+    required this.groupType,
+    required this.addSubGroup,
+    required this.addItem,
+    required this.selectedSubGroup,
+    required this.selectedItem,
+    required this.properties,
+    required this.notes,
+    required this.layout,
+  });
+
+  final String name;
+  final String groupType;
+  final bool addSubGroup;
+  final bool addItem;
+  final String? selectedSubGroup;
+  final String? selectedItem;
+  final List<String> properties;
+  final List<String> notes;
+  final String layout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        AppInfoPanel(
+          title: 'Local preview only',
+          subtitle:
+              'This section responds to your changes, but it does not touch the database.',
+          rows: [
+            AppInfoRow(label: 'Layout mode', value: layout),
+            AppInfoRow(label: 'Name', value: name.isEmpty ? 'Untitled' : name),
+            AppInfoRow(label: 'Type', value: groupType),
+            AppInfoRow(
+              label: 'Sub-group',
+              value: addSubGroup ? (selectedSubGroup ?? 'Not selected') : 'Off',
+            ),
+            AppInfoRow(
+              label: 'Item',
+              value: addItem ? (selectedItem ?? 'Not selected') : 'Off',
+            ),
+            AppInfoRow(
+              label: 'Properties',
+              value: properties.isEmpty ? 'None' : properties.join(', '),
+            ),
+            AppInfoRow(label: 'Generated notes', value: notes.join('\n')),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'How to use this sandbox',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              ...const [
+                'Change the layout chip to compare presentation styles.',
+                'Edit fields and toggles to feel how the same information behaves in each mode.',
+                'Use this to decide UX direction before we wire anything real.',
+              ].map(
+                (line) => Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    line,
+                    style: TextStyle(color: Color(0xFFCBD5E1), height: 1.4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PMDatabaseIdeasSection extends StatelessWidget {
+  const _PMDatabaseIdeasSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionTitle(
+            title: 'Database ideas -> UX ideas',
+            subtitle:
+                'These are proposals only. Nothing here changes the real database, but each model suggests a different product experience.',
+          ),
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 980;
+              return Flex(
+                direction: isNarrow ? Axis.vertical : Axis.horizontal,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Expanded(
+                    child: _PMDatabaseIdeaCard(
+                      title: 'Draft + publish model',
+                      databaseIdea:
+                          'Store groups as drafts first, then publish a versioned snapshot when approved.',
+                      uxIdea:
+                          'Lets us build a studio-like editor with autosave, review, and publish instead of a single save button.',
+                    ),
+                  ),
+                  SizedBox(width: 16, height: 16),
+                  Expanded(
+                    child: _PMDatabaseIdeaCard(
+                      title: 'Template + instance model',
+                      databaseIdea:
+                          'Separate reusable group templates from actual inventory groups created from them.',
+                      uxIdea:
+                          'Unlocks a gallery-first UX where users start from patterns rather than blank forms.',
+                    ),
+                  ),
+                  SizedBox(width: 16, height: 16),
+                  Expanded(
+                    child: _PMDatabaseIdeaCard(
+                      title: 'Relationship graph model',
+                      databaseIdea:
+                          'Represent sub-groups, items, and properties as linked nodes instead of packing meaning into notes.',
+                      uxIdea:
+                          'Supports a visual canvas or map-based builder where users attach pieces spatially and inspect dependencies.',
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMDatabaseIdeaCard extends StatelessWidget {
+  const _PMDatabaseIdeaCard({
+    required this.title,
+    required this.databaseIdea,
+    required this.uxIdea,
+  });
+
+  final String title;
+  final String databaseIdea;
+  final String uxIdea;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Database proposal',
+            style: TextStyle(
+              color: Color(0xFF4338CA),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            databaseIdea,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF374151)),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'UX implication',
+            style: TextStyle(
+              color: Color(0xFF0F766E),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            uxIdea,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF374151)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMUxConceptCard extends StatelessWidget {
+  const _PMUxConceptCard({
+    required this.eyebrow,
+    required this.title,
+    required this.description,
+    required this.accent,
+    required this.child,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String description;
+  final Color accent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: accent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              eyebrow,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: const Color(0xFF111827),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF6B7280)),
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _PMSplitWorkspaceMock extends StatelessWidget {
+  const _PMSplitWorkspaceMock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: const [
+          _PMMockField(label: 'Group name', value: 'Paper Cone'),
+          SizedBox(height: 10),
+          _PMMockField(label: 'Group type', value: 'Primary'),
+          SizedBox(height: 12),
+          _PMMockToggle(label: 'Attach sub-group', enabled: true),
+          SizedBox(height: 8),
+          _PMMockToggle(label: 'Attach item', enabled: false),
+          SizedBox(height: 12),
+          _PMMockPreviewCard(
+            title: 'Live summary',
+            lines: ['1 child relation', '2 properties', 'Notes generated'],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMStepperMock extends StatelessWidget {
+  const _PMStepperMock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: const [
+          _PMStepRow(index: 1, title: 'Name and type', active: true),
+          SizedBox(height: 10),
+          _PMStepRow(index: 2, title: 'Attach sub-groups or items'),
+          SizedBox(height: 10),
+          _PMStepRow(index: 3, title: 'Add properties'),
+          SizedBox(height: 10),
+          _PMStepRow(index: 4, title: 'Review and create'),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMCommandSheetMock extends StatelessWidget {
+  const _PMCommandSheetMock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          _PMSheetPill(label: 'Quick Create Group'),
+          SizedBox(height: 12),
+          _PMDarkField(label: 'Name', value: 'Paper Cone'),
+          SizedBox(height: 10),
+          _PMDarkField(label: 'Type', value: 'Primary'),
+          SizedBox(height: 10),
+          _PMDarkField(label: 'Properties', value: 'GSM, Width'),
+          SizedBox(height: 12),
+          Row(
+            children: [
+              _PMMiniAction(label: 'Cancel'),
+              SizedBox(width: 8),
+              _PMMiniAction(label: 'Create', primary: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMDrawerMock extends StatelessWidget {
+  const _PMDrawerMock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: const [
+                  _PMGhostRow(widthFactor: 1),
+                  SizedBox(height: 8),
+                  _PMGhostRow(widthFactor: 0.82),
+                  SizedBox(height: 8),
+                  _PMGhostRow(widthFactor: 0.9),
+                ],
+              ),
+            ),
+          ),
+          Container(
+            width: 150,
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
+              border: Border(left: BorderSide(color: Color(0xFFE5E7EB))),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'New Group',
+                  style: TextStyle(
+                    color: Color(0xFF111827),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 10),
+                _PMGhostRow(widthFactor: 1),
+                SizedBox(height: 8),
+                _PMGhostRow(widthFactor: 1),
+                SizedBox(height: 8),
+                _PMGhostRow(widthFactor: 0.74),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMMockField extends StatelessWidget {
+  const _PMMockField({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: const Color(0xFF6B7280),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD7DEEA)),
+          ),
+          child: Text(value),
+        ),
+      ],
+    );
+  }
+}
+
+class _PMChoiceChip extends StatelessWidget {
+  const _PMChoiceChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEEF2FF) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? const Color(0xFF6C63FF) : const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: selected ? const Color(0xFF4338CA) : const Color(0xFF374151),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PMFieldLabel extends StatelessWidget {
+  const _PMFieldLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: const Color(0xFF374151),
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
+class _PMSandboxToggleCard extends StatelessWidget {
+  const _PMSandboxToggleCard({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    required this.child,
+    this.headerAction,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Widget child;
+  final Widget? headerAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: value ? const Color(0xFFC4B5FD) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (headerAction != null) ...[
+                const SizedBox(width: 8),
+                headerAction!,
+              ],
+              Switch.adaptive(
+                value: value,
+                onChanged: onChanged,
+                activeThumbColor: const Color(0xFF6C63FF),
+                activeTrackColor: const Color(0xFFC4B5FD),
+              ),
+            ],
+          ),
+          Opacity(
+            opacity: value ? 1 : 0.5,
+            child: IgnorePointer(ignoring: !value, child: child),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMInlineAddAction extends StatelessWidget {
+  const _PMInlineAddAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEEF2FF),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFC7D2FE)),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: const Color(0xFF4338CA),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PMPropertyPill extends StatelessWidget {
+  const _PMPropertyPill({required this.label, required this.onRemove});
+
+  final String label;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(left: 10, right: 6, top: 6, bottom: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEDE9FE),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF5B21B6),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: onRemove,
+            child: const Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: Color(0xFF5B21B6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMGhostRow extends StatelessWidget {
+  const _PMGhostRow({required this.widthFactor});
+
+  final double widthFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 18,
+        decoration: BoxDecoration(
+          color: const Color(0xFFE5E7EB),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+  }
+}
+
+class _PMMockToggle extends StatelessWidget {
+  const _PMMockToggle({required this.label, required this.enabled});
+
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: enabled ? const Color(0xFFF3F0FF) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: enabled ? const Color(0xFFC4B5FD) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Container(
+            width: 36,
+            height: 22,
+            decoration: BoxDecoration(
+              color: enabled
+                  ? const Color(0xFF6C63FF)
+                  : const Color(0xFFD1D5DB),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
+            padding: const EdgeInsets.all(2),
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMMockPreviewCard extends StatelessWidget {
+  const _PMMockPreviewCard({required this.title, required this.lines});
+
+  final String title;
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          ...lines.map(
+            (line) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                line,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF6B7280)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMStepRow extends StatelessWidget {
+  const _PMStepRow({
+    required this.index,
+    required this.title,
+    this.active = false,
+  });
+
+  final int index;
+  final String title;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: active ? const Color(0xFF6C63FF) : Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: active ? const Color(0xFF6C63FF) : const Color(0xFFD1D5DB),
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '$index',
+            style: TextStyle(
+              color: active ? Colors.white : const Color(0xFF6B7280),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+              color: active ? const Color(0xFF111827) : const Color(0xFF6B7280),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PMSheetPill extends StatelessWidget {
+  const _PMSheetPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _PMDarkField extends StatelessWidget {
+  const _PMDarkField({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: const Color(0xFFCBD5E1),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PMMiniAction extends StatelessWidget {
+  const _PMMiniAction({required this.label, this.primary = false});
+
+  final String label;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: primary
+            ? const Color(0xFF6C63FF)
+            : Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: primary
+              ? const Color(0xFF6C63FF)
+              : Colors.white.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
 class _ButtonGroupCard extends StatelessWidget {
   const _ButtonGroupCard({
     required this.title,
@@ -862,3 +2362,24 @@ class _PMFigmaSegmentChip extends StatelessWidget {
 }
 
 enum PMFigmaSegmentedControlVariant { gradient, soft }
+
+InputDecoration _pmInputDecoration(String hintText) {
+  return InputDecoration(
+    hintText: hintText,
+    filled: true,
+    fillColor: Colors.white,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(0xFFD7DEEA)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(0xFFD7DEEA)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.4),
+    ),
+  );
+}

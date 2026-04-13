@@ -34,7 +34,40 @@ flutter build web --dart-define=PAPER_DEMO_MODE=true
 If you need a different backend URL, override it explicitly:
 
 ```bash
-flutter run --dart-define=PAPER_API_BASE_URL=http://localhost:8080
+flutter run --dart-define=PAPER_API_BASE_URL=http://localhost:18080
+```
+
+## Railway Backend + Windows EXE
+
+Railway is a good fit for hosting the backend service and SQLite volume.
+It is not where the Windows `.exe` runs. The desktop app should be built on a
+Windows machine and pointed at the Railway backend public domain.
+
+Backend service on Railway:
+
+- Deploy the `backend` folder as its own service
+- Add a persistent volume mounted at `/data`
+- Set `DB_PATH=/data/paper.db`
+- Leave `PORT` unset so Railway can inject it automatically
+- Use the backend public domain for the desktop app
+- Do not use `RAILWAY_PRIVATE_DOMAIN` for the Windows app
+
+Build the Windows app against Railway:
+
+```bash
+flutter build windows --dart-define=PAPER_API_BASE_URL=https://<your-backend-public-domain>
+```
+
+For local desktop development against Railway:
+
+```bash
+flutter run -d windows --dart-define=PAPER_API_BASE_URL=https://<your-backend-public-domain>
+```
+
+If you want a no-backend demo build instead:
+
+```bash
+flutter build windows --dart-define=PAPER_DEMO_MODE=true
 ```
 
 ## Project Layout Pattern

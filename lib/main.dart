@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
 import 'app/shell/app_shell.dart';
@@ -29,13 +28,18 @@ const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
   defaultValue: false,
 );
-const _defaultApiBaseUrl = kDebugMode
-    ? 'http://localhost:18080'
-    : 'https://paper-backend.fly.dev';
-const _apiBaseUrl = String.fromEnvironment(
-  'PAPER_API_BASE_URL',
-  defaultValue: _defaultApiBaseUrl,
-);
+const _localApiBaseUrl = 'http://localhost:18080';
+const _configuredApiBaseUrl = String.fromEnvironment('PAPER_API_BASE_URL');
+
+final _apiBaseUrl = _resolveApiBaseUrl();
+
+String _resolveApiBaseUrl() {
+  final configured = _configuredApiBaseUrl.trim();
+  if (configured.isNotEmpty) {
+    return configured.replaceFirst(RegExp(r'/$'), '');
+  }
+  return _localApiBaseUrl;
+}
 
 void main() {
   runApp(const MyApp());
