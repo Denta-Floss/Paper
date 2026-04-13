@@ -1659,14 +1659,6 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
     error.statusCode = 400;
     throw error;
   }
-  const groupUnitRow = await get('SELECT * FROM units WHERE id = ?', [groupRow.unit_id]);
-  if (!areUnitsCompatible(groupUnitRow, unitRow)) {
-    const error = new Error(
-      'Selected unit is not compatible with the chosen group. Use the group unit or another unit from the same unit family.',
-    );
-    error.statusCode = 400;
-    throw error;
-  }
 
   if (id != null && normalizedParentId === id) {
     const error = new Error('A group cannot be its own parent.');
