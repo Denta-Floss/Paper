@@ -20,6 +20,7 @@ class UpdateMaterialInput {
     required this.supplier,
     this.unitId,
     this.unit = '',
+    this.location = '',
     this.notes = '',
   });
 
@@ -31,5 +32,6 @@ class UpdateMaterialInput {
   final String supplier;
   final int? unitId;
   final String unit;
+  final String location;
   final String notes;
 }

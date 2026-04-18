@@ -18,6 +18,8 @@ class _PMScreenState extends State<PMScreen> {
   final _sandboxPropertyController = TextEditingController();
   String _selectedSegment = 'group';
   String _selectedSegmentSoft = 'group';
+  String _uxFamily = 'context';
+  String _uxMethod = 'workspace';
   String _sandboxType = 'Primary';
   bool _sandboxAddSubGroup = true;
   bool _sandboxAddItem = false;
@@ -141,7 +143,26 @@ class _PMScreenState extends State<PMScreen> {
               onReset: _resetSandbox,
             ),
             const SizedBox(height: 24),
-            const _PMInventoryUxExplorationSection(),
+            _PMInventoryUxExplorationSection(
+              selectedFamily: _uxFamily,
+              selectedMethod: _uxMethod,
+              onFamilyChanged: (value) {
+                setState(() {
+                  _uxFamily = value;
+                  _uxMethod = switch (value) {
+                    'context' => 'workspace',
+                    'guided' => 'stepper',
+                    'fast' => 'sheet',
+                    _ => 'workspace',
+                  };
+                });
+              },
+              onMethodChanged: (value) {
+                setState(() {
+                  _uxMethod = value;
+                });
+              },
+            ),
             const SizedBox(height: 24),
             const _PMDatabaseIdeasSection(),
             const SizedBox(height: 24),
@@ -844,10 +865,88 @@ class _SpecRow extends StatelessWidget {
 }
 
 class _PMInventoryUxExplorationSection extends StatelessWidget {
-  const _PMInventoryUxExplorationSection();
+  const _PMInventoryUxExplorationSection({
+    required this.selectedFamily,
+    required this.selectedMethod,
+    required this.onFamilyChanged,
+    required this.onMethodChanged,
+  });
+
+  final String selectedFamily;
+  final String selectedMethod;
+  final ValueChanged<String> onFamilyChanged;
+  final ValueChanged<String> onMethodChanged;
 
   @override
   Widget build(BuildContext context) {
+    final families = <_PMUxFamily>[
+      const _PMUxFamily(
+        id: 'context',
+        title: 'Keep inventory context visible',
+        description:
+            'Good when users need to compare the new group against existing rows while they build it.',
+        methods: [
+          _PMUxMethod(
+            id: 'workspace',
+            eyebrow: 'Method 01',
+            title: 'Split workspace',
+            description:
+                'Builder on one side, summary on the other. Strong for comparison and confidence.',
+            accent: Color(0xFFEEF2FF),
+            mock: _PMSplitWorkspaceMock(),
+          ),
+          _PMUxMethod(
+            id: 'drawer',
+            eyebrow: 'Method 02',
+            title: 'Right-side drawer',
+            description:
+                'A side panel that keeps the table visible underneath.',
+            accent: Color(0xFFEFF6FF),
+            mock: _PMDrawerMock(),
+          ),
+        ],
+      ),
+      const _PMUxFamily(
+        id: 'guided',
+        title: 'Guide the user step by step',
+        description:
+            'Good when the form feels intimidating or when users need help sequencing decisions.',
+        methods: [
+          _PMUxMethod(
+            id: 'stepper',
+            eyebrow: 'Method 03',
+            title: 'Stepper flow',
+            description:
+                'Breaks the form into a sequence so users focus on one layer at a time.',
+            accent: Color(0xFFECFDF3),
+            mock: _PMStepperMock(),
+          ),
+        ],
+      ),
+      const _PMUxFamily(
+        id: 'fast',
+        title: 'Create quickly and move on',
+        description:
+            'Good when operators create similar groups often and want speed over explanation.',
+        methods: [
+          _PMUxMethod(
+            id: 'sheet',
+            eyebrow: 'Method 04',
+            title: 'Command sheet',
+            description: 'A compact quick-create panel for repetitive entry.',
+            accent: Color(0xFFFFF7ED),
+            mock: _PMCommandSheetMock(),
+          ),
+        ],
+      ),
+    ];
+    final family =
+        families.where((item) => item.id == selectedFamily).firstOrNull ??
+        families.first;
+    final method =
+        family.methods.where((item) => item.id == selectedMethod).firstOrNull ??
+        family.methods.first;
+
     return AppCard(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -856,88 +955,97 @@ class _PMInventoryUxExplorationSection extends StatelessWidget {
           const AppSectionTitle(
             title: 'Inventory group UX explorations',
             subtitle:
-                'Same "New Group" form, shown as concept studies only. Nothing here saves.',
+                'Grouped by UX intent, so you can cluster related methods first and compare variants inside each cluster later.',
           ),
           const SizedBox(height: 20),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 980;
-              return Flex(
-                direction: isNarrow ? Axis.vertical : Axis.horizontal,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Expanded(
-                    child: _PMUxConceptCard(
-                      eyebrow: 'Concept 01',
-                      title: 'Split workspace',
-                      description:
-                          'A left-side builder with a right-side live summary. Best when the form has optional sections and users need confidence before committing.',
-                      accent: Color(0xFFEEF2FF),
-                      child: _PMSplitWorkspaceMock(),
-                    ),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: families
+                .map(
+                  (item) => _PMChoiceChip(
+                    label: item.title,
+                    selected: item.id == family.id,
+                    onTap: () => onFamilyChanged(item.id),
                   ),
-                  SizedBox(width: 16, height: 16),
-                  Expanded(
-                    child: _PMUxConceptCard(
-                      eyebrow: 'Concept 02',
-                      title: 'Stepper flow',
-                      description:
-                          'A calmer progression: identity first, attachments second, properties third. Best when we want less visual overload.',
-                      accent: Color(0xFFECFDF3),
-                      child: _PMStepperMock(),
-                    ),
-                  ),
-                  SizedBox(width: 16, height: 16),
-                  Expanded(
-                    child: _PMUxConceptCard(
-                      eyebrow: 'Concept 03',
-                      title: 'Command sheet',
-                      description:
-                          'A quick-add panel that feels lighter than a full dialog. Best for power users who create lots of groups rapidly.',
-                      accent: Color(0xFFFFF7ED),
-                      child: _PMCommandSheetMock(),
-                    ),
-                  ),
-                  SizedBox(width: 16, height: 16),
-                  Expanded(
-                    child: _PMUxConceptCard(
-                      eyebrow: 'Concept 04',
-                      title: 'Right-side drawer',
-                      description:
-                          'Keep users on the Inventory page and let the form slide in from the side. Best when context from the current table should remain visible.',
-                      accent: Color(0xFFEFF6FF),
-                      child: _PMDrawerMock(),
-                    ),
-                  ),
-                ],
-              );
-            },
+                )
+                .toList(growable: false),
           ),
           const SizedBox(height: 18),
-          const AppInfoPanel(
-            title: 'How these differ from the current dialog',
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  family.title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  family.description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: family.methods
+                      .map(
+                        (item) => _PMChoiceChip(
+                          label: item.title,
+                          selected: item.id == method.id,
+                          onTap: () => onMethodChanged(item.id),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          _PMUxConceptCard(
+            eyebrow: method.eyebrow,
+            title: method.title,
+            description: method.description,
+            accent: method.accent,
+            child: method.mock,
+          ),
+          const SizedBox(height: 18),
+          AppInfoPanel(
+            title: 'How to club these later',
             subtitle:
-                'The current Inventory modal is efficient. These ideas trade speed for clarity, guidance, or repeatability.',
+                'Think in families first, then decide which visual method should represent each family in the product.',
             rows: [
-              AppInfoRow(
-                label: 'Split workspace',
+              const AppInfoRow(
+                label: 'Context family',
                 value:
-                    'Shows structure and consequences at the same time. Strongest option if group creation gets more complex.',
+                    'Workspace and drawer both belong together because they preserve the surrounding inventory view.',
+              ),
+              const AppInfoRow(
+                label: 'Guided family',
+                value:
+                    'Stepper belongs here because its main job is sequencing and reducing decision overload.',
+              ),
+              const AppInfoRow(
+                label: 'Fast-entry family',
+                value:
+                    'Command sheet belongs here because its main job is quick repetitive creation.',
               ),
               AppInfoRow(
-                label: 'Stepper flow',
+                label: 'Current selection',
                 value:
-                    'Reduces intimidation by revealing one decision layer at a time. Strongest option for new users.',
-              ),
-              AppInfoRow(
-                label: 'Command sheet',
-                value:
-                    'Feels nimble and fast, especially for teams repeatedly creating similar groups. Strongest option for frequent operators.',
-              ),
-              AppInfoRow(
-                label: 'Right-side drawer',
-                value:
-                    'Preserves surrounding context while editing. Strongest option if users need to compare the new group against existing inventory rows.',
+                    '${family.title} -> ${method.title}. This makes it easier to test one family at a time.',
               ),
             ],
           ),
@@ -945,6 +1053,38 @@ class _PMInventoryUxExplorationSection extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PMUxFamily {
+  const _PMUxFamily({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.methods,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final List<_PMUxMethod> methods;
+}
+
+class _PMUxMethod {
+  const _PMUxMethod({
+    required this.id,
+    required this.eyebrow,
+    required this.title,
+    required this.description,
+    required this.accent,
+    required this.mock,
+  });
+
+  final String id;
+  final String eyebrow;
+  final String title;
+  final String description;
+  final Color accent;
+  final Widget mock;
 }
 
 class _PMInventorySandboxSection extends StatelessWidget {

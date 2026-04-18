@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/group_property_draft.dart';
+import '../../domain/material_activity_event.dart';
+import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 import '../models/api_models.dart';
@@ -20,6 +23,8 @@ class ApiInventoryRepository implements InventoryRepository {
   final bool useMockResponses;
 
   static final List<MaterialDto> _mockMaterials = <MaterialDto>[];
+  static final Map<String, MaterialGroupConfiguration> _mockGroupConfigs =
+      <String, MaterialGroupConfiguration>{};
   static bool _mockSeeded = false;
   static int _mockNextId = 1;
 
@@ -35,6 +40,121 @@ class ApiInventoryRepository implements InventoryRepository {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
     }
+  }
+
+  @override
+  Future<MaterialGroupConfiguration> getGroupConfiguration(
+    String barcode,
+  ) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      return _mockGroupConfigs[barcode] ?? const MaterialGroupConfiguration();
+    }
+
+    final uri = Uri.parse('$baseUrl/api/materials/$barcode');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final materialResponse = MaterialResponse.fromJson(payload);
+
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !materialResponse.success ||
+        materialResponse.material == null) {
+      throw InventoryApiException(
+        materialResponse.error ?? 'Failed to fetch group configuration.',
+      );
+    }
+
+    return materialResponse.groupConfiguration?.toDomain(
+          inheritanceEnabled: materialResponse.material!.inheritanceEnabled,
+        ) ??
+        MaterialGroupConfiguration(
+          inheritanceEnabled: materialResponse.material!.inheritanceEnabled,
+        );
+  }
+
+  @override
+  Future<MaterialGroupConfiguration> updateGroupConfiguration(
+    String barcode, {
+    required bool inheritanceEnabled,
+    required List<int> selectedItemIds,
+    required List<GroupPropertyDraft> propertyDrafts,
+  }) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockMaterials.indexWhere(
+        (item) => _normalizeBarcode(item.barcode) == _normalizeBarcode(barcode),
+      );
+      if (index == -1) {
+        throw const InventoryApiException('Material not found.');
+      }
+      final current = _mockMaterials[index];
+      _mockMaterials[index] = MaterialDto(
+        id: current.id,
+        barcode: current.barcode,
+        name: current.name,
+        type: current.type,
+        grade: current.grade,
+        thickness: current.thickness,
+        supplier: current.supplier,
+        location: current.location,
+        unitId: current.unitId,
+        unit: current.unit,
+        notes: current.notes,
+        groupMode: current.groupMode,
+        inheritanceEnabled: inheritanceEnabled,
+        isParent: current.isParent,
+        parentBarcode: current.parentBarcode,
+        numberOfChildren: current.numberOfChildren,
+        linkedChildBarcodes: current.linkedChildBarcodes,
+        scanCount: current.scanCount,
+        createdAt: current.createdAt,
+        linkedGroupId: current.linkedGroupId,
+        linkedItemId: current.linkedItemId,
+        displayStock: current.displayStock,
+        createdBy: current.createdBy,
+        workflowStatus: current.workflowStatus,
+        updatedAt: DateTime.now(),
+        lastScannedAt: current.lastScannedAt,
+      );
+      final config = MaterialGroupConfiguration(
+        inheritanceEnabled: inheritanceEnabled,
+        selectedItemIds: selectedItemIds,
+        propertyDrafts: propertyDrafts,
+      );
+      _mockGroupConfigs[barcode] = config;
+      return config;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/materials/$barcode/group-config');
+    final request = {
+      'inheritanceEnabled': inheritanceEnabled,
+      'selectedItemIds': selectedItemIds,
+      'propertyDrafts': propertyDrafts
+          .map((draft) => GroupPropertyDraftDto.fromDomain(draft).toJson())
+          .toList(growable: false),
+    };
+    final response = await _client.patch(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(request),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final materialResponse = MaterialResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !materialResponse.success ||
+        materialResponse.material == null) {
+      throw InventoryApiException(
+        materialResponse.error ?? 'Failed to update group configuration.',
+      );
+    }
+    return materialResponse.groupConfiguration?.toDomain(
+          inheritanceEnabled: materialResponse.material!.inheritanceEnabled,
+        ) ??
+        MaterialGroupConfiguration(
+          inheritanceEnabled: materialResponse.material!.inheritanceEnabled,
+        );
   }
 
   @override
@@ -152,9 +272,12 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: current.grade,
         thickness: current.thickness,
         supplier: current.supplier,
+        location: current.location,
         unitId: current.unitId,
         unit: current.unit,
         notes: current.notes,
+        groupMode: current.groupMode,
+        inheritanceEnabled: current.inheritanceEnabled,
         isParent: current.isParent,
         parentBarcode: current.parentBarcode,
         numberOfChildren: current.numberOfChildren,
@@ -166,6 +289,8 @@ class ApiInventoryRepository implements InventoryRepository {
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
+        updatedAt: DateTime.now(),
+        lastScannedAt: DateTime.now(),
       );
       _mockMaterials[index] = updated;
       return updated.toRecord();
@@ -212,9 +337,12 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: current.grade,
         thickness: current.thickness,
         supplier: current.supplier,
+        location: current.location,
         unitId: current.unitId,
         unit: current.unit,
         notes: current.notes,
+        groupMode: current.groupMode,
+        inheritanceEnabled: current.inheritanceEnabled,
         isParent: current.isParent,
         parentBarcode: current.parentBarcode,
         numberOfChildren: current.numberOfChildren,
@@ -226,6 +354,8 @@ class ApiInventoryRepository implements InventoryRepository {
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
+        updatedAt: DateTime.now(),
+        lastScannedAt: null,
       );
       _mockMaterials[index] = updated;
       return updated.toRecord();
@@ -275,9 +405,12 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: parent.grade,
         thickness: parent.thickness,
         supplier: parent.supplier,
+        location: parent.location,
         unitId: parent.unitId,
         unit: parent.unit,
         notes: input.notes,
+        groupMode: parent.groupMode,
+        inheritanceEnabled: parent.inheritanceEnabled,
         isParent: false,
         parentBarcode: parent.barcode,
         numberOfChildren: 0,
@@ -289,6 +422,8 @@ class ApiInventoryRepository implements InventoryRepository {
         displayStock: parent.displayStock,
         createdBy: parent.createdBy,
         workflowStatus: 'notStarted',
+        updatedAt: DateTime.now(),
+        lastScannedAt: null,
       );
       _mockMaterials[parentIndex] = MaterialDto(
         id: parent.id,
@@ -298,9 +433,12 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: parent.grade,
         thickness: parent.thickness,
         supplier: parent.supplier,
+        location: parent.location,
         unitId: parent.unitId,
         unit: parent.unit,
         notes: parent.notes,
+        groupMode: parent.groupMode,
+        inheritanceEnabled: parent.inheritanceEnabled,
         isParent: true,
         parentBarcode: null,
         numberOfChildren: nextIndex,
@@ -312,6 +450,8 @@ class ApiInventoryRepository implements InventoryRepository {
         displayStock: parent.displayStock,
         createdBy: parent.createdBy,
         workflowStatus: parent.workflowStatus,
+        updatedAt: DateTime.now(),
+        lastScannedAt: parent.lastScannedAt,
       );
       _mockMaterials.add(child);
       return child.toRecord();
@@ -351,9 +491,12 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: input.grade.trim(),
         thickness: input.thickness.trim(),
         supplier: input.supplier.trim(),
+        location: input.location.trim(),
         unitId: input.unitId,
         unit: input.unit.trim(),
         notes: input.notes.trim(),
+        groupMode: current.groupMode,
+        inheritanceEnabled: current.inheritanceEnabled,
         isParent: current.isParent,
         parentBarcode: current.parentBarcode,
         numberOfChildren: current.numberOfChildren,
@@ -365,6 +508,8 @@ class ApiInventoryRepository implements InventoryRepository {
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
+        updatedAt: DateTime.now(),
+        lastScannedAt: current.lastScannedAt,
       );
       _mockMaterials[index] = updated;
       return updated.toRecord();
@@ -380,6 +525,7 @@ class ApiInventoryRepository implements InventoryRepository {
         'grade': input.grade,
         'thickness': input.thickness,
         'supplier': input.supplier,
+        'location': input.location,
         'unitId': input.unitId,
         'unit': input.unit,
         'notes': input.notes,
@@ -407,6 +553,11 @@ class ApiInventoryRepository implements InventoryRepository {
             _normalizeBarcode(item.barcode) == normalized ||
             item.parentBarcode == target.barcode,
       );
+      _mockGroupConfigs.removeWhere((key, value) {
+        final normalizedKey = _normalizeBarcode(key);
+        return normalizedKey == normalized ||
+            normalizedKey == _normalizeBarcode(target.barcode);
+      });
       if (target.parentBarcode != null) {
         final parentIndex = _mockMaterials.indexWhere(
           (item) => item.barcode == target.parentBarcode,
@@ -424,9 +575,12 @@ class ApiInventoryRepository implements InventoryRepository {
             grade: parent.grade,
             thickness: parent.thickness,
             supplier: parent.supplier,
+            location: parent.location,
             unitId: parent.unitId,
             unit: parent.unit,
             notes: parent.notes,
+            groupMode: parent.groupMode,
+            inheritanceEnabled: parent.inheritanceEnabled,
             isParent: true,
             parentBarcode: null,
             numberOfChildren: nextChildren.length,
@@ -438,6 +592,8 @@ class ApiInventoryRepository implements InventoryRepository {
             displayStock: parent.displayStock,
             createdBy: parent.createdBy,
             workflowStatus: parent.workflowStatus,
+            updatedAt: DateTime.now(),
+            lastScannedAt: parent.lastScannedAt,
           );
         }
       }
@@ -491,6 +647,160 @@ class ApiInventoryRepository implements InventoryRepository {
     );
   }
 
+  @override
+  Future<List<MaterialActivityEvent>> getMaterialActivity(
+    String barcode,
+  ) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final material = _mockMaterials
+          .where(
+            (item) =>
+                _normalizeBarcode(item.barcode) == _normalizeBarcode(barcode),
+          )
+          .firstOrNull;
+      if (material == null) {
+        return const [];
+      }
+      final events = <MaterialActivityEvent>[
+        MaterialActivityEvent(
+          barcode: material.barcode,
+          type: 'created',
+          label: material.isParent ? 'Group created' : 'Item created',
+          description: material.isParent
+              ? 'Inventory group ${material.name} was added to inventory.'
+              : 'Inventory item ${material.name} was created under ${material.parentBarcode ?? 'its parent'}.',
+          actor: material.createdBy,
+          createdAt: material.createdAt,
+        ),
+      ];
+      if (material.linkedGroupId != null || material.linkedItemId != null) {
+        events.add(
+          MaterialActivityEvent(
+            barcode: material.barcode,
+            type: 'linked',
+            label: 'Inheritance linked',
+            description: material.linkedItemId != null
+                ? 'Linked to an item definition.'
+                : 'Linked to a group definition.',
+            actor: material.createdBy,
+            createdAt: material.updatedAt,
+          ),
+        );
+      }
+      if ((material.scanCount > 0 || material.lastScannedAt != null) &&
+          material.lastScannedAt != null) {
+        events.add(
+          MaterialActivityEvent(
+            barcode: material.barcode,
+            type: 'scan',
+            label: 'Material scanned',
+            description:
+                'Scan trace updated to ${material.scanCount} total scans.',
+            actor: 'Scanner',
+            createdAt: material.lastScannedAt!,
+          ),
+        );
+      }
+      events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return events;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/materials/$barcode/activity');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body);
+    if (response.statusCode == 404 ||
+        _isMissingActivityEndpoint(response.body, payload)) {
+      return _fallbackActivityFromMaterial(barcode);
+    }
+
+    final jsonPayload = payload as Map<String, dynamic>? ?? const {};
+    final activityResponse = MaterialActivityListResponse.fromJson(jsonPayload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !activityResponse.success) {
+      throw InventoryApiException(
+        activityResponse.error?.trim().isNotEmpty == true
+            ? activityResponse.error!
+            : 'Failed to fetch activity history.',
+      );
+    }
+
+    return activityResponse.events
+        .map((event) => event.toEvent())
+        .toList(growable: false);
+  }
+
+  bool _isMissingActivityEndpoint(String rawBody, Object? decodedPayload) {
+    final body = rawBody.toLowerCase();
+    if (body.contains('cannot get') && body.contains('/activity')) {
+      return true;
+    }
+    if (decodedPayload is Map<String, dynamic>) {
+      final error = (decodedPayload['error'] as String?)?.toLowerCase() ?? '';
+      if (error.contains('cannot get') && error.contains('/activity')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<List<MaterialActivityEvent>> _fallbackActivityFromMaterial(
+    String barcode,
+  ) async {
+    final materials = await getAllMaterials();
+    final material = materials
+        .where(
+          (item) =>
+              _normalizeBarcode(item.barcode) == _normalizeBarcode(barcode),
+        )
+        .firstOrNull;
+    if (material == null) {
+      return const [];
+    }
+    final events = <MaterialActivityEvent>[
+      MaterialActivityEvent(
+        barcode: material.barcode,
+        type: 'created',
+        label: material.isParent ? 'Group created' : 'Item created',
+        description: material.isParent
+            ? 'Inventory group ${material.name} was added to inventory.'
+            : 'Inventory item ${material.name} was created under ${material.parentBarcode ?? 'its parent'}.',
+        actor: material.createdBy,
+        createdAt: material.createdAt,
+      ),
+    ];
+    if (material.hasInheritanceLink) {
+      events.add(
+        MaterialActivityEvent(
+          barcode: material.barcode,
+          type: 'linked',
+          label: 'Inheritance linked',
+          description: material.linkedItemId != null
+              ? 'Linked to an item definition.'
+              : 'Linked to a group definition.',
+          actor: material.createdBy,
+          createdAt: material.updatedAt,
+        ),
+      );
+    }
+    if (material.hasBeenScanned && material.lastScannedAt != null) {
+      events.add(
+        MaterialActivityEvent(
+          barcode: material.barcode,
+          type: 'scan',
+          label: 'Material scanned',
+          description:
+              'Scan trace updated to ${material.scanCount} total scans.',
+          actor: 'Scanner',
+          createdAt: material.lastScannedAt!,
+        ),
+      );
+    }
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return events;
+  }
+
   MaterialResponse _saveParentMock(CreateParentMaterialInput input) {
     _seedMockStoreIfNeeded();
 
@@ -510,9 +820,12 @@ class ApiInventoryRepository implements InventoryRepository {
       grade: input.grade,
       thickness: input.thickness,
       supplier: input.supplier,
+      location: input.location,
       unitId: input.unitId,
       unit: input.unit,
       notes: input.notes,
+      groupMode: input.groupMode,
+      inheritanceEnabled: input.inheritanceEnabled,
       isParent: true,
       parentBarcode: null,
       numberOfChildren: input.numberOfChildren,
@@ -526,9 +839,16 @@ class ApiInventoryRepository implements InventoryRepository {
           : '${input.numberOfChildren * 100} ${input.unit.trim()}',
       createdBy: 'Demo Admin',
       workflowStatus: 'inProgress',
+      updatedAt: now,
+      lastScannedAt: null,
     );
 
     _mockMaterials.add(parent);
+    _mockGroupConfigs[parentBarcode] = MaterialGroupConfiguration(
+      inheritanceEnabled: input.inheritanceEnabled,
+      selectedItemIds: input.selectedItemIds,
+      propertyDrafts: input.propertyDrafts,
+    );
 
     for (var i = 0; i < childBarcodes.length; i++) {
       _mockMaterials.add(
@@ -540,9 +860,12 @@ class ApiInventoryRepository implements InventoryRepository {
           grade: input.grade,
           thickness: input.thickness,
           supplier: input.supplier,
+          location: input.location,
           unitId: input.unitId,
           unit: input.unit,
           notes: input.notes,
+          groupMode: input.groupMode,
+          inheritanceEnabled: input.inheritanceEnabled,
           isParent: false,
           parentBarcode: parentBarcode,
           numberOfChildren: 0,
@@ -556,6 +879,8 @@ class ApiInventoryRepository implements InventoryRepository {
               : '100 ${input.unit.trim()}',
           createdBy: 'Demo Admin',
           workflowStatus: 'notStarted',
+          updatedAt: now,
+          lastScannedAt: null,
         ),
       );
     }
@@ -570,6 +895,7 @@ class ApiInventoryRepository implements InventoryRepository {
 
     _mockSeeded = true;
     _mockMaterials.clear();
+    _mockGroupConfigs.clear();
     _mockNextId = 1;
 
     _saveParentMock(
@@ -624,13 +950,29 @@ class ApiInventoryRepository implements InventoryRepository {
     try {
       return jsonDecode(body);
     } on FormatException {
-      return {
-        'success': false,
-        'error': body.trim().isEmpty
-            ? 'Unexpected response from server.'
-            : body.trim(),
-      };
+      return {'success': false, 'error': _extractTransportError(body)};
     }
+  }
+
+  String _extractTransportError(String body) {
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) {
+      return 'Unexpected response from server.';
+    }
+
+    final lower = trimmed.toLowerCase();
+    if (lower.contains('<!doctype html') || lower.contains('<html')) {
+      final cannotGetMatch = RegExp(
+        r'cannot\s+get\s+([^\s<]+)',
+        caseSensitive: false,
+      ).firstMatch(trimmed);
+      if (cannotGetMatch != null) {
+        return 'Endpoint unavailable: ${cannotGetMatch.group(1)}';
+      }
+      return 'Server returned HTML instead of JSON.';
+    }
+
+    return trimmed.replaceAll(RegExp(r'\s+'), ' ');
   }
 
   String _generateParentBarcode() {
@@ -677,9 +1019,12 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: current.grade,
         thickness: current.thickness,
         supplier: current.supplier,
+        location: current.location,
         unitId: current.unitId,
         unit: current.unit,
         notes: current.notes,
+        groupMode: current.groupMode,
+        inheritanceEnabled: current.inheritanceEnabled,
         isParent: current.isParent,
         parentBarcode: current.parentBarcode,
         numberOfChildren: current.numberOfChildren,
@@ -691,6 +1036,8 @@ class ApiInventoryRepository implements InventoryRepository {
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
+        updatedAt: DateTime.now(),
+        lastScannedAt: current.lastScannedAt,
       );
       _mockMaterials[index] = updated;
       return updated.toRecord();

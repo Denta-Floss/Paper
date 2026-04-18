@@ -1192,6 +1192,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   OrderStatus _selectedStatus = OrderStatus.notStarted;
   DateTime? _startDate;
   DateTime? _endDate;
+  late List<_CompletionShortcutPreset> _completionShortcuts;
 
   String? get _clientCodeError {
     final text = _clientCodeController.text.trim();
@@ -1213,6 +1214,16 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _quantityController = TextEditingController(text: '1');
     _startDateController = TextEditingController();
     _endDateController = TextEditingController();
+    _completionShortcuts = const <_CompletionShortcutPreset>[
+      _CompletionShortcutPreset(
+        amount: 3,
+        unit: _CompletionShortcutUnit.days,
+      ),
+      _CompletionShortcutPreset(
+        amount: 3,
+        unit: _CompletionShortcutUnit.weeks,
+      ),
+    ];
   }
 
   @override
@@ -1500,25 +1511,61 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                             ),
                             SizedBox(
                               width: fieldWidth,
-                              child: _DateField(
-                                key: const ValueKey<String>(
-                                  'orders-editor-end-date-field',
-                                ),
-                                label: 'Estimated Completion Date',
-                                controller: _endDateController,
-                                onTap: () => _pickDate(
-                                  context,
-                                  initial:
-                                      _endDate ?? _startDate ?? DateTime.now(),
-                                  onSelected: (value) {
-                                    setState(() {
-                                      _endDate = value;
-                                      _endDateController.text = _formatDate(
-                                        value,
-                                      );
-                                    });
-                                  },
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _DateField(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-end-date-field',
+                                    ),
+                                    label: 'Estimated Completion Date',
+                                    controller: _endDateController,
+                                    onTap: () => _pickDate(
+                                      context,
+                                      initial:
+                                          _endDate ??
+                                          _startDate ??
+                                          DateTime.now(),
+                                      onSelected: (value) {
+                                        setState(() {
+                                          _endDate = value;
+                                          _endDateController.text =
+                                              _formatDate(value);
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      for (
+                                        var index = 0;
+                                        index < _completionShortcuts.length;
+                                        index++
+                                      )
+                                        _CompletionShortcutButton(
+                                          key: ValueKey<String>(
+                                            'orders-editor-shortcut-$index',
+                                          ),
+                                          label: _completionShortcuts[index]
+                                              .label,
+                                          onTap: () => _applyCompletionShortcut(
+                                            _completionShortcuts[index],
+                                          ),
+                                        ),
+                                      _CompletionShortcutButton(
+                                        key: const ValueKey<String>(
+                                          'orders-editor-shortcut-add',
+                                        ),
+                                        label: 'Add',
+                                        isGhost: true,
+                                        onTap: _openCompletionShortcutEditor,
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
                           ];
@@ -1952,6 +1999,43 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
     return '$day-$month-${value.year}';
+  }
+
+  void _applyCompletionShortcut(_CompletionShortcutPreset preset) {
+    final anchorDate = _startDate ?? DateTime.now();
+    final dayOffset = switch (preset.unit) {
+      _CompletionShortcutUnit.days => preset.amount,
+      _CompletionShortcutUnit.weeks => preset.amount * 7,
+    };
+    final estimatedDate = anchorDate.add(Duration(days: dayOffset));
+    setState(() {
+      _endDate = estimatedDate;
+      _endDateController.text = _formatDate(estimatedDate);
+    });
+  }
+
+  Future<void> _openCompletionShortcutEditor() async {
+    final updatedShortcuts = await showDialog<List<_CompletionShortcutPreset>>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 32,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: _CompletionShortcutEditorDialog(
+            initialShortcuts: _completionShortcuts,
+          ),
+        ),
+      ),
+    );
+    if (updatedShortcuts == null || updatedShortcuts.isEmpty) {
+      return;
+    }
+    setState(() {
+      _completionShortcuts = updatedShortcuts.take(3).toList(growable: false);
+    });
   }
 }
 
@@ -2477,6 +2561,399 @@ class _DateField extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CompletionShortcutButton extends StatelessWidget {
+  const _CompletionShortcutButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.isGhost = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool isGhost;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isGhost ? Colors.white : const Color(0xFFF5F2FF),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isGhost ? const Color(0xFFD7DBE7) : const Color(0xFFD9D2FF),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isGhost ? const Color(0xFF4B5563) : const Color(0xFF6049E3),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionShortcutEditorDialog extends StatefulWidget {
+  const _CompletionShortcutEditorDialog({required this.initialShortcuts});
+
+  final List<_CompletionShortcutPreset> initialShortcuts;
+
+  @override
+  State<_CompletionShortcutEditorDialog> createState() =>
+      _CompletionShortcutEditorDialogState();
+}
+
+class _CompletionShortcutEditorDialogState
+    extends State<_CompletionShortcutEditorDialog> {
+  late final List<TextEditingController> _amountControllers;
+  late final List<_CompletionShortcutUnit> _units;
+  late bool _showThirdShortcut;
+
+  @override
+  void initState() {
+    super.initState();
+    final drafts = List<_CompletionShortcutDraft>.generate(3, (index) {
+      if (index < widget.initialShortcuts.length) {
+        final shortcut = widget.initialShortcuts[index];
+        return _CompletionShortcutDraft(
+          amountText: shortcut.amount.toString(),
+          unit: shortcut.unit,
+        );
+      }
+      return const _CompletionShortcutDraft(
+        amountText: '',
+        unit: _CompletionShortcutUnit.days,
+      );
+    });
+    _amountControllers = drafts
+        .map((draft) => TextEditingController(text: draft.amountText))
+        .toList(growable: false);
+    _units = drafts.map((draft) => draft.unit).toList(growable: false);
+    _showThirdShortcut = widget.initialShortcuts.length > 2;
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _amountControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleCount = _showThirdShortcut ? 3 : 2;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Edit Completion Buttons',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF2F3441),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Set quick completion presets for common lead times. People can still enter a date manually when the job runs longer.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF6B7280),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (var index = 0; index < visibleCount; index++) ...[
+            _buildShortcutCard(index),
+            if (index != visibleCount - 1) const SizedBox(height: 8),
+          ],
+          if (!_showThirdShortcut) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              key: const ValueKey<String>('orders-editor-add-third-shortcut'),
+              onTap: () {
+                setState(() {
+                  _showThirdShortcut = true;
+                });
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.add_circle_outline_rounded,
+                      size: 18,
+                      color: Color(0xFF6049E3),
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Add third shortcut',
+                      style: TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              AppButton(
+                label: 'Cancel',
+                variant: AppButtonVariant.secondary,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(width: 10),
+              AppButton(
+                label: 'Save',
+                onPressed: () {
+                  final shortcuts = <_CompletionShortcutPreset>[];
+                  for (var index = 0; index < visibleCount; index++) {
+                    final amount = int.tryParse(
+                      _amountControllers[index].text.trim(),
+                    );
+                    if (amount == null || amount <= 0) {
+                      continue;
+                    }
+                    shortcuts.add(
+                      _CompletionShortcutPreset(
+                        amount: amount,
+                        unit: _units[index],
+                      ),
+                    );
+                  }
+                  Navigator.of(context).pop(shortcuts);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShortcutCard(int index) {
+    final amountController = _amountControllers[index];
+    final previewAmount = int.tryParse(amountController.text.trim());
+    final previewLabel = previewAmount == null || previewAmount <= 0
+        ? 'Not set'
+        : '$previewAmount ${_units[index].label}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCFCFE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                index == 0
+                  ? 'Primary Button'
+                  : index == 1
+                  ? 'Secondary Button'
+                  : 'Extra Button',
+                style: const TextStyle(
+                  color: Color(0xFF2F3441),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2EEFF),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  previewLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF6049E3),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (index == 2) ...[
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _showThirdShortcut = false;
+                      _amountControllers[index].clear();
+                      _units[index] = _CompletionShortcutUnit.days;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(999),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              SizedBox(
+                width: 84,
+                child: TextFormField(
+                  key: ValueKey<String>('orders-editor-shortcut-amount-$index'),
+                  controller: amountController,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    labelText: 'Days',
+                    hintText: index == 0 ? '3' : index == 1 ? '3' : '7',
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _CompletionShortcutUnit.values.map((unit) {
+                    final isSelected = _units[index] == unit;
+                    return InkWell(
+                      key: unit == _CompletionShortcutUnit.days
+                          ? ValueKey<String>(
+                              'orders-editor-shortcut-unit-$index',
+                            )
+                          : null,
+                      onTap: () {
+                        setState(() {
+                          _units[index] = unit;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(999),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF6049E3)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF6049E3)
+                                : const Color(0xFFD7DBE7),
+                          ),
+                        ),
+                        child: Text(
+                          unit.label,
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : const Color(0xFF374151),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompletionShortcutPreset {
+  const _CompletionShortcutPreset({
+    required this.amount,
+    required this.unit,
+  });
+
+  final int amount;
+  final _CompletionShortcutUnit unit;
+
+  String get label => '$amount ${unit.label}';
+}
+
+class _CompletionShortcutDraft {
+  const _CompletionShortcutDraft({
+    required this.amountText,
+    required this.unit,
+  });
+
+  final String amountText;
+  final _CompletionShortcutUnit unit;
+}
+
+enum _CompletionShortcutUnit {
+  days('days'),
+  weeks('weeks');
+
+  const _CompletionShortcutUnit(this.label);
+
+  final String label;
 }
 
 class _DependencyMessage extends StatelessWidget {

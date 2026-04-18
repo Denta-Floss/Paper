@@ -11,9 +11,12 @@ class InventoryMaterialModel {
     required this.grade,
     required this.thickness,
     required this.supplier,
+    required this.location,
     required this.unitId,
     required this.unit,
     required this.notes,
+    required this.groupMode,
+    required this.inheritanceEnabled,
     required this.createdAt,
     required this.kind,
     required this.parentBarcode,
@@ -25,6 +28,8 @@ class InventoryMaterialModel {
     required this.displayStock,
     required this.createdBy,
     required this.workflowStatus,
+    required this.updatedAt,
+    required this.lastScannedAt,
   });
 
   final int? id;
@@ -34,9 +39,12 @@ class InventoryMaterialModel {
   final String grade;
   final String thickness;
   final String supplier;
+  final String location;
   final int? unitId;
   final String unit;
   final String notes;
+  final String? groupMode;
+  final bool inheritanceEnabled;
   final DateTime createdAt;
   final String kind;
   final String? parentBarcode;
@@ -48,6 +56,8 @@ class InventoryMaterialModel {
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
+  final DateTime updatedAt;
+  final DateTime? lastScannedAt;
 
   factory InventoryMaterialModel.fromMap(Map<String, Object?> map) {
     final rawLinked = map['linked_child_barcodes'] as String?;
@@ -59,9 +69,12 @@ class InventoryMaterialModel {
       grade: map['grade'] as String? ?? '',
       thickness: map['thickness'] as String? ?? '',
       supplier: map['supplier'] as String? ?? '',
+      location: map['location'] as String? ?? '',
       unitId: map['unit_id'] as int?,
       unit: map['unit'] as String? ?? '',
       notes: map['notes'] as String? ?? '',
+      groupMode: map['group_mode'] as String?,
+      inheritanceEnabled: (map['inheritance_enabled'] as int? ?? 0) == 1,
       createdAt: DateTime.parse(map['created_at'] as String),
       kind: map['kind'] as String,
       parentBarcode: map['parent_barcode'] as String?,
@@ -75,6 +88,10 @@ class InventoryMaterialModel {
       displayStock: map['display_stock'] as String? ?? '',
       createdBy: map['created_by'] as String? ?? '',
       workflowStatus: map['workflow_status'] as String? ?? 'notStarted',
+      updatedAt:
+          DateTime.tryParse(map['updated_at'] as String? ?? '') ??
+          DateTime.parse(map['created_at'] as String),
+      lastScannedAt: DateTime.tryParse(map['last_scanned_at'] as String? ?? ''),
     );
   }
 
@@ -87,9 +104,12 @@ class InventoryMaterialModel {
       'grade': grade,
       'thickness': thickness,
       'supplier': supplier,
+      'location': location,
       'unit_id': unitId,
       'unit': unit,
       'notes': notes,
+      'group_mode': groupMode,
+      'inheritance_enabled': inheritanceEnabled ? 1 : 0,
       'created_at': createdAt.toIso8601String(),
       'kind': kind,
       'parent_barcode': parentBarcode,
@@ -101,6 +121,8 @@ class InventoryMaterialModel {
       'display_stock': displayStock,
       'created_by': createdBy,
       'workflow_status': workflowStatus,
+      'updated_at': updatedAt.toIso8601String(),
+      'last_scanned_at': lastScannedAt?.toIso8601String(),
     };
   }
 
@@ -113,9 +135,12 @@ class InventoryMaterialModel {
       grade: grade,
       thickness: thickness,
       supplier: supplier,
+      location: location,
       unitId: unitId,
       unit: unit,
       notes: notes,
+      groupMode: groupMode,
+      inheritanceEnabled: inheritanceEnabled,
       createdAt: createdAt,
       kind: kind,
       parentBarcode: parentBarcode,
@@ -127,6 +152,8 @@ class InventoryMaterialModel {
       displayStock: displayStock,
       createdBy: createdBy,
       workflowStatus: workflowStatus,
+      updatedAt: updatedAt,
+      lastScannedAt: lastScannedAt,
     );
   }
 }

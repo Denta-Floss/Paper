@@ -6,8 +6,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/group_property_draft.dart';
+import '../../domain/material_activity_event.dart';
+import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
+import '../models/material_activity_event_model.dart';
 import '../models/inventory_material_model.dart';
 import '../models/scan_event_model.dart';
 import 'inventory_repository.dart';
@@ -25,7 +29,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 4,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -36,9 +40,12 @@ class LocalInventoryRepository implements InventoryRepository {
             grade TEXT,
             thickness TEXT,
             supplier TEXT,
+            location TEXT,
             unit_id INTEGER,
             unit TEXT,
             notes TEXT,
+            group_mode TEXT,
+            inheritance_enabled INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             kind TEXT NOT NULL,
             parent_barcode TEXT,
@@ -46,7 +53,41 @@ class LocalInventoryRepository implements InventoryRepository {
             linked_child_barcodes TEXT,
             scan_count INTEGER NOT NULL DEFAULT 0,
             linked_group_id INTEGER,
-            linked_item_id INTEGER
+            linked_item_id INTEGER,
+            display_stock TEXT DEFAULT '',
+            created_by TEXT DEFAULT '',
+            workflow_status TEXT DEFAULT 'notStarted',
+            updated_at TEXT,
+            last_scanned_at TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE material_group_item_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(material_id, item_id)
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE material_group_properties (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL,
+            property_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            input_type TEXT NOT NULL DEFAULT 'Text',
+            mandatory INTEGER NOT NULL DEFAULT 0,
+            source_type TEXT NOT NULL DEFAULT 'manual',
+            source_item_ids_json TEXT NOT NULL DEFAULT '[]',
+            state TEXT NOT NULL DEFAULT 'active',
+            override_locked INTEGER NOT NULL DEFAULT 0,
+            has_type_conflict INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(material_id, property_key)
           )
         ''');
         await db.execute('''
@@ -54,6 +95,17 @@ class LocalInventoryRepository implements InventoryRepository {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             barcode TEXT NOT NULL,
             scanned_at TEXT NOT NULL
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE material_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            barcode TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_label TEXT NOT NULL,
+            event_description TEXT DEFAULT '',
+            actor TEXT DEFAULT '',
+            created_at TEXT NOT NULL
           )
         ''');
       },
@@ -76,6 +128,77 @@ class LocalInventoryRepository implements InventoryRepository {
           await db.execute(
             'ALTER TABLE materials ADD COLUMN linked_item_id INTEGER',
           );
+        }
+        if (oldVersion < 5) {
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN display_stock TEXT DEFAULT \'\'',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN created_by TEXT DEFAULT \'\'',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN workflow_status TEXT DEFAULT \'notStarted\'',
+          );
+          await db.execute('ALTER TABLE materials ADD COLUMN updated_at TEXT');
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN last_scanned_at TEXT',
+          );
+          await db.execute(
+            'UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL',
+          );
+        }
+        if (oldVersion < 6) {
+          await db.execute('''
+            CREATE TABLE material_activity (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              barcode TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              event_label TEXT NOT NULL,
+              event_description TEXT DEFAULT '',
+              actor TEXT DEFAULT '',
+              created_at TEXT NOT NULL
+            )
+          ''');
+        }
+        if (oldVersion < 7) {
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN location TEXT DEFAULT \'\'',
+          );
+        }
+        if (oldVersion < 8) {
+          await db.execute('ALTER TABLE materials ADD COLUMN group_mode TEXT');
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN inheritance_enabled INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS material_group_item_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              material_id INTEGER NOT NULL,
+              item_id INTEGER NOT NULL,
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(material_id, item_id)
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS material_group_properties (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              material_id INTEGER NOT NULL,
+              property_key TEXT NOT NULL,
+              display_name TEXT NOT NULL,
+              input_type TEXT NOT NULL DEFAULT 'Text',
+              mandatory INTEGER NOT NULL DEFAULT 0,
+              source_type TEXT NOT NULL DEFAULT 'manual',
+              source_item_ids_json TEXT NOT NULL DEFAULT '[]',
+              state TEXT NOT NULL DEFAULT 'active',
+              override_locked INTEGER NOT NULL DEFAULT 0,
+              has_type_conflict INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(material_id, property_key)
+            )
+          ''');
         }
       },
     );
@@ -148,9 +271,12 @@ class LocalInventoryRepository implements InventoryRepository {
         grade: input.grade,
         thickness: input.thickness,
         supplier: input.supplier,
+        location: input.location,
         unitId: input.unitId,
         unit: input.unit,
         notes: input.notes,
+        groupMode: input.groupMode,
+        inheritanceEnabled: input.inheritanceEnabled,
         createdAt: now,
         kind: 'parent',
         parentBarcode: null,
@@ -164,8 +290,29 @@ class LocalInventoryRepository implements InventoryRepository {
             : '${input.numberOfChildren * 100} ${input.unit.trim()}',
         createdBy: 'Demo Admin',
         workflowStatus: 'inProgress',
+        updatedAt: now,
+        lastScannedAt: null,
       );
-      await txn.insert('materials', parentModel.toMap()..remove('id'));
+      final parentId = await txn.insert(
+        'materials',
+        parentModel.toMap()..remove('id'),
+      );
+      await _persistGroupGovernance(
+        txn,
+        materialId: parentId,
+        selectedItemIds: input.selectedItemIds,
+        propertyDrafts: input.propertyDrafts,
+        createdAt: now,
+      );
+      await _recordActivity(
+        txn,
+        barcode: parentBarcode,
+        type: 'created',
+        label: 'Group created',
+        description: 'Inventory group ${input.name} was created.',
+        actor: parentModel.createdBy,
+        createdAt: now,
+      );
 
       for (var i = 0; i < childBarcodes.length; i++) {
         final childNumber = i + 1;
@@ -177,9 +324,12 @@ class LocalInventoryRepository implements InventoryRepository {
           grade: input.grade,
           thickness: input.thickness,
           supplier: input.supplier,
+          location: input.location,
           unitId: input.unitId,
           unit: input.unit,
           notes: input.notes,
+          groupMode: input.groupMode,
+          inheritanceEnabled: input.inheritanceEnabled,
           createdAt: now,
           kind: 'child',
           parentBarcode: parentBarcode,
@@ -193,8 +343,19 @@ class LocalInventoryRepository implements InventoryRepository {
               : '100 ${input.unit.trim()}',
           createdBy: 'Demo Admin',
           workflowStatus: 'notStarted',
+          updatedAt: now,
+          lastScannedAt: null,
         );
         await txn.insert('materials', childModel.toMap()..remove('id'));
+        await _recordActivity(
+          txn,
+          barcode: childBarcodes[i],
+          type: 'created',
+          label: 'Item created',
+          description: 'Inventory item ${childModel.name} was created.',
+          actor: childModel.createdBy,
+          createdAt: now,
+        );
       }
     });
 
@@ -249,15 +410,25 @@ class LocalInventoryRepository implements InventoryRepository {
     }
 
     final model = InventoryMaterialModel.fromMap(results.first);
+    final now = DateTime.now();
     await transaction.rawUpdate(
-      'UPDATE materials SET scan_count = scan_count + 1 WHERE barcode = ?',
-      [model.barcode],
+      'UPDATE materials SET scan_count = scan_count + 1, updated_at = ?, last_scanned_at = ? WHERE barcode = ?',
+      [now.toIso8601String(), now.toIso8601String(), model.barcode],
     );
 
     await transaction.insert(
       'scan_history',
       ScanEventModel(barcode: model.barcode, scannedAt: DateTime.now()).toMap()
         ..remove('id'),
+    );
+    await _recordActivity(
+      transaction,
+      barcode: model.barcode,
+      type: 'scan',
+      label: 'Material scanned',
+      description: 'Scan trace updated to ${model.scanCount + 1} total scans.',
+      actor: 'Scanner',
+      createdAt: now,
     );
 
     final updatedResults = await transaction.query(
@@ -289,7 +460,11 @@ class LocalInventoryRepository implements InventoryRepository {
 
       await txn.update(
         'materials',
-        {'scan_count': 0},
+        {
+          'scan_count': 0,
+          'updated_at': DateTime.now().toIso8601String(),
+          'last_scanned_at': null,
+        },
         where: 'barcode = ?',
         whereArgs: [barcode],
       );
@@ -297,6 +472,15 @@ class LocalInventoryRepository implements InventoryRepository {
         'scan_history',
         where: 'barcode = ?',
         whereArgs: [barcode],
+      );
+      await _recordActivity(
+        txn,
+        barcode: barcode,
+        type: 'scanReset',
+        label: 'Trace reset',
+        description: 'Scan history was cleared for this material.',
+        actor: 'Demo Admin',
+        createdAt: DateTime.now(),
       );
 
       final updatedResults = await txn.query(
@@ -360,9 +544,12 @@ class LocalInventoryRepository implements InventoryRepository {
         grade: parentModel.grade,
         thickness: parentModel.thickness,
         supplier: parentModel.supplier,
+        location: parentModel.location,
         unitId: parentModel.unitId,
         unit: parentModel.unit,
         notes: input.notes,
+        groupMode: parentModel.groupMode,
+        inheritanceEnabled: parentModel.inheritanceEnabled,
         createdAt: DateTime.now(),
         kind: 'child',
         parentBarcode: parentModel.barcode,
@@ -374,14 +561,26 @@ class LocalInventoryRepository implements InventoryRepository {
         displayStock: parentModel.displayStock,
         createdBy: parentModel.createdBy,
         workflowStatus: 'notStarted',
+        updatedAt: DateTime.now(),
+        lastScannedAt: null,
       );
       final nextChildren = [...parentModel.linkedChildBarcodes, childBarcode];
       await txn.insert('materials', childModel.toMap()..remove('id'));
+      await _recordActivity(
+        txn,
+        barcode: childBarcode,
+        type: 'created',
+        label: 'Sub-group created',
+        description: 'Created under parent ${parentModel.name}.',
+        actor: childModel.createdBy,
+        createdAt: childModel.updatedAt,
+      );
       await txn.update(
         'materials',
         {
           'number_of_children': nextChildren.length,
           'linked_child_barcodes': jsonEncode(nextChildren),
+          'updated_at': DateTime.now().toIso8601String(),
         },
         where: 'barcode = ?',
         whereArgs: [parentModel.barcode],
@@ -407,12 +606,23 @@ class LocalInventoryRepository implements InventoryRepository {
           'grade': input.grade.trim(),
           'thickness': input.thickness.trim(),
           'supplier': input.supplier.trim(),
+          'location': input.location.trim(),
           'unit_id': input.unitId,
           'unit': input.unit.trim(),
           'notes': input.notes.trim(),
+          'updated_at': DateTime.now().toIso8601String(),
         },
         where: 'barcode = ?',
         whereArgs: [input.barcode],
+      );
+      await _recordActivity(
+        txn,
+        barcode: input.barcode,
+        type: 'updated',
+        label: 'Record updated',
+        description: 'Material details were edited.',
+        actor: 'Demo Admin',
+        createdAt: DateTime.now(),
       );
       final updated = await _getMaterialMapByBarcode(input.barcode, txn);
       return InventoryMaterialModel.fromMap(updated!).toRecord();
@@ -429,6 +639,19 @@ class LocalInventoryRepository implements InventoryRepository {
       }
       final model = InventoryMaterialModel.fromMap(existing);
       if (model.kind == 'parent') {
+        final childRows = await txn.query(
+          'materials',
+          columns: ['barcode'],
+          where: 'parent_barcode = ?',
+          whereArgs: [model.barcode],
+        );
+        for (final child in childRows) {
+          await txn.delete(
+            'material_activity',
+            where: 'barcode = ?',
+            whereArgs: [child['barcode']],
+          );
+        }
         await txn.delete(
           'materials',
           where: 'parent_barcode = ?',
@@ -449,6 +672,7 @@ class LocalInventoryRepository implements InventoryRepository {
             {
               'number_of_children': nextChildren.length,
               'linked_child_barcodes': jsonEncode(nextChildren),
+              'updated_at': DateTime.now().toIso8601String(),
             },
             where: 'barcode = ?',
             whereArgs: [parentModel.barcode],
@@ -457,6 +681,11 @@ class LocalInventoryRepository implements InventoryRepository {
       }
       await txn.delete(
         'scan_history',
+        where: 'barcode = ?',
+        whereArgs: [model.barcode],
+      );
+      await txn.delete(
+        'material_activity',
         where: 'barcode = ?',
         whereArgs: [model.barcode],
       );
@@ -537,12 +766,283 @@ class LocalInventoryRepository implements InventoryRepository {
       }
       await txn.update(
         'materials',
-        {'linked_group_id': linkedGroupId, 'linked_item_id': linkedItemId},
+        {
+          'linked_group_id': linkedGroupId,
+          'linked_item_id': linkedItemId,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
         where: 'barcode = ?',
         whereArgs: [barcode],
+      );
+      await _recordActivity(
+        txn,
+        barcode: barcode,
+        type: linkedItemId != null || linkedGroupId != null
+            ? 'linked'
+            : 'unlinked',
+        label: linkedItemId != null || linkedGroupId != null
+            ? 'Inheritance linked'
+            : 'Inheritance removed',
+        description: linkedItemId != null
+            ? 'Linked to an item definition.'
+            : linkedGroupId != null
+            ? 'Linked to a group definition.'
+            : 'Removed inheritance link.',
+        actor: 'Demo Admin',
+        createdAt: DateTime.now(),
       );
       final updated = await _getMaterialMapByBarcode(barcode, txn);
       return InventoryMaterialModel.fromMap(updated!).toRecord();
     });
+  }
+
+  @override
+  Future<List<MaterialActivityEvent>> getMaterialActivity(
+    String barcode,
+  ) async {
+    final db = await _db;
+    final rows = await db.query(
+      'material_activity',
+      where: 'barcode = ?',
+      whereArgs: [barcode],
+      orderBy: 'created_at DESC, id DESC',
+    );
+    return rows
+        .map((row) => MaterialActivityEventModel.fromMap(row).toEvent())
+        .toList(growable: false);
+  }
+
+  @override
+  Future<MaterialGroupConfiguration> getGroupConfiguration(
+    String barcode,
+  ) async {
+    final db = await _db;
+    final material = await _getMaterialMapByBarcode(barcode, db);
+    if (material == null) {
+      throw Exception('Material not found.');
+    }
+    final materialId = (material['id'] as num?)?.toInt();
+    if (materialId == null) {
+      return const MaterialGroupConfiguration();
+    }
+    return _readGroupGovernance(
+      db,
+      materialId: materialId,
+      inheritanceEnabled: (material['inheritance_enabled'] as int? ?? 0) == 1,
+    );
+  }
+
+  @override
+  Future<MaterialGroupConfiguration> updateGroupConfiguration(
+    String barcode, {
+    required bool inheritanceEnabled,
+    required List<int> selectedItemIds,
+    required List<GroupPropertyDraft> propertyDrafts,
+  }) async {
+    final db = await _db;
+    return db.transaction((txn) async {
+      final material = await _getMaterialMapByBarcode(barcode, txn);
+      if (material == null) {
+        throw Exception('Material not found.');
+      }
+      final materialId = (material['id'] as num?)?.toInt();
+      if (materialId == null) {
+        throw Exception('Material id missing.');
+      }
+      final now = DateTime.now();
+      await txn.update(
+        'materials',
+        {
+          'inheritance_enabled': inheritanceEnabled ? 1 : 0,
+          'updated_at': now.toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [materialId],
+      );
+      await _persistGroupGovernance(
+        txn,
+        materialId: materialId,
+        selectedItemIds: selectedItemIds,
+        propertyDrafts: propertyDrafts,
+        createdAt: now,
+      );
+      await _recordActivity(
+        txn,
+        barcode: barcode,
+        type: 'updated',
+        label: 'Group configuration updated',
+        description: 'Inheritance governance settings were updated.',
+        actor: 'Demo Admin',
+        createdAt: now,
+      );
+      return _readGroupGovernance(
+        txn,
+        materialId: materialId,
+        inheritanceEnabled: inheritanceEnabled,
+      );
+    });
+  }
+
+  Future<void> _persistGroupGovernance(
+    DatabaseExecutor executor, {
+    required int materialId,
+    required List<int> selectedItemIds,
+    required List<GroupPropertyDraft> propertyDrafts,
+    required DateTime createdAt,
+  }) async {
+    final nowIso = createdAt.toIso8601String();
+    await executor.delete(
+      'material_group_item_links',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+    );
+    await executor.delete(
+      'material_group_properties',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+    );
+
+    for (var i = 0; i < selectedItemIds.length; i++) {
+      await executor.insert('material_group_item_links', {
+        'material_id': materialId,
+        'item_id': selectedItemIds[i],
+        'sort_order': i,
+        'created_at': nowIso,
+        'updated_at': nowIso,
+      });
+    }
+
+    final seenKeys = <String>{};
+    for (final property in propertyDrafts) {
+      final key = property.name.trim().toLowerCase();
+      if (key.isEmpty || seenKeys.contains(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+
+      final sourceItemIds = property.sources
+          .map((source) => source.itemId)
+          .toSet()
+          .toList(growable: false);
+
+      await executor.insert('material_group_properties', {
+        'material_id': materialId,
+        'property_key': key,
+        'display_name': property.name.trim(),
+        'input_type': property.inputType.trim().isEmpty
+            ? 'Text'
+            : property.inputType.trim(),
+        'mandatory': property.mandatory ? 1 : 0,
+        'source_type':
+            property.sourceType == GroupPropertySourceType.inheritedItem
+            ? 'inherited_item'
+            : 'manual',
+        'source_item_ids_json': jsonEncode(sourceItemIds),
+        'state': switch (property.state) {
+          GroupPropertyState.active => 'active',
+          GroupPropertyState.unlinked => 'unlinked',
+          GroupPropertyState.overridden => 'overridden',
+        },
+        'override_locked': property.overrideLocked ? 1 : 0,
+        'has_type_conflict': property.hasTypeConflict ? 1 : 0,
+        'created_at': nowIso,
+        'updated_at': nowIso,
+      });
+    }
+  }
+
+  Future<MaterialGroupConfiguration> _readGroupGovernance(
+    DatabaseExecutor executor, {
+    required int materialId,
+    required bool inheritanceEnabled,
+  }) async {
+    final linkRows = await executor.query(
+      'material_group_item_links',
+      columns: ['item_id'],
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+      orderBy: 'sort_order ASC, id ASC',
+    );
+    final propertyRows = await executor.query(
+      'material_group_properties',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+      orderBy: 'id ASC',
+    );
+
+    return MaterialGroupConfiguration(
+      inheritanceEnabled: inheritanceEnabled,
+      selectedItemIds: linkRows
+          .map((row) => (row['item_id'] as num?)?.toInt())
+          .whereType<int>()
+          .toList(growable: false),
+      propertyDrafts: propertyRows
+          .map((row) {
+            final sourceIds = _decodeSourceItemIds(row['source_item_ids_json']);
+            final sourceTypeWire = (row['source_type'] as String? ?? 'manual')
+                .trim()
+                .toLowerCase();
+            final stateWire = (row['state'] as String? ?? 'active')
+                .trim()
+                .toLowerCase();
+            return GroupPropertyDraft(
+              name: (row['display_name'] as String? ?? '').trim(),
+              inputType: (row['input_type'] as String? ?? 'Text').trim(),
+              mandatory: (row['mandatory'] as int? ?? 0) == 1,
+              sourceType: sourceTypeWire == 'inherited_item'
+                  ? GroupPropertySourceType.inheritedItem
+                  : GroupPropertySourceType.manual,
+              state: switch (stateWire) {
+                'unlinked' => GroupPropertyState.unlinked,
+                'overridden' => GroupPropertyState.overridden,
+                _ => GroupPropertyState.active,
+              },
+              sources: sourceIds
+                  .map((id) => GroupPropertySource(itemId: id))
+                  .toList(growable: false),
+              overrideLocked: (row['override_locked'] as int? ?? 0) == 1,
+              hasTypeConflict: (row['has_type_conflict'] as int? ?? 0) == 1,
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+
+  List<int> _decodeSourceItemIds(Object? rawValue) {
+    final jsonString = (rawValue as String? ?? '').trim();
+    if (jsonString.isEmpty) {
+      return const <int>[];
+    }
+    final decoded = jsonDecode(jsonString);
+    if (decoded is! List<dynamic>) {
+      return const <int>[];
+    }
+    return decoded
+        .map((value) => (value as num?)?.toInt())
+        .whereType<int>()
+        .toList(growable: false);
+  }
+
+  Future<void> _recordActivity(
+    DatabaseExecutor executor, {
+    required String barcode,
+    required String type,
+    required String label,
+    required String description,
+    required String actor,
+    required DateTime createdAt,
+  }) async {
+    await executor.insert(
+      'material_activity',
+      MaterialActivityEventModel(
+        id: null,
+        barcode: barcode,
+        type: type,
+        label: label,
+        description: description,
+        actor: actor,
+        createdAt: createdAt,
+      ).toMap()..remove('id'),
+    );
   }
 }

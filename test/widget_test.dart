@@ -7,6 +7,9 @@ import 'package:paper/features/groups/domain/group_definition.dart';
 import 'package:paper/features/groups/domain/group_inputs.dart';
 import 'package:paper/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:paper/features/inventory/domain/create_parent_material_input.dart';
+import 'package:paper/features/inventory/domain/group_property_draft.dart';
+import 'package:paper/features/inventory/domain/material_activity_event.dart';
+import 'package:paper/features/inventory/domain/material_group_configuration.dart';
 import 'package:paper/features/inventory/domain/material_inputs.dart';
 import 'package:paper/features/inventory/domain/material_record.dart';
 import 'package:paper/features/clients/data/repositories/client_repository.dart';
@@ -89,6 +92,8 @@ class FakeInventoryRepository extends InventoryRepository {
 
   int _nextId = 4;
   int _saveCounter = 0;
+  final Map<String, MaterialGroupConfiguration> _groupConfigurations =
+      <String, MaterialGroupConfiguration>{};
 
   @override
   Future<void> init() async {}
@@ -159,6 +164,12 @@ class FakeInventoryRepository extends InventoryRepository {
         ),
       );
     }
+
+    _groupConfigurations[parentBarcode] = MaterialGroupConfiguration(
+      inheritanceEnabled: input.inheritanceEnabled,
+      selectedItemIds: input.selectedItemIds,
+      propertyDrafts: input.propertyDrafts,
+    );
 
     return SaveParentResult(
       parentBarcode: parentBarcode,
@@ -424,6 +435,50 @@ class FakeInventoryRepository extends InventoryRepository {
     );
     _materials[index] = updated;
     return updated;
+  }
+
+  @override
+  Future<List<MaterialActivityEvent>> getMaterialActivity(
+    String barcode,
+  ) async {
+    final index = _materials.indexWhere((item) => item.barcode == barcode);
+    if (index == -1) {
+      return const [];
+    }
+    final record = _materials[index];
+    return <MaterialActivityEvent>[
+      MaterialActivityEvent(
+        barcode: record.barcode,
+        type: 'created',
+        label: record.isParent ? 'Group created' : 'Item created',
+        description: '${record.name} added to inventory.',
+        actor: record.createdBy,
+        createdAt: record.createdAt,
+      ),
+    ];
+  }
+
+  @override
+  Future<MaterialGroupConfiguration> getGroupConfiguration(
+    String barcode,
+  ) async {
+    return _groupConfigurations[barcode] ?? const MaterialGroupConfiguration();
+  }
+
+  @override
+  Future<MaterialGroupConfiguration> updateGroupConfiguration(
+    String barcode, {
+    required bool inheritanceEnabled,
+    required List<int> selectedItemIds,
+    required List<GroupPropertyDraft> propertyDrafts,
+  }) async {
+    final next = MaterialGroupConfiguration(
+      inheritanceEnabled: inheritanceEnabled,
+      selectedItemIds: selectedItemIds,
+      propertyDrafts: propertyDrafts,
+    );
+    _groupConfigurations[barcode] = next;
+    return next;
   }
 }
 

@@ -1,3 +1,5 @@
+import 'group_property_draft.dart';
+
 class CreateParentMaterialInput {
   const CreateParentMaterialInput({
     required this.name,
@@ -8,6 +10,11 @@ class CreateParentMaterialInput {
     required this.numberOfChildren,
     this.unitId,
     this.unit = '',
+    this.location = '',
+    this.groupMode,
+    this.inheritanceEnabled = false,
+    this.selectedItemIds = const <int>[],
+    this.propertyDrafts = const <GroupPropertyDraft>[],
     this.notes = '',
   });
 
@@ -19,5 +26,10 @@ class CreateParentMaterialInput {
   final int numberOfChildren;
   final int? unitId;
   final String unit;
+  final String location;
+  final String? groupMode;
+  final bool inheritanceEnabled;
+  final List<int> selectedItemIds;
+  final List<GroupPropertyDraft> propertyDrafts;
   final String notes;
 }

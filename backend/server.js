@@ -153,6 +153,13 @@ function rowToMaterialDto(row) {
     return null;
   }
 
+  const unitLabel = String(row.unit || '').trim();
+  const childCount = Number(row.number_of_children || 0);
+  const displayStock = String(row.display_stock || '').trim() ||
+    (unitLabel
+      ? `${Math.max(childCount, 1) * 100} ${unitLabel}`
+      : `${Math.max(childCount, 1) * 100} Pieces`);
+
   return {
     id: row.id,
     barcode: row.barcode,
@@ -161,9 +168,12 @@ function rowToMaterialDto(row) {
     grade: row.grade || '',
     thickness: row.thickness || '',
     supplier: row.supplier || '',
+    location: row.location || '',
     unitId: row.unit_id || null,
     unit: row.unit || '',
     notes: row.notes || '',
+    groupMode: row.group_mode || null,
+    inheritanceEnabled: Number(row.inheritance_enabled || 0) === 1,
     isParent: row.kind === 'parent',
     parentBarcode: row.parent_barcode || null,
     numberOfChildren: row.number_of_children || 0,
@@ -172,6 +182,27 @@ function rowToMaterialDto(row) {
     createdAt: row.created_at,
     linkedGroupId: row.linked_group_id || null,
     linkedItemId: row.linked_item_id || null,
+    displayStock,
+    createdBy: row.created_by || 'Demo Admin',
+    workflowStatus: row.workflow_status || 'notStarted',
+    updatedAt: row.updated_at || row.created_at,
+    lastScannedAt: row.last_scanned_at || null,
+  };
+}
+
+function rowToMaterialActivityDto(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    barcode: row.barcode || '',
+    type: row.event_type || '',
+    label: row.event_label || '',
+    description: row.event_description || '',
+    actor: row.actor || '',
+    createdAt: row.created_at,
   };
 }
 
@@ -543,9 +574,12 @@ async function initDb() {
       grade TEXT,
       thickness TEXT,
       supplier TEXT,
+      location TEXT,
       unit_id INTEGER,
       unit TEXT,
       notes TEXT,
+      group_mode TEXT,
+      inheritance_enabled INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       kind TEXT NOT NULL,
       parent_barcode TEXT,
@@ -553,7 +587,63 @@ async function initDb() {
       linked_child_barcodes TEXT,
       scan_count INTEGER NOT NULL DEFAULT 0,
       linked_group_id INTEGER REFERENCES groups(id),
-      linked_item_id INTEGER REFERENCES items(id)
+      linked_item_id INTEGER REFERENCES items(id),
+      display_stock TEXT DEFAULT '',
+      created_by TEXT DEFAULT '',
+      workflow_status TEXT DEFAULT 'notStarted',
+      updated_at TEXT,
+      last_scanned_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS scan_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      barcode TEXT NOT NULL,
+      scanned_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS material_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      barcode TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      event_label TEXT NOT NULL,
+      event_description TEXT DEFAULT '',
+      actor TEXT DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS material_group_item_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_id INTEGER NOT NULL REFERENCES materials(id),
+      item_id INTEGER NOT NULL REFERENCES items(id),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(material_id, item_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS material_group_properties (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_id INTEGER NOT NULL REFERENCES materials(id),
+      property_key TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      input_type TEXT NOT NULL DEFAULT 'Text',
+      mandatory INTEGER NOT NULL DEFAULT 0,
+      source_type TEXT NOT NULL DEFAULT 'manual',
+      source_item_ids_json TEXT NOT NULL DEFAULT '[]',
+      state TEXT NOT NULL DEFAULT 'active',
+      override_locked INTEGER NOT NULL DEFAULT 0,
+      has_type_conflict INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(material_id, property_key)
     )
   `);
 
@@ -698,6 +788,19 @@ async function initDb() {
   await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
+  await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
+  await ensureColumnExists('materials', 'group_mode', 'TEXT');
+  await ensureColumnExists(
+    'materials',
+    'inheritance_enabled',
+    'INTEGER NOT NULL DEFAULT 0',
+  );
+  await ensureColumnExists('materials', 'display_stock', "TEXT DEFAULT ''");
+  await ensureColumnExists('materials', 'created_by', "TEXT DEFAULT ''");
+  await ensureColumnExists('materials', 'workflow_status', "TEXT DEFAULT 'notStarted'");
+  await ensureColumnExists('materials', 'updated_at', 'TEXT');
+  await ensureColumnExists('materials', 'last_scanned_at', 'TEXT');
+  await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_templates (
@@ -1000,16 +1103,20 @@ async function createParentWithChildren(payload) {
     (_, index) => generateChildBarcode(parentBarcode, index + 1),
   );
   const createdAt = new Date().toISOString();
+  const parentDisplayStock = resolvedUnit.unit
+    ? `${Number(payload.numberOfChildren || 0) * 100} ${resolvedUnit.unit}`
+    : `${Number(payload.numberOfChildren || 0) * 100} Pieces`;
 
   await run('BEGIN TRANSACTION');
   try {
     const parentResult = await run(
       `
       INSERT INTO materials (
-        barcode, name, type, grade, thickness, supplier, unit_id, unit, notes,
+        barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes, group_mode, inheritance_enabled,
         created_at, kind, parent_barcode, number_of_children,
-        linked_child_barcodes, scan_count, linked_group_id, linked_item_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0, NULL, NULL)
+        linked_child_barcodes, scan_count, linked_group_id, linked_item_id,
+        display_stock, created_by, workflow_status, updated_at, last_scanned_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, NULL)
       `,
       [
         parentBarcode,
@@ -1018,12 +1125,19 @@ async function createParentWithChildren(payload) {
         payload.grade || '',
         payload.thickness || '',
         payload.supplier || '',
+        String(payload.location || '').trim(),
         resolvedUnit.unitId,
         resolvedUnit.unit,
         payload.notes || '',
+        String(payload.groupMode || '').trim() || null,
+        payload.inheritanceEnabled ? 1 : 0,
         createdAt,
         Number(payload.numberOfChildren || 0),
         JSON.stringify(childBarcodes),
+        parentDisplayStock,
+        'Demo Admin',
+        'inProgress',
+        createdAt,
       ],
     );
 
@@ -1031,10 +1145,11 @@ async function createParentWithChildren(payload) {
       await run(
         `
         INSERT INTO materials (
-          barcode, name, type, grade, thickness, supplier, unit_id, unit, notes,
+          barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes, group_mode, inheritance_enabled,
           created_at, kind, parent_barcode, number_of_children,
-          linked_child_barcodes, scan_count, linked_group_id, linked_item_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, ?, 0, NULL, NULL)
+          linked_child_barcodes, scan_count, linked_group_id, linked_item_id,
+          display_stock, created_by, workflow_status, updated_at, last_scanned_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, ?, 0, NULL, NULL, ?, ?, ?, ?, NULL)
         `,
         [
           childBarcodes[index],
@@ -1043,15 +1158,41 @@ async function createParentWithChildren(payload) {
           payload.grade || '',
           payload.thickness || '',
           payload.supplier || '',
+          String(payload.location || '').trim(),
           resolvedUnit.unitId,
           resolvedUnit.unit,
           payload.notes || '',
+          String(payload.groupMode || '').trim() || null,
+          payload.inheritanceEnabled ? 1 : 0,
           createdAt,
           parentBarcode,
           JSON.stringify([]),
+          resolvedUnit.unit ? `100 ${resolvedUnit.unit}` : '100 Pieces',
+          'Demo Admin',
+          'notStarted',
+          createdAt,
         ],
       );
+      await logMaterialActivity({
+        barcode: childBarcodes[index],
+        type: 'created',
+        label: 'Item created',
+        description: `Inventory item ${payload.name} - Child ${index + 1} was created.`,
+        actor: 'Demo Admin',
+        createdAt,
+      });
     }
+
+    await logMaterialActivity({
+      barcode: parentBarcode,
+      type: 'created',
+      label: 'Group created',
+      description: `Inventory group ${payload.name} was created.`,
+      actor: 'Demo Admin',
+      createdAt,
+    });
+
+    await persistMaterialGroupGovernance(parentResult.lastID, payload, createdAt);
 
     await run('COMMIT');
     const parentRow = await get('SELECT * FROM materials WHERE id = ?', [
@@ -3256,13 +3397,240 @@ async function getMaterialRowByBarcode(barcode) {
   return rows.find((item) => normalizeBarcode(item.barcode) === normalized) || null;
 }
 
+function normalizePropertyKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeGroupPropertyDraft(rawDraft) {
+  const name = String(rawDraft?.name || '').trim();
+  if (!name) {
+    return null;
+  }
+  const inputType = String(rawDraft?.inputType || 'Text').trim() || 'Text';
+  const sourceType = rawDraft?.sourceType === 'inherited_item' ? 'inherited_item' : 'manual';
+  const state = ['active', 'unlinked', 'overridden'].includes(rawDraft?.state)
+    ? rawDraft.state
+    : 'active';
+  const overrideLocked = Boolean(rawDraft?.overrideLocked);
+  const hasTypeConflict = Boolean(rawDraft?.hasTypeConflict);
+  const mandatory = Boolean(rawDraft?.mandatory);
+  const sources = Array.isArray(rawDraft?.sources) ? rawDraft.sources : [];
+  const sourceItemIds = sources
+    .map((source) => Number(source?.itemId))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  return {
+    propertyKey: normalizePropertyKey(name),
+    displayName: name,
+    inputType,
+    sourceType,
+    state,
+    mandatory,
+    overrideLocked,
+    hasTypeConflict,
+    sourceItemIds: [...new Set(sourceItemIds)],
+  };
+}
+
+async function persistMaterialGroupGovernance(materialId, payload, now = new Date().toISOString()) {
+  const selectedItemIds = Array.isArray(payload?.selectedItemIds)
+    ? [...new Set(
+      payload.selectedItemIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    )]
+    : [];
+  const draftsInput = Array.isArray(payload?.propertyDrafts) ? payload.propertyDrafts : [];
+  const drafts = draftsInput
+    .map(normalizeGroupPropertyDraft)
+    .filter(Boolean);
+  const dedupedDraftsByKey = new Map();
+  for (const draft of drafts) {
+    if (!dedupedDraftsByKey.has(draft.propertyKey)) {
+      dedupedDraftsByKey.set(draft.propertyKey, draft);
+    }
+  }
+  const dedupedDrafts = [...dedupedDraftsByKey.values()];
+
+  await run('DELETE FROM material_group_item_links WHERE material_id = ?', [materialId]);
+  await run('DELETE FROM material_group_properties WHERE material_id = ?', [materialId]);
+
+  for (let index = 0; index < selectedItemIds.length; index += 1) {
+    await run(
+      `
+      INSERT INTO material_group_item_links (material_id, item_id, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      `,
+      [materialId, selectedItemIds[index], index, now, now],
+    );
+  }
+
+  for (const draft of dedupedDrafts) {
+    await run(
+      `
+      INSERT INTO material_group_properties (
+        material_id, property_key, display_name, input_type, mandatory,
+        source_type, source_item_ids_json, state, override_locked, has_type_conflict,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        materialId,
+        draft.propertyKey,
+        draft.displayName,
+        draft.inputType,
+        draft.mandatory ? 1 : 0,
+        draft.sourceType,
+        JSON.stringify(draft.sourceItemIds),
+        draft.state,
+        draft.overrideLocked ? 1 : 0,
+        draft.hasTypeConflict ? 1 : 0,
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+async function getMaterialGroupGovernance(materialId) {
+  const itemLinks = await all(
+    `
+    SELECT link.item_id, link.sort_order, item.display_name, item.name
+    FROM material_group_item_links AS link
+    LEFT JOIN items AS item ON item.id = link.item_id
+    WHERE link.material_id = ?
+    ORDER BY link.sort_order ASC, link.id ASC
+    `,
+    [materialId],
+  );
+
+  const properties = await all(
+    `
+    SELECT *
+    FROM material_group_properties
+    WHERE material_id = ?
+    ORDER BY id ASC
+    `,
+    [materialId],
+  );
+
+  const selectedItemIds = itemLinks.map((row) => Number(row.item_id)).filter(Boolean);
+  const selectedItems = itemLinks.map((row) => ({
+    itemId: Number(row.item_id),
+    itemName: row.display_name || row.name || `Item #${row.item_id}`,
+    sortOrder: Number(row.sort_order || 0),
+  }));
+  const propertyDrafts = properties.map((row) => {
+    const sourceItemIds = parseJson(row.source_item_ids_json, [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    const sourceNameById = new Map(selectedItems.map((item) => [item.itemId, item.itemName]));
+    const sources = sourceItemIds.map((itemId) => ({
+      itemId,
+      itemName: sourceNameById.get(itemId) || null,
+    }));
+    return {
+      propertyKey: row.property_key || '',
+      name: row.display_name || '',
+      inputType: row.input_type || 'Text',
+      mandatory: Number(row.mandatory || 0) === 1,
+      sourceType: row.source_type || 'manual',
+      state: row.state || 'active',
+      overrideLocked: Number(row.override_locked || 0) === 1,
+      hasTypeConflict: Number(row.has_type_conflict || 0) === 1,
+      sources,
+    };
+  });
+
+  return { selectedItemIds, selectedItems, propertyDrafts };
+}
+
 async function incrementMaterialScanCount(barcode) {
   const row = await getMaterialRowByBarcode(barcode);
   if (!row) {
     return null;
   }
-  await run('UPDATE materials SET scan_count = scan_count + 1 WHERE id = ?', [row.id]);
+  const now = new Date().toISOString();
+  await run('INSERT INTO scan_history (barcode, scanned_at) VALUES (?, ?)', [
+    row.barcode,
+    now,
+  ]);
+  await run(
+    'UPDATE materials SET scan_count = scan_count + 1, updated_at = ?, last_scanned_at = ? WHERE id = ?',
+    [now, now, row.id],
+  );
+  await logMaterialActivity({
+    barcode: row.barcode,
+    type: 'scan',
+    label: 'Material scanned',
+    description: `Scan trace updated to ${Number(row.scan_count || 0) + 1} total scans.`,
+    actor: 'Scanner',
+    createdAt: now,
+  });
   return get('SELECT * FROM materials WHERE id = ?', [row.id]);
+}
+
+async function getMaterialActivity(barcode) {
+  const material = await getMaterialRowByBarcode(barcode);
+  if (!material) {
+    return [];
+  }
+  return all(
+    `
+    SELECT *
+    FROM material_activity
+    WHERE barcode = ?
+    ORDER BY datetime(created_at) DESC, id DESC
+    `,
+    [material.barcode],
+  );
+}
+
+async function updateMaterialGroupConfiguration(barcode, payload) {
+  const material = await getMaterialRowByBarcode(barcode);
+  if (!material) {
+    throw new Error('Material not found.');
+  }
+  const now = new Date().toISOString();
+  await run(
+    'UPDATE materials SET group_mode = ?, inheritance_enabled = ?, updated_at = ? WHERE id = ?',
+    [
+      String(payload.groupMode ?? material.group_mode ?? '').trim() || null,
+      payload.inheritanceEnabled == null
+        ? Number(material.inheritance_enabled || 0)
+        : (payload.inheritanceEnabled ? 1 : 0),
+      now,
+      material.id,
+    ],
+  );
+  await persistMaterialGroupGovernance(material.id, payload, now);
+  await logMaterialActivity({
+    barcode: material.barcode,
+    type: 'governanceUpdated',
+    label: 'Inheritance governance updated',
+    description: 'Group property inheritance configuration was updated.',
+    actor: material.created_by || 'Demo Admin',
+    createdAt: now,
+  });
+  return get('SELECT * FROM materials WHERE id = ?', [material.id]);
+}
+
+async function logMaterialActivity({
+  barcode,
+  type,
+  label,
+  description = '',
+  actor = '',
+  createdAt = new Date().toISOString(),
+}) {
+  await run(
+    `
+    INSERT INTO material_activity (
+      barcode, event_type, event_label, event_description, actor, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [barcode, type, label, description, actor, createdAt],
+  );
 }
 
 async function createChildMaterial(parentBarcode, payload) {
@@ -3274,14 +3642,18 @@ async function createChildMaterial(parentBarcode, payload) {
   const nextIndex = Number(parent.number_of_children || 0) + 1;
   const childBarcode = generateChildBarcode(parent.barcode, nextIndex);
   const createdAt = new Date().toISOString();
+  const childDisplayStock = String(parent.unit || '').trim()
+    ? `100 ${String(parent.unit || '').trim()}`
+    : '100 Pieces';
 
   await run(
     `
     INSERT INTO materials (
-      barcode, name, type, grade, thickness, supplier, unit_id, unit, notes,
+      barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes, group_mode, inheritance_enabled,
       created_at, kind, parent_barcode, number_of_children, linked_child_barcodes,
-      scan_count, linked_group_id, linked_item_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, '[]', 0, NULL, NULL)
+      scan_count, linked_group_id, linked_item_id, display_stock, created_by,
+      workflow_status, updated_at, last_scanned_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, '[]', 0, NULL, NULL, ?, ?, ?, ?, NULL)
     `,
     [
       childBarcode,
@@ -3290,20 +3662,36 @@ async function createChildMaterial(parentBarcode, payload) {
       parent.grade || '',
       parent.thickness || '',
       parent.supplier || '',
+      parent.location || '',
       parent.unit_id || null,
       parent.unit || '',
       String(payload.notes || '').trim(),
+      parent.group_mode || null,
+      Number(parent.inheritance_enabled || 0),
       createdAt,
       parent.barcode,
+      childDisplayStock,
+      parent.created_by || 'Demo Admin',
+      'notStarted',
+      createdAt,
     ],
   );
 
   const linkedChildren = parseJson(parent.linked_child_barcodes, []);
   linkedChildren.push(childBarcode);
   await run(
-    'UPDATE materials SET number_of_children = ?, linked_child_barcodes = ? WHERE id = ?',
-    [linkedChildren.length, JSON.stringify(linkedChildren), parent.id],
+    'UPDATE materials SET number_of_children = ?, linked_child_barcodes = ?, updated_at = ? WHERE id = ?',
+    [linkedChildren.length, JSON.stringify(linkedChildren), createdAt, parent.id],
   );
+
+  await logMaterialActivity({
+    barcode: childBarcode,
+    type: 'created',
+    label: 'Sub-group created',
+    description: `Created under parent ${parent.name || parent.barcode}.`,
+    actor: parent.created_by || 'Demo Admin',
+    createdAt,
+  });
 
   return getMaterialRowByBarcode(childBarcode);
 }
@@ -3315,10 +3703,17 @@ async function updateMaterialRecord(barcode, payload) {
   }
 
   const resolvedUnit = await resolveUnitPayload(payload);
+  const now = new Date().toISOString();
+  const existingDisplayStock = String(existing.display_stock || '').trim();
+  const nextDisplayStock = existingDisplayStock || (
+    resolvedUnit.unit
+      ? `${Math.max(Number(existing.number_of_children || 0), 1) * 100} ${resolvedUnit.unit}`
+      : `${Math.max(Number(existing.number_of_children || 0), 1) * 100} Pieces`
+  );
   await run(
     `
     UPDATE materials
-    SET name = ?, type = ?, grade = ?, thickness = ?, supplier = ?, unit_id = ?, unit = ?, notes = ?
+    SET name = ?, type = ?, grade = ?, thickness = ?, supplier = ?, location = ?, unit_id = ?, unit = ?, notes = ?, group_mode = ?, inheritance_enabled = ?, display_stock = ?, updated_at = ?
     WHERE id = ?
     `,
     [
@@ -3327,12 +3722,27 @@ async function updateMaterialRecord(barcode, payload) {
       String(payload.grade || '').trim(),
       String(payload.thickness || '').trim(),
       String(payload.supplier || '').trim(),
+      String(payload.location || '').trim(),
       resolvedUnit.unitId,
       resolvedUnit.unit,
       String(payload.notes || '').trim(),
+      String(payload.groupMode ?? existing.group_mode ?? '').trim() || null,
+      payload.inheritanceEnabled == null
+        ? Number(existing.inheritance_enabled || 0)
+        : (payload.inheritanceEnabled ? 1 : 0),
+      nextDisplayStock,
+      now,
       existing.id,
     ],
   );
+  await logMaterialActivity({
+    barcode: existing.barcode,
+    type: 'updated',
+    label: 'Record updated',
+    description: 'Material details were edited.',
+    actor: existing.created_by || 'Demo Admin',
+    createdAt: now,
+  });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -3348,6 +3758,7 @@ async function deleteMaterialRecord(barcode) {
     ]);
     for (const child of childRows) {
       await run('DELETE FROM scan_history WHERE barcode = ?', [child.barcode]);
+      await run('DELETE FROM material_activity WHERE barcode = ?', [child.barcode]);
     }
     await run('DELETE FROM materials WHERE parent_barcode = ?', [existing.barcode]);
   } else if (existing.parent_barcode) {
@@ -3364,6 +3775,9 @@ async function deleteMaterialRecord(barcode) {
   }
 
   await run('DELETE FROM scan_history WHERE barcode = ?', [existing.barcode]);
+  await run('DELETE FROM material_activity WHERE barcode = ?', [existing.barcode]);
+  await run('DELETE FROM material_group_item_links WHERE material_id = ?', [existing.id]);
+  await run('DELETE FROM material_group_properties WHERE material_id = ?', [existing.id]);
   await run('DELETE FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -3377,9 +3791,16 @@ async function linkMaterialRecordToGroup(barcode, groupId) {
     throw new Error('Selected group is not available.');
   }
   await run(
-    'UPDATE materials SET linked_group_id = ?, linked_item_id = NULL WHERE id = ?',
-    [group.id, existing.id],
+    'UPDATE materials SET linked_group_id = ?, linked_item_id = NULL, updated_at = ? WHERE id = ?',
+    [group.id, new Date().toISOString(), existing.id],
   );
+  await logMaterialActivity({
+    barcode: existing.barcode,
+    type: 'linked',
+    label: 'Inheritance linked',
+    description: `Linked to group ${group.name || group.id}.`,
+    actor: existing.created_by || 'Demo Admin',
+  });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -3393,9 +3814,16 @@ async function linkMaterialRecordToItem(barcode, itemId) {
     throw new Error('Selected item is not available.');
   }
   await run(
-    'UPDATE materials SET linked_group_id = NULL, linked_item_id = ? WHERE id = ?',
-    [item.id, existing.id],
+    'UPDATE materials SET linked_group_id = NULL, linked_item_id = ?, updated_at = ? WHERE id = ?',
+    [item.id, new Date().toISOString(), existing.id],
   );
+  await logMaterialActivity({
+    barcode: existing.barcode,
+    type: 'linked',
+    label: 'Inheritance linked',
+    description: `Linked to item ${item.display_name || item.name || item.id}.`,
+    actor: existing.created_by || 'Demo Admin',
+  });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -3405,9 +3833,16 @@ async function unlinkMaterialRecord(barcode) {
     throw new Error('Material not found.');
   }
   await run(
-    'UPDATE materials SET linked_group_id = NULL, linked_item_id = NULL WHERE id = ?',
-    [existing.id],
+    'UPDATE materials SET linked_group_id = NULL, linked_item_id = NULL, updated_at = ? WHERE id = ?',
+    [new Date().toISOString(), existing.id],
   );
+  await logMaterialActivity({
+    barcode: existing.barcode,
+    type: 'unlinked',
+    label: 'Inheritance removed',
+    description: 'Removed inheritance link.',
+    actor: existing.created_by || 'Demo Admin',
+  });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -3876,7 +4311,13 @@ app.get('/api/materials/:barcode', async (req, res) => {
       });
       return;
     }
-    res.json({ success: true, material: rowToMaterialDto(row), error: null });
+    const groupConfiguration = await getMaterialGroupGovernance(row.id);
+    res.json({
+      success: true,
+      material: rowToMaterialDto(row),
+      groupConfiguration,
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, material: null, error: error.message });
   }
@@ -4235,7 +4676,7 @@ app.patch('/api/groups/:id/restore', async (req, res) => {
 app.post('/api/materials/parent', async (req, res) => {
   try {
     const payload = req.body || {};
-    if (!payload.name || !payload.type || !payload.numberOfChildren) {
+    if (!payload.name || !payload.type || payload.numberOfChildren == null) {
       res.status(400).json({
         success: false,
         material: null,
@@ -4245,7 +4686,11 @@ app.post('/api/materials/parent', async (req, res) => {
     }
 
     const material = await createParentWithChildren(payload);
-    res.status(201).json({ success: true, material, error: null });
+    const createdRow = await getMaterialRowByBarcode(material.barcode);
+    const groupConfiguration = createdRow
+      ? await getMaterialGroupGovernance(createdRow.id)
+      : { selectedItemIds: [], selectedItems: [], propertyDrafts: [] };
+    res.status(201).json({ success: true, material, groupConfiguration, error: null });
   } catch (error) {
     res.status(500).json({ success: false, material: null, error: error.message });
   }
@@ -4281,7 +4726,29 @@ app.patch('/api/materials/:barcode', async (req, res) => {
       return;
     }
     const material = await updateMaterialRecord(req.params.barcode, payload);
-    res.json({ success: true, material: rowToMaterialDto(material), error: null });
+    const groupConfiguration = await getMaterialGroupGovernance(material.id);
+    res.json({
+      success: true,
+      material: rowToMaterialDto(material),
+      groupConfiguration,
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.patch('/api/materials/:barcode/group-config', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const material = await updateMaterialGroupConfiguration(req.params.barcode, payload);
+    const groupConfiguration = await getMaterialGroupGovernance(material.id);
+    res.json({
+      success: true,
+      material: rowToMaterialDto(material),
+      groupConfiguration,
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, material: null, error: error.message });
   }
@@ -4361,7 +4828,18 @@ app.patch('/api/materials/:barcode/scan/reset', async (req, res) => {
       });
       return;
     }
-    await run('UPDATE materials SET scan_count = 0 WHERE id = ?', [row.id]);
+    await run(
+      'UPDATE materials SET scan_count = 0, updated_at = ?, last_scanned_at = NULL WHERE id = ?',
+      [new Date().toISOString(), row.id],
+    );
+    await run('DELETE FROM scan_history WHERE barcode = ?', [row.barcode]);
+    await logMaterialActivity({
+      barcode: row.barcode,
+      type: 'scanReset',
+      label: 'Trace reset',
+      description: 'Scan history was cleared for this material.',
+      actor: row.created_by || 'Demo Admin',
+    });
     const updatedRow = await get('SELECT * FROM materials WHERE id = ?', [row.id]);
     res.json({
       success: true,
@@ -4370,6 +4848,19 @@ app.patch('/api/materials/:barcode/scan/reset', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.get('/api/materials/:barcode/activity', async (req, res) => {
+  try {
+    const events = await getMaterialActivity(req.params.barcode);
+    res.json({
+      success: true,
+      events: events.map(rowToMaterialActivityDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, events: [], error: error.message });
   }
 });
 
@@ -4669,6 +5160,8 @@ async function resetAndSeedDemoData() {
   await run('DELETE FROM item_variation_nodes');
   await run('DELETE FROM items');
   await run('DELETE FROM clients');
+  await run('DELETE FROM material_group_item_links');
+  await run('DELETE FROM material_group_properties');
   await run('DELETE FROM materials');
   await run('DELETE FROM groups');
   await run('DELETE FROM units');
@@ -4734,6 +5227,10 @@ module.exports = {
   getGroupsWithUsage,
   getClientsWithUsage,
   getItemsWithUsage,
+  createParentWithChildren,
+  getMaterialRowByBarcode,
+  getMaterialGroupGovernance,
+  updateMaterialGroupConfiguration,
   rowToClientDto,
   rowToOrderDto,
   rowToItemDto,

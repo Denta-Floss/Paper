@@ -7,9 +7,12 @@ class MaterialRecord {
     required this.grade,
     required this.thickness,
     required this.supplier,
+    this.location = '',
     this.unitId,
     this.unit = '',
     this.notes = '',
+    this.groupMode,
+    this.inheritanceEnabled = false,
     required this.createdAt,
     required this.kind,
     required this.parentBarcode,
@@ -21,7 +24,9 @@ class MaterialRecord {
     this.displayStock = '',
     this.createdBy = '',
     this.workflowStatus = 'notStarted',
-  });
+    DateTime? updatedAt,
+    this.lastScannedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   final int? id;
   final String barcode;
@@ -30,9 +35,12 @@ class MaterialRecord {
   final String grade;
   final String thickness;
   final String supplier;
+  final String location;
   final int? unitId;
   final String unit;
   final String notes;
+  final String? groupMode;
+  final bool inheritanceEnabled;
   final DateTime createdAt;
   final String kind;
   final String? parentBarcode;
@@ -44,8 +52,11 @@ class MaterialRecord {
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
+  final DateTime updatedAt;
+  final DateTime? lastScannedAt;
 
   bool get isParent => kind == 'parent';
   bool get isChild => kind == 'child';
   bool get hasInheritanceLink => linkedGroupId != null || linkedItemId != null;
+  bool get hasBeenScanned => scanCount > 0 || lastScannedAt != null;
 }

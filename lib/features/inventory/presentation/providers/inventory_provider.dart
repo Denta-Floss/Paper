@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/inventory_repository.dart';
+import '../../domain/material_activity_event.dart';
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/group_property_draft.dart';
+import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 
@@ -19,6 +22,7 @@ class InventoryProvider extends ChangeNotifier {
   String? _lastLookupBarcode;
   String _searchQuery = '';
   bool _initialized = false;
+  final Map<String, List<MaterialActivityEvent>> _activityByBarcode = {};
 
   List<MaterialRecord> get materials => _materials;
   MaterialRecord? get selectedMaterial => _selectedMaterial;
@@ -27,6 +31,9 @@ class InventoryProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get lastLookupBarcode => _lastLookupBarcode;
   String get searchQuery => _searchQuery;
+
+  List<MaterialActivityEvent> activityFor(String barcode) =>
+      _activityByBarcode[barcode] ?? const [];
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -226,6 +233,73 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
+  Future<List<MaterialActivityEvent>> loadMaterialActivity(
+    String barcode,
+  ) async {
+    try {
+      final activity = await _repository.getMaterialActivity(barcode);
+      _activityByBarcode[barcode] = activity;
+      notifyListeners();
+      return activity;
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to load activity history.',
+        error: error,
+      );
+      notifyListeners();
+      return _activityByBarcode[barcode] ?? const [];
+    }
+  }
+
+  Future<MaterialGroupConfiguration?> loadGroupConfiguration(
+    String barcode,
+  ) async {
+    try {
+      _errorMessage = null;
+      notifyListeners();
+      return await _repository.getGroupConfiguration(barcode);
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to load group configuration.',
+        error: error,
+      );
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> updateGroupConfiguration(
+    String barcode, {
+    required bool inheritanceEnabled,
+    required List<int> selectedItemIds,
+    required List<GroupPropertyDraft> propertyDrafts,
+  }) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.updateGroupConfiguration(
+        barcode,
+        inheritanceEnabled: inheritanceEnabled,
+        selectedItemIds: selectedItemIds,
+        propertyDrafts: propertyDrafts,
+      );
+      await _reloadMaterials();
+      _selectedMaterial = _materials
+          .where((item) => item.barcode == barcode)
+          .firstOrNull;
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to update group configuration.',
+        error: error,
+      );
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
   void clearError() {
     if (_errorMessage == null) {
       return;
@@ -272,11 +346,41 @@ class InventoryProvider extends ChangeNotifier {
   }
 
   String _friendlyError({required String fallback, required Object error}) {
-    final message = error.toString().trim();
+    final message = _sanitizeErrorMessage(error.toString());
     if (message.isEmpty || message == 'Exception') {
       return fallback;
     }
+    if (message.toLowerCase().startsWith(fallback.toLowerCase())) {
+      return message;
+    }
     return '$fallback $message';
+  }
+
+  String _sanitizeErrorMessage(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+
+    final withoutPrefix = trimmed.replaceFirst(
+      RegExp(r'^Exception:\s*', caseSensitive: false),
+      '',
+    );
+    final lower = withoutPrefix.toLowerCase();
+
+    final cannotGetMatch = RegExp(
+      r'cannot\s+get\s+([^\s<]+)',
+      caseSensitive: false,
+    ).firstMatch(withoutPrefix);
+    if (cannotGetMatch != null) {
+      return 'Endpoint unavailable: ${cannotGetMatch.group(1)}';
+    }
+
+    if (lower.contains('<!doctype html') || lower.contains('<html')) {
+      return 'Server returned an unexpected HTML response.';
+    }
+
+    return withoutPrefix.replaceAll(RegExp(r'\s+'), ' ');
   }
 }
 
