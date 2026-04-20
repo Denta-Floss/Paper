@@ -65,6 +65,14 @@ PAPER_SUPER_ADMIN_PASSWORD=<temporary-strong-password>
 PAPER_SUPER_ADMIN_NAME=<your-name>
 ```
 
+Optional security tuning:
+
+```bash
+PAPER_LOGIN_MAX_ATTEMPTS=5
+PAPER_LOGIN_WINDOW_MINUTES=15
+PAPER_LOGIN_LOCKOUT_MINUTES=15
+```
+
 Start or restart with PM2:
 
 ```bash
