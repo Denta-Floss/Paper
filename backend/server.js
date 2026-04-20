@@ -13,6 +13,22 @@ const JWT_SECRET = resolveJwtSecret();
 const JWT_TTL_SECONDS = Number(process.env.PAPER_JWT_TTL_SECONDS || 60 * 60 * 12);
 const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
+const PASSWORD_POLICY_ERROR =
+  'Use at least 10 characters with letters and numbers. Avoid names or common words.';
+const COMMON_WEAK_PASSWORDS = new Set([
+  'password',
+  'password123',
+  '123456',
+  '12345678',
+  '123456789',
+  'qwerty',
+  'qwerty123',
+  'admin',
+  'admin123',
+  'paper',
+  'paper123',
+  'letmein',
+]);
 const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
 const PERMISSION_KEYS = [
   'inventory.read',
@@ -137,6 +153,74 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'config.write': false,
   },
 };
+const DEFAULT_PERMISSION_TEMPLATES = [
+  {
+    name: 'Inventory Viewer',
+    description: 'Can view inventory and basic configuration records.',
+    permissions: {
+      'inventory.read': true,
+      'inventory.request_delete': false,
+      'config.read': true,
+    },
+  },
+  {
+    name: 'Inventory Operator',
+    description: 'Can work inventory records and request deletes.',
+    permissions: {
+      'inventory.read': true,
+      'inventory.create': true,
+      'inventory.update': true,
+      'inventory.request_delete': true,
+      'config.read': true,
+    },
+  },
+  {
+    name: 'Inventory Manager',
+    description: 'Can run full inventory workflow including direct deletes and approvals.',
+    permissions: {
+      'inventory.read': true,
+      'inventory.create': true,
+      'inventory.update': true,
+      'inventory.delete': true,
+      'inventory.request_delete': true,
+      'delete_requests.review': true,
+      'config.read': true,
+    },
+  },
+  {
+    name: 'Configurator Manager',
+    description: 'Can edit units, groups, clients, items, orders, templates, and runs.',
+    permissions: {
+      'config.read': true,
+      'config.write': true,
+      'inventory.read': true,
+    },
+  },
+  {
+    name: 'User Admin',
+    description: 'Can manage user accounts, session controls, and permission overrides.',
+    permissions: {
+      'users.read': true,
+      'users.create_user': true,
+      'users.update_status': true,
+      'users.reset_password': true,
+      'users.manage_permissions': true,
+      'sessions.manage': true,
+      'audit.read': true,
+    },
+  },
+  {
+    name: 'Auditor',
+    description: 'Can view and export security activity and delete requests.',
+    permissions: {
+      'audit.read': true,
+      'delete_requests.review': true,
+      'users.read': true,
+      'inventory.read': true,
+      'config.read': true,
+    },
+  },
+];
 const LOGIN_MAX_ATTEMPTS = Number(process.env.PAPER_LOGIN_MAX_ATTEMPTS || 5);
 const LOGIN_WINDOW_MINUTES = Number(process.env.PAPER_LOGIN_WINDOW_MINUTES || 15);
 const LOGIN_LOCKOUT_MINUTES = Number(process.env.PAPER_LOGIN_LOCKOUT_MINUTES || 15);
@@ -379,6 +463,57 @@ function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
+function validatePasswordPolicy(password, { email = '' } = {}) {
+  const value = String(password || '');
+  const normalized = value.toLowerCase();
+  if (value.length < 10) {
+    return PASSWORD_POLICY_ERROR;
+  }
+  if (!/[a-z]/i.test(value) || !/[0-9]/.test(value)) {
+    return PASSWORD_POLICY_ERROR;
+  }
+  const emailPrefix = String(email || '').split('@')[0].trim().toLowerCase();
+  if (emailPrefix && emailPrefix.length >= 3 && normalized.includes(emailPrefix)) {
+    return PASSWORD_POLICY_ERROR;
+  }
+  if (COMMON_WEAK_PASSWORDS.has(normalized)) {
+    return PASSWORD_POLICY_ERROR;
+  }
+  return null;
+}
+
+function parsePagination(query = {}, { defaultLimit = 25, maxLimit = 200 } = {}) {
+  const limit = Math.min(maxLimit, Math.max(1, Number(query.limit || defaultLimit)));
+  const offset = Math.max(0, Number(query.offset || 0));
+  return { limit, offset };
+}
+
+function normalizeNullableDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return null;
+  }
+  const parsed = Date.parse(raw);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+  return new Date(parsed).toISOString();
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  if (!/[",\n]/.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(headers, rows) {
+  const headerRow = headers.map(csvEscape).join(',');
+  const bodyRows = rows.map((row) => row.map(csvEscape).join(','));
+  return [headerRow, ...bodyRows].join('\n');
+}
+
 function normalizePermissionKey(value = '') {
   return String(value || '').trim();
 }
@@ -433,11 +568,52 @@ async function getRolePermissionMap(role) {
   return defaults;
 }
 
+async function getTemplatePermissionMapForUser(userId) {
+  const rows = await all(
+    `
+    SELECT ptp.permission_key, MAX(ptp.is_allowed) AS is_allowed
+    FROM user_permission_templates upt
+    INNER JOIN permission_template_permissions ptp ON ptp.template_id = upt.template_id
+    WHERE upt.user_id = ?
+    GROUP BY ptp.permission_key
+    `,
+    [userId],
+  );
+  const templateMap = createEmptyPermissionMap();
+  for (const row of rows) {
+    const key = normalizePermissionKey(row.permission_key);
+    if (!isKnownPermissionKey(key)) {
+      continue;
+    }
+    templateMap[key] = Number(row.is_allowed || 0) === 1;
+  }
+  return templateMap;
+}
+
+async function getAssignedPermissionTemplates(userId) {
+  return all(
+    `
+    SELECT pt.id, pt.name, pt.description, pt.is_system_default, upt.created_at
+    FROM user_permission_templates upt
+    INNER JOIN permission_templates pt ON pt.id = upt.template_id
+    WHERE upt.user_id = ?
+    ORDER BY pt.name ASC
+    `,
+    [userId],
+  );
+}
+
 async function getEffectivePermissionMap(userId, role) {
   if (role === 'super_admin') {
     return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]));
   }
-  const permissionMap = await getRolePermissionMap(role);
+  const rolePermissions = await getRolePermissionMap(role);
+  const templatePermissions = await getTemplatePermissionMapForUser(userId);
+  const permissionMap = {};
+  for (const key of PERMISSION_KEYS) {
+    permissionMap[key] =
+      rolePermissions[key] === true || templatePermissions[key] === true;
+  }
   const overrideRows = await all(
     'SELECT permission_key, is_allowed FROM user_permission_overrides WHERE user_id = ?',
     [userId],
@@ -454,6 +630,7 @@ async function getEffectivePermissionMap(userId, role) {
 
 async function getUserPermissionSnapshot(user) {
   const roleDefaults = await getRolePermissionMap(user.role);
+  const templateDefaults = await getTemplatePermissionMapForUser(user.id);
   const overrideRows = await all(
     'SELECT permission_key, is_allowed FROM user_permission_overrides WHERE user_id = ?',
     [user.id],
@@ -468,15 +645,34 @@ async function getUserPermissionSnapshot(user) {
   }
   const effective = user.role === 'super_admin'
     ? Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]))
-    : { ...roleDefaults, ...overrideMap };
+    : Object.fromEntries(
+      PERMISSION_KEYS.map((key) => [
+        key,
+        overrideMap[key] ?? (roleDefaults[key] === true || templateDefaults[key] === true),
+      ]),
+    );
   return PERMISSION_KEYS.map((key) => {
     if (user.role === 'super_admin') {
       return { key, allowed: true, source: 'super_admin' };
     }
+    if (Object.prototype.hasOwnProperty.call(overrideMap, key)) {
+      return {
+        key,
+        allowed: effective[key] === true,
+        source: 'override',
+      };
+    }
+    if (templateDefaults[key] === true) {
+      return {
+        key,
+        allowed: true,
+        source: 'template',
+      };
+    }
     return {
       key,
       allowed: effective[key] === true,
-      source: Object.prototype.hasOwnProperty.call(overrideMap, key) ? 'override' : 'role',
+      source: 'role',
     };
   });
 }
@@ -516,6 +712,7 @@ function rowToDeleteRequestDto(row) {
     requestedByName: row.requested_by_name || '',
     reviewedByUserId: row.reviewed_by_user_id || null,
     reviewedByName: row.reviewed_by_name || '',
+    reviewedNote: row.reviewed_note || '',
     reviewedAt: row.reviewed_at || null,
     createdAt: row.created_at,
   };
@@ -790,8 +987,9 @@ async function createUserAccount({
     error.statusCode = 400;
     throw error;
   }
-  if (String(password || '').length < 8) {
-    const error = new Error('password must be at least 8 characters.');
+  const passwordError = validatePasswordPolicy(password, { email: normalizedEmail });
+  if (passwordError) {
+    const error = new Error(passwordError);
     error.statusCode = 400;
     throw error;
   }
@@ -823,6 +1021,14 @@ async function createUserAccount({
 
 async function findActiveUserById(id) {
   return get('SELECT * FROM users WHERE id = ? AND is_active = 1', [id]);
+}
+
+async function safeUserDtoWithPermissions(row) {
+  if (!row) {
+    return null;
+  }
+  const permissionMap = await getEffectivePermissionMap(row.id, row.role);
+  return safeUserDto(row, permissionMap);
 }
 
 async function getDeleteRequestById(id) {
@@ -874,6 +1080,38 @@ async function seedRolePermissions() {
         VALUES (?, ?, ?, ?, ?)
         `,
         [role, key, isAllowed, now, now],
+      );
+    }
+  }
+}
+
+async function seedPermissionTemplates() {
+  const now = nowIso();
+  for (const template of DEFAULT_PERMISSION_TEMPLATES) {
+    await run(
+      `
+      INSERT OR IGNORE INTO permission_templates (name, description, is_system_default, created_at, updated_at)
+      VALUES (?, ?, 1, ?, ?)
+      `,
+      [template.name, template.description, now, now],
+    );
+    const existing = await get('SELECT id FROM permission_templates WHERE name = ?', [template.name]);
+    if (!existing) {
+      continue;
+    }
+    const templateId = Number(existing.id);
+    for (const key of Object.keys(template.permissions || {})) {
+      if (!isKnownPermissionKey(key)) {
+        continue;
+      }
+      const allowed = template.permissions[key] === true ? 1 : 0;
+      await run(
+        `
+        INSERT OR IGNORE INTO permission_template_permissions (
+          template_id, permission_key, is_allowed, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        `,
+        [templateId, key, allowed, now, now],
       );
     }
   }
@@ -1610,6 +1848,35 @@ async function initDb() {
     )
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user ON user_permission_overrides(user_id)');
+  await run(`
+    CREATE TABLE IF NOT EXISTS permission_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT DEFAULT '',
+      is_system_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS permission_template_permissions (
+      template_id INTEGER NOT NULL REFERENCES permission_templates(id),
+      permission_key TEXT NOT NULL,
+      is_allowed INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(template_id, permission_key)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_permission_templates (
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      template_id INTEGER NOT NULL REFERENCES permission_templates(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(user_id, template_id)
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_user_permission_templates_user ON user_permission_templates(user_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS material_group_item_links (
@@ -1915,8 +2182,10 @@ async function initDb() {
   await ensureColumnExists('auth_sessions', 'ip_address', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
+  await ensureColumnExists('delete_requests', 'reviewed_note', "TEXT DEFAULT ''");
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
   await seedRolePermissions();
+  await seedPermissionTemplates();
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_templates (
@@ -6259,7 +6528,13 @@ app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) =>
     const whereClauses = [];
     const eventType = String(req.query.eventType || '').trim();
     const targetUserId = Number(req.query.targetUserId || 0);
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const actorUserId = Number(req.query.actorUserId || 0);
+    const from = normalizeNullableDate(req.query.from);
+    const to = normalizeNullableDate(req.query.to);
+    const { limit, offset } = parsePagination(req.query, {
+      defaultLimit: 50,
+      maxLimit: 200,
+    });
     if (eventType) {
       whereClauses.push('ae.event_type = ?');
       params.push(eventType);
@@ -6267,6 +6542,18 @@ app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) =>
     if (targetUserId > 0) {
       whereClauses.push('ae.target_user_id = ?');
       params.push(targetUserId);
+    }
+    if (actorUserId > 0) {
+      whereClauses.push('ae.actor_user_id = ?');
+      params.push(actorUserId);
+    }
+    if (from) {
+      whereClauses.push('datetime(ae.created_at) >= datetime(?)');
+      params.push(from);
+    }
+    if (to) {
+      whereClauses.push('datetime(ae.created_at) <= datetime(?)');
+      params.push(to);
     }
     if (req.user.role === 'admin') {
       whereClauses.push(`(
@@ -6276,6 +6563,17 @@ app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) =>
       params.push(req.user.id, req.user.id);
     }
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const countRow = await get(
+      `
+      SELECT COUNT(*) AS count
+      FROM auth_events ae
+      LEFT JOIN users actor ON actor.id = ae.actor_user_id
+      LEFT JOIN users target ON target.id = ae.target_user_id
+      ${whereSql}
+      `,
+      params,
+    );
+    const total = Number(countRow?.count || 0);
     const rows = await all(
       `
       SELECT
@@ -6289,13 +6587,75 @@ app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) =>
       LEFT JOIN users target ON target.id = ae.target_user_id
       ${whereSql}
       ORDER BY datetime(ae.created_at) DESC
-      LIMIT ${limit}
+      LIMIT ? OFFSET ?
       `,
-      params,
+      [...params, limit, offset],
     );
-    res.json({ success: true, events: rows.map(rowToAuthEventDto), error: null });
+    res.json({
+      success: true,
+      events: rows.map(rowToAuthEventDto),
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + rows.length < total,
+      },
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, events: [], error: error.message });
+  }
+});
+
+app.get('/api/auth/events/export', requirePermission('audit.read'), async (req, res) => {
+  try {
+    const rows = await all(
+      `
+      SELECT
+        ae.*,
+        actor.name AS actor_user_name,
+        target.name AS target_user_name
+      FROM auth_events ae
+      LEFT JOIN users actor ON actor.id = ae.actor_user_id
+      LEFT JOIN users target ON target.id = ae.target_user_id
+      ORDER BY datetime(ae.created_at) DESC
+      LIMIT 5000
+      `,
+    );
+    const csv = toCsv(
+      [
+        'id',
+        'created_at',
+        'event_type',
+        'actor_user_id',
+        'actor_user_name',
+        'target_user_id',
+        'target_user_name',
+        'ip_address',
+        'user_agent',
+        'metadata_json',
+      ],
+      rows.map((row) => [
+        row.id,
+        row.created_at,
+        row.event_type,
+        row.actor_user_id ?? '',
+        row.actor_user_name || '',
+        row.target_user_id ?? '',
+        row.target_user_name || '',
+        row.ip_address || '',
+        row.user_agent || '',
+        row.metadata_json || '{}',
+      ]),
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="auth-events-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    res.status(200).send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -6308,8 +6668,9 @@ app.patch('/api/me/password', async (req, res) => {
       res.status(401).json({ success: false, error: 'Current password is incorrect.' });
       return;
     }
-    if (nextPassword.length < 8) {
-      res.status(400).json({ success: false, error: 'New password must be at least 8 characters.' });
+    const passwordError = validatePasswordPolicy(nextPassword, { email: user.email });
+    if (passwordError) {
+      res.status(400).json({ success: false, error: passwordError });
       return;
     }
     await run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
@@ -6336,11 +6697,56 @@ app.patch('/api/me/password', async (req, res) => {
 
 app.get('/api/users', requirePermission('users.read'), async (req, res) => {
   try {
-    const rows = await all('SELECT * FROM users ORDER BY role ASC, name ASC');
-    const users = rows
-      .filter((row) => req.user.role === 'super_admin' || row.role === 'user' || row.id === req.user.id)
-      .map(safeUserDto);
-    res.json({ success: true, users, error: null });
+    const params = [];
+    const whereClauses = [];
+    const queryText = String(req.query.query || '').trim().toLowerCase();
+    const role = String(req.query.role || '').trim();
+    const isActiveRaw = String(req.query.isActive || '').trim().toLowerCase();
+    if (queryText) {
+      whereClauses.push('(LOWER(name) LIKE ? OR LOWER(email) LIKE ?)');
+      params.push(`%${queryText}%`, `%${queryText}%`);
+    }
+    if (USER_ROLES.has(role)) {
+      whereClauses.push('role = ?');
+      params.push(role);
+    }
+    if (isActiveRaw === 'true' || isActiveRaw === 'false') {
+      whereClauses.push('is_active = ?');
+      params.push(isActiveRaw === 'true' ? 1 : 0);
+    }
+    if (req.user.role === 'admin') {
+      whereClauses.push('(role = ? OR id = ?)');
+      params.push('user', req.user.id);
+    }
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const { limit, offset } = parsePagination(req.query, { defaultLimit: 25, maxLimit: 100 });
+    const countRow = await get(`SELECT COUNT(*) AS count FROM users ${whereSql}`, params);
+    const total = Number(countRow?.count || 0);
+    const rows = await all(
+      `
+      SELECT *
+      FROM users
+      ${whereSql}
+      ORDER BY role ASC, name ASC
+      LIMIT ? OFFSET ?
+      `,
+      [...params, limit, offset],
+    );
+    const users = [];
+    for (const row of rows) {
+      users.push(await safeUserDtoWithPermissions(row));
+    }
+    res.json({
+      success: true,
+      users,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + users.length < total,
+      },
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, users: [], error: error.message });
   }
@@ -6352,6 +6758,161 @@ app.get('/api/permissions', requirePermission('users.manage_permissions'), async
     permissions: permissionDescriptors(),
     error: null,
   });
+});
+
+app.get('/api/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const queryText = String(req.query.query || '').trim().toLowerCase();
+    const params = [];
+    let whereSql = '';
+    if (queryText) {
+      whereSql = 'WHERE LOWER(name) LIKE ? OR LOWER(description) LIKE ?';
+      params.push(`%${queryText}%`, `%${queryText}%`);
+    }
+    const rows = await all(
+      `
+      SELECT *
+      FROM permission_templates
+      ${whereSql}
+      ORDER BY name ASC
+      `,
+      params,
+    );
+    const templates = [];
+    for (const row of rows) {
+      const permissionRows = await all(
+        `
+        SELECT permission_key, is_allowed
+        FROM permission_template_permissions
+        WHERE template_id = ?
+        ORDER BY permission_key ASC
+        `,
+        [row.id],
+      );
+      templates.push({
+        id: row.id,
+        name: row.name || '',
+        description: row.description || '',
+        isSystemDefault: Number(row.is_system_default || 0) === 1,
+        permissions: permissionRows
+          .filter((item) => Number(item.is_allowed || 0) === 1)
+          .map((item) => String(item.permission_key || '').trim())
+          .filter(Boolean),
+      });
+    }
+    res.json({ success: true, templates, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, templates: [], error: error.message });
+  }
+});
+
+app.get('/api/users/:id/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, templates: [], error: 'User not found.' });
+      return;
+    }
+    if (!canManageUser(req.user.role, target.role)) {
+      res.status(403).json({ success: false, templates: [], error: 'You do not have permission to manage this user.' });
+      return;
+    }
+    const assignedRows = await getAssignedPermissionTemplates(targetId);
+    const assignedTemplateIds = assignedRows.map((row) => Number(row.id));
+    res.json({
+      success: true,
+      assignedTemplateIds,
+      assignedTemplates: assignedRows.map((row) => ({
+        id: row.id,
+        name: row.name || '',
+        description: row.description || '',
+      })),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, templates: [], error: error.message });
+  }
+});
+
+app.patch('/api/users/:id/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, error: 'User not found.' });
+      return;
+    }
+    if (!canManageUser(req.user.role, target.role)) {
+      res.status(403).json({ success: false, error: 'You do not have permission to manage this user.' });
+      return;
+    }
+    if (target.role === 'super_admin') {
+      res.status(403).json({ success: false, error: 'Super admin templates cannot be edited.' });
+      return;
+    }
+    const templateIds = Array.isArray(req.body?.templateIds)
+      ? [...new Set(req.body.templateIds.map((value) => Number(value)).filter((value) => value > 0))]
+      : null;
+    if (!templateIds) {
+      res.status(400).json({ success: false, error: 'templateIds array is required.' });
+      return;
+    }
+    if (templateIds.length > 0) {
+      const placeholders = templateIds.map(() => '?').join(', ');
+      const templateRows = await all(
+        `
+        SELECT DISTINCT pt.id, ptp.permission_key, ptp.is_allowed
+        FROM permission_templates pt
+        LEFT JOIN permission_template_permissions ptp ON ptp.template_id = pt.id
+        WHERE pt.id IN (${placeholders})
+        `,
+        templateIds,
+      );
+      const foundTemplateIds = new Set(templateRows.map((row) => Number(row.id)));
+      if (foundTemplateIds.size !== templateIds.length) {
+        res.status(400).json({ success: false, error: 'One or more templates were not found.' });
+        return;
+      }
+      if (req.user.role !== 'super_admin') {
+        for (const row of templateRows) {
+          const key = normalizePermissionKey(row.permission_key);
+          if (!key || Number(row.is_allowed || 0) !== 1) {
+            continue;
+          }
+          if (req.userPermissions?.[key] !== true) {
+            res.status(403).json({
+              success: false,
+              error: `You cannot assign template permissions you do not have: ${key}`,
+            });
+            return;
+          }
+        }
+      }
+    }
+    await run('DELETE FROM user_permission_templates WHERE user_id = ?', [targetId]);
+    const now = nowIso();
+    for (const templateId of templateIds) {
+      await run(
+        `
+        INSERT INTO user_permission_templates (user_id, template_id, created_at)
+        VALUES (?, ?, ?)
+        `,
+        [targetId, templateId, now],
+      );
+    }
+    await logAuthEvent({
+      eventType: 'permission_templates_updated',
+      actorUserId: req.user.id,
+      targetUserId: targetId,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { templateIds },
+    });
+    res.json({ success: true, templateIds, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 app.get('/api/users/:id/permissions', requirePermission('users.manage_permissions'), async (req, res) => {
@@ -6367,7 +6928,18 @@ app.get('/api/users/:id/permissions', requirePermission('users.manage_permission
       return;
     }
     const permissions = await getUserPermissionSnapshot(target);
-    res.json({ success: true, permissions, role: target.role, error: null });
+    const assignedTemplates = await getAssignedPermissionTemplates(targetId);
+    res.json({
+      success: true,
+      permissions,
+      assignedTemplates: assignedTemplates.map((row) => ({
+        id: row.id,
+        name: row.name || '',
+        description: row.description || '',
+      })),
+      role: target.role,
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, permissions: [], error: error.message });
   }
@@ -6398,6 +6970,7 @@ app.patch('/api/users/:id/permissions', requirePermission('users.manage_permissi
 
     const actorCanGrant = req.userPermissions || createEmptyPermissionMap();
     const targetRoleDefaults = await getRolePermissionMap(target.role);
+    const targetTemplateDefaults = await getTemplatePermissionMapForUser(targetId);
     const now = nowIso();
     for (const item of patchItems) {
       const key = normalizePermissionKey(item?.key);
@@ -6410,8 +6983,9 @@ app.patch('/api/users/:id/permissions', requirePermission('users.manage_permissi
         res.status(403).json({ success: false, permissions: [], error: `You cannot grant permission you do not have: ${key}` });
         return;
       }
-      const roleDefault = targetRoleDefaults[key] === true;
-      if (allowed === roleDefault) {
+      const baselineAllowed =
+        targetRoleDefaults[key] === true || targetTemplateDefaults[key] === true;
+      if (allowed === baselineAllowed) {
         await run(
           'DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_key = ?',
           [targetId, key],
@@ -6463,7 +7037,7 @@ app.post('/api/admins', requireRoles('super_admin'), requirePermission('users.cr
       userAgent: getRequestUserAgent(req),
       metadata: { role: 'admin' },
     });
-    res.status(201).json({ success: true, user: safeUserDto(user), error: null });
+    res.status(201).json({ success: true, user: await safeUserDtoWithPermissions(user), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
   }
@@ -6486,7 +7060,7 @@ app.post('/api/users', requireRoles('super_admin', 'admin'), requirePermission('
       userAgent: getRequestUserAgent(req),
       metadata: { role: 'user' },
     });
-    res.status(201).json({ success: true, user: safeUserDto(user), error: null });
+    res.status(201).json({ success: true, user: await safeUserDtoWithPermissions(user), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
   }
@@ -6505,8 +7079,9 @@ app.patch('/api/users/:id/password', requirePermission('users.reset_password'), 
       return;
     }
     const newPassword = String(req.body?.newPassword || req.body?.password || '');
-    if (newPassword.length < 8) {
-      res.status(400).json({ success: false, error: 'New password must be at least 8 characters.' });
+    const passwordError = validatePasswordPolicy(newPassword, { email: target.email });
+    if (passwordError) {
+      res.status(400).json({ success: false, error: passwordError });
       return;
     }
     await run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
@@ -6522,7 +7097,11 @@ app.patch('/api/users/:id/password', requirePermission('users.reset_password'), 
       ipAddress: getRequestIp(req),
       userAgent: getRequestUserAgent(req),
     });
-    res.json({ success: true, user: safeUserDto(await get('SELECT * FROM users WHERE id = ?', [targetId])), error: null });
+    res.json({
+      success: true,
+      user: await safeUserDtoWithPermissions(await get('SELECT * FROM users WHERE id = ?', [targetId])),
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -6560,7 +7139,11 @@ app.patch('/api/users/:id/status', requirePermission('users.update_status'), asy
       ipAddress: getRequestIp(req),
       userAgent: getRequestUserAgent(req),
     });
-    res.json({ success: true, user: safeUserDto(await get('SELECT * FROM users WHERE id = ?', [targetId])), error: null });
+    res.json({
+      success: true,
+      user: await safeUserDtoWithPermissions(await get('SELECT * FROM users WHERE id = ?', [targetId])),
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, user: null, error: error.message });
   }
@@ -6607,12 +7190,37 @@ app.post('/api/delete-requests', requirePermission('inventory.request_delete'), 
 app.get('/api/delete-requests', requirePermission('delete_requests.review'), async (req, res) => {
   try {
     const status = String(req.query.status || '').trim();
+    const requesterId = Number(req.query.requestedByUserId || 0);
+    const from = normalizeNullableDate(req.query.from);
+    const to = normalizeNullableDate(req.query.to);
+    const { limit, offset } = parsePagination(req.query, {
+      defaultLimit: 25,
+      maxLimit: 100,
+    });
     const params = [];
-    let where = '';
+    const whereClauses = [];
     if (status) {
-      where = 'WHERE dr.status = ?';
+      whereClauses.push('dr.status = ?');
       params.push(status);
     }
+    if (requesterId > 0) {
+      whereClauses.push('dr.requested_by_user_id = ?');
+      params.push(requesterId);
+    }
+    if (from) {
+      whereClauses.push('datetime(dr.created_at) >= datetime(?)');
+      params.push(from);
+    }
+    if (to) {
+      whereClauses.push('datetime(dr.created_at) <= datetime(?)');
+      params.push(to);
+    }
+    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const countRow = await get(
+      `SELECT COUNT(*) AS count FROM delete_requests dr ${where}`,
+      params,
+    );
+    const total = Number(countRow?.count || 0);
     const rows = await all(
       `
       SELECT
@@ -6624,10 +7232,21 @@ app.get('/api/delete-requests', requirePermission('delete_requests.review'), asy
       LEFT JOIN users reviewer ON reviewer.id = dr.reviewed_by_user_id
       ${where}
       ORDER BY dr.created_at DESC
+      LIMIT ? OFFSET ?
       `,
-      params,
+      [...params, limit, offset],
     );
-    res.json({ success: true, requests: rows.map(rowToDeleteRequestDto), error: null });
+    res.json({
+      success: true,
+      requests: rows.map(rowToDeleteRequestDto),
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + rows.length < total,
+      },
+      error: null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, requests: [], error: error.message });
   }
@@ -6649,9 +7268,11 @@ app.post('/api/delete-requests/:id/approve', requirePermission('delete_requests.
       return;
     }
     await deleteMaterialRecord(request.entity_id, currentActor(req));
-    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_at = ? WHERE id = ?', [
+    const reviewedNote = String(req.body?.reviewedNote || '').trim();
+    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_note = ?, reviewed_at = ? WHERE id = ?', [
       'approved',
       req.user.id,
+      reviewedNote,
       new Date().toISOString(),
       request.id,
     ]);
@@ -6662,7 +7283,7 @@ app.post('/api/delete-requests/:id/approve', requirePermission('delete_requests.
       targetUserId: request.requested_by_user_id || null,
       ipAddress: getRequestIp(req),
       userAgent: getRequestUserAgent(req),
-      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id },
+      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id, reviewedNote },
     });
     res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
   } catch (error) {
@@ -6681,9 +7302,11 @@ app.post('/api/delete-requests/:id/reject', requirePermission('delete_requests.r
       res.status(409).json({ success: false, request: rowToDeleteRequestDto(request), error: 'Delete request has already been reviewed.' });
       return;
     }
-    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_at = ? WHERE id = ?', [
+    const reviewedNote = String(req.body?.reviewedNote || '').trim();
+    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_note = ?, reviewed_at = ? WHERE id = ?', [
       'rejected',
       req.user.id,
+      reviewedNote,
       new Date().toISOString(),
       request.id,
     ]);
@@ -6694,11 +7317,69 @@ app.post('/api/delete-requests/:id/reject', requirePermission('delete_requests.r
       targetUserId: request.requested_by_user_id || null,
       ipAddress: getRequestIp(req),
       userAgent: getRequestUserAgent(req),
-      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id },
+      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id, reviewedNote },
     });
     res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
   } catch (error) {
     res.status(500).json({ success: false, request: null, error: error.message });
+  }
+});
+
+app.get('/api/delete-requests/export', requirePermission('audit.read'), async (_req, res) => {
+  try {
+    const rows = await all(
+      `
+      SELECT
+        dr.*,
+        requester.name AS requested_by_name,
+        reviewer.name AS reviewed_by_name
+      FROM delete_requests dr
+      LEFT JOIN users requester ON requester.id = dr.requested_by_user_id
+      LEFT JOIN users reviewer ON reviewer.id = dr.reviewed_by_user_id
+      ORDER BY datetime(dr.created_at) DESC
+      LIMIT 5000
+      `,
+    );
+    const csv = toCsv(
+      [
+        'id',
+        'created_at',
+        'status',
+        'entity_type',
+        'entity_id',
+        'entity_label',
+        'reason',
+        'requested_by_user_id',
+        'requested_by_name',
+        'reviewed_by_user_id',
+        'reviewed_by_name',
+        'reviewed_note',
+        'reviewed_at',
+      ],
+      rows.map((row) => [
+        row.id,
+        row.created_at,
+        row.status,
+        row.entity_type,
+        row.entity_id,
+        row.entity_label || '',
+        row.reason || '',
+        row.requested_by_user_id || '',
+        row.requested_by_name || '',
+        row.reviewed_by_user_id || '',
+        row.reviewed_by_name || '',
+        row.reviewed_note || '',
+        row.reviewed_at || '',
+      ]),
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="delete-requests-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    res.status(200).send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
