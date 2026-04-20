@@ -8,8 +8,8 @@ const test = require('node:test');
 test('auth roles and delete approval workflow', async () => {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-auth-api-'));
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
-  process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
-  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass123';
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'primary@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
   const backend = require('../server.js');
   await backend.initDb();
@@ -24,7 +24,7 @@ test('auth roles and delete approval workflow', async () => {
     });
     assert.equal(unauthCreate.status, 401);
 
-    const owner = await login(baseUrl, 'owner@paper.local', 'OwnerPass123');
+    const owner = await login(baseUrl, 'primary@paper.local', 'OwnerPass1234');
     assert.equal(owner.user.role, 'super_admin');
     const ownerSessions = await getJson(baseUrl, '/api/auth/sessions', owner.token);
     assert.equal(ownerSessions.status, 200);
@@ -34,7 +34,7 @@ test('auth roles and delete approval workflow', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'owner@paper.local',
+        email: 'primary@paper.local',
         password: 'wrong-password',
       }),
     });
@@ -46,13 +46,19 @@ test('auth roles and delete approval workflow', async () => {
       owner.token,
       {
         name: 'Ops Admin',
-        email: 'admin@paper.local',
-        password: 'AdminPass123',
+        email: 'ops@paper.local',
+        password: 'TeamPass1234',
       },
     );
     assert.equal(adminResponse.status, 201);
+    const weakPasswordUser = await postJson(baseUrl, '/api/users', owner.token, {
+      name: 'Weak Password User',
+      email: 'weak@paper.local',
+      password: 'password',
+    });
+    assert.equal(weakPasswordUser.status, 400);
 
-    const admin = await login(baseUrl, 'admin@paper.local', 'AdminPass123');
+    const admin = await login(baseUrl, 'ops@paper.local', 'TeamPass1234');
     assert.equal(admin.user.role, 'admin');
     const adminPermissionCatalogDenied = await getJson(
       baseUrl,
@@ -86,7 +92,7 @@ test('auth roles and delete approval workflow', async () => {
       {
         name: 'Second Admin',
         email: 'admin2@paper.local',
-        password: 'AdminPass123',
+        password: 'OtherPass1234',
       },
     );
     assert.equal(adminCannotCreateAdmin.status, 403);
@@ -97,17 +103,40 @@ test('auth roles and delete approval workflow', async () => {
       admin.token,
       {
         name: 'Floor User',
-        email: 'user@paper.local',
-        password: 'UserPass123',
+        email: 'floor@paper.local',
+        password: 'WorkerPass1234',
       },
     );
     assert.equal(userResponse.status, 201);
 
-    const user = await login(baseUrl, 'user@paper.local', 'UserPass123');
+    const user = await login(baseUrl, 'floor@paper.local', 'WorkerPass1234');
     assert.equal(user.user.role, 'user');
     const userSessions = await getJson(baseUrl, '/api/auth/sessions', user.token);
     assert.equal(userSessions.status, 200);
     assert.ok(userSessions.body.sessions.length >= 1);
+    const templatesList = await getJson(baseUrl, '/api/permission-templates', admin.token);
+    assert.equal(templatesList.status, 200);
+    const configManagerTemplate = templatesList.body.templates.find(
+      (template) => template.name === 'Configurator Manager',
+    );
+    assert.ok(configManagerTemplate?.id, 'expected Configurator Manager template');
+    const assignTemplate = await patchJson(
+      baseUrl,
+      `/api/users/${user.user.id}/permission-templates`,
+      admin.token,
+      { templateIds: [configManagerTemplate.id] },
+    );
+    assert.equal(assignTemplate.status, 200);
+    const userCanCreateUnitViaTemplate = await postJson(
+      baseUrl,
+      '/api/units',
+      user.token,
+      {
+        name: 'Template Unit',
+        symbol: 'TU',
+      },
+    );
+    assert.equal(userCanCreateUnitViaTemplate.status, 201);
 
     const adminEscalationAttempt = await patchJson(
       baseUrl,
@@ -128,6 +157,26 @@ test('auth roles and delete approval workflow', async () => {
       },
     );
     assert.equal(ownerRevokesAdminDelete.status, 200);
+    const ownerRevokesAdminInventoryRead = await patchJson(
+      baseUrl,
+      `/api/users/${admin.user.id}/permissions`,
+      owner.token,
+      {
+        overrides: [{ key: 'inventory.read', allowed: false }],
+      },
+    );
+    assert.equal(ownerRevokesAdminInventoryRead.status, 200);
+    const adminCannotReadInventory = await getJson(baseUrl, '/api/materials', admin.token);
+    assert.equal(adminCannotReadInventory.status, 403);
+    const ownerRestoresAdminInventoryRead = await patchJson(
+      baseUrl,
+      `/api/users/${admin.user.id}/permissions`,
+      owner.token,
+      {
+        overrides: [{ key: 'inventory.read', allowed: true }],
+      },
+    );
+    assert.equal(ownerRestoresAdminInventoryRead.status, 200);
 
     const resetUserPassword = await fetch(
       `${baseUrl}/api/users/${user.user.id}/password`,
@@ -137,13 +186,13 @@ test('auth roles and delete approval workflow', async () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${admin.token}`,
         },
-        body: JSON.stringify({ newPassword: 'UserPass456' }),
+        body: JSON.stringify({ newPassword: 'ShiftPass4567' }),
       },
     );
     assert.equal(resetUserPassword.status, 200);
     const oldUserTokenAfterReset = await getJson(baseUrl, '/api/materials', user.token);
     assert.equal(oldUserTokenAfterReset.status, 401);
-    const userAfterReset = await login(baseUrl, 'user@paper.local', 'UserPass456');
+    const userAfterReset = await login(baseUrl, 'floor@paper.local', 'ShiftPass4567');
 
     const resetAdminPassword = await fetch(
       `${baseUrl}/api/users/${admin.user.id}/password`,
@@ -153,7 +202,7 @@ test('auth roles and delete approval workflow', async () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${admin.token}`,
         },
-        body: JSON.stringify({ newPassword: 'AdminPass456' }),
+        body: JSON.stringify({ newPassword: 'OpsPass4567' }),
       },
     );
     assert.equal(resetAdminPassword.status, 403);
@@ -165,7 +214,7 @@ test('auth roles and delete approval workflow', async () => {
       {
         name: 'Lockout User',
         email: 'lockout@paper.local',
-        password: 'LockoutPass123',
+        password: 'GuardPass1234',
       },
     );
     assert.equal(lockoutTarget.status, 201);
@@ -178,7 +227,7 @@ test('auth roles and delete approval workflow', async () => {
     }
     const lockedLogin = await postJson(baseUrl, '/api/auth/login', null, {
       email: 'lockout@paper.local',
-      password: 'LockoutPass123',
+      password: 'GuardPass1234',
     });
     assert.equal(lockedLogin.status, 423);
 
@@ -243,6 +292,21 @@ test('auth roles and delete approval workflow', async () => {
     );
     assert.equal(approve.status, 200);
     assert.equal(approve.body.request.status, 'approved');
+    assert.equal(approve.body.request.reviewedNote, '');
+
+    const exportAuditAsAdmin = await getText(
+      baseUrl,
+      '/api/auth/events/export',
+      admin.token,
+    );
+    assert.equal(exportAuditAsAdmin.status, 200);
+    assert.match(exportAuditAsAdmin.body, /event_type/);
+    const exportAuditAsUser = await getText(
+      baseUrl,
+      '/api/auth/events/export',
+      user.token,
+    );
+    assert.equal(exportAuditAsUser.status, 401);
 
     const deletedLookup = await getJson(
       baseUrl,
@@ -294,6 +358,13 @@ async function getJson(baseUrl, pathName, token) {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   return { status: response.status, body: await response.json() };
+}
+
+async function getText(baseUrl, pathName, token) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return { status: response.status, body: await response.text() };
 }
 
 function listen(app) {
