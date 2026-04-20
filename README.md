@@ -37,6 +37,61 @@ If you need a different backend URL, override it explicitly:
 flutter run --dart-define=PAPER_API_BASE_URL=http://localhost:18080
 ```
 
+## EC2 Backend Deployment
+
+The backend is production-gated: when `NODE_ENV=production`, it will not boot
+unless `PAPER_JWT_SECRET`, `PAPER_SUPER_ADMIN_EMAIL`, and
+`PAPER_SUPER_ADMIN_PASSWORD` are set. This prevents accidentally deploying with
+local development credentials.
+
+On the EC2 instance:
+
+```bash
+cd /home/ubuntu/Paper
+git pull
+cd backend
+npm ci --omit=dev
+mkdir -p data
+cp .env.example .env
+nano .env
+```
+
+Set strong values in `backend/.env`, especially:
+
+```bash
+PAPER_JWT_SECRET=<long-random-secret>
+PAPER_SUPER_ADMIN_EMAIL=<your-email>
+PAPER_SUPER_ADMIN_PASSWORD=<temporary-strong-password>
+PAPER_SUPER_ADMIN_NAME=<your-name>
+```
+
+Start or restart with PM2:
+
+```bash
+cd /home/ubuntu/Paper
+set -a
+. backend/.env
+set +a
+pm2 start backend/ecosystem.config.js --update-env
+pm2 save
+```
+
+After deploy:
+
+```bash
+curl http://localhost:18080/health
+curl http://localhost:18080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  --data '{"email":"<your-email>","password":"<temporary-strong-password>"}'
+```
+
+Point Flutter builds at the EC2 or Nginx public URL:
+
+```bash
+flutter build web --dart-define=PAPER_API_BASE_URL=https://<your-domain-or-ec2-host>
+flutter build windows --dart-define=PAPER_API_BASE_URL=https://<your-domain-or-ec2-host>
+```
+
 ## Railway Backend + Windows EXE
 
 Railway is a good fit for hosting the backend service and SQLite volume.

@@ -7,7 +7,9 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/group_property_draft.dart';
+import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
+import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
@@ -29,7 +31,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 8,
+      version: 10,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -57,6 +59,17 @@ class LocalInventoryRepository implements InventoryRepository {
             display_stock TEXT DEFAULT '',
             created_by TEXT DEFAULT '',
             workflow_status TEXT DEFAULT 'notStarted',
+            material_class TEXT DEFAULT 'raw_material',
+            inventory_state TEXT DEFAULT 'available',
+            procurement_state TEXT DEFAULT 'not_ordered',
+            traceability_mode TEXT DEFAULT 'bulk',
+            on_hand_qty REAL NOT NULL DEFAULT 0,
+            reserved_qty REAL NOT NULL DEFAULT 0,
+            available_to_promise_qty REAL NOT NULL DEFAULT 0,
+            incoming_qty REAL NOT NULL DEFAULT 0,
+            linked_order_count INTEGER NOT NULL DEFAULT 0,
+            linked_pipeline_count INTEGER NOT NULL DEFAULT 0,
+            pending_alert_count INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT,
             last_scanned_at TEXT
           )
@@ -85,9 +98,34 @@ class LocalInventoryRepository implements InventoryRepository {
             state TEXT NOT NULL DEFAULT 'active',
             override_locked INTEGER NOT NULL DEFAULT 0,
             has_type_conflict INTEGER NOT NULL DEFAULT 0,
+            coverage_count INTEGER NOT NULL DEFAULT 0,
+            selected_item_count_at_resolution INTEGER NOT NULL DEFAULT 0,
+            resolution_source TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             UNIQUE(material_id, property_key)
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE material_group_units (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL,
+            unit_id INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'active',
+            is_primary INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(material_id, unit_id)
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE material_group_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL UNIQUE,
+            common_only_mode INTEGER NOT NULL DEFAULT 1,
+            show_partial_matches INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
           )
         ''');
         await db.execute('''
@@ -194,11 +232,82 @@ class LocalInventoryRepository implements InventoryRepository {
               state TEXT NOT NULL DEFAULT 'active',
               override_locked INTEGER NOT NULL DEFAULT 0,
               has_type_conflict INTEGER NOT NULL DEFAULT 0,
+              coverage_count INTEGER NOT NULL DEFAULT 0,
+              selected_item_count_at_resolution INTEGER NOT NULL DEFAULT 0,
+              resolution_source TEXT,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               UNIQUE(material_id, property_key)
             )
           ''');
+        }
+        if (oldVersion < 9) {
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN coverage_count INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN selected_item_count_at_resolution INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN resolution_source TEXT',
+          );
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS material_group_units (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              material_id INTEGER NOT NULL,
+              unit_id INTEGER NOT NULL,
+              state TEXT NOT NULL DEFAULT 'active',
+              is_primary INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(material_id, unit_id)
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS material_group_preferences (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              material_id INTEGER NOT NULL UNIQUE,
+              common_only_mode INTEGER NOT NULL DEFAULT 1,
+              show_partial_matches INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+          ''');
+        }
+        if (oldVersion < 10) {
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN material_class TEXT DEFAULT \'raw_material\'',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN inventory_state TEXT DEFAULT \'available\'',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN procurement_state TEXT DEFAULT \'not_ordered\'',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN traceability_mode TEXT DEFAULT \'bulk\'',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN on_hand_qty REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN reserved_qty REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN available_to_promise_qty REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN incoming_qty REAL NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN linked_order_count INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN linked_pipeline_count INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN pending_alert_count INTEGER NOT NULL DEFAULT 0',
+          );
         }
       },
     );
@@ -302,6 +411,8 @@ class LocalInventoryRepository implements InventoryRepository {
         materialId: parentId,
         selectedItemIds: input.selectedItemIds,
         propertyDrafts: input.propertyDrafts,
+        unitGovernance: input.unitGovernance,
+        uiPreferences: input.uiPreferences,
         createdAt: now,
       );
       await _recordActivity(
@@ -689,6 +800,28 @@ class LocalInventoryRepository implements InventoryRepository {
         where: 'barcode = ?',
         whereArgs: [model.barcode],
       );
+      if (model.id != null) {
+        await txn.delete(
+          'material_group_item_links',
+          where: 'material_id = ?',
+          whereArgs: [model.id],
+        );
+        await txn.delete(
+          'material_group_properties',
+          where: 'material_id = ?',
+          whereArgs: [model.id],
+        );
+        await txn.delete(
+          'material_group_units',
+          where: 'material_id = ?',
+          whereArgs: [model.id],
+        );
+        await txn.delete(
+          'material_group_preferences',
+          where: 'material_id = ?',
+          whereArgs: [model.id],
+        );
+      }
       await txn.delete(
         'materials',
         where: 'barcode = ?',
@@ -813,6 +946,136 @@ class LocalInventoryRepository implements InventoryRepository {
   }
 
   @override
+  Future<InventoryHealthSnapshot> getInventoryHealth() async {
+    final materials = await getAllMaterials();
+    final lowStockCount = materials
+        .where((item) => item.availableToPromise <= 100 && item.onHand > 0)
+        .length;
+    final reservedRiskCount = materials
+        .where((item) => item.reserved > item.onHand && item.reserved > 0)
+        .length;
+    final incomingTodayCount = materials.where((item) => item.incoming > 0).length;
+    final qualityHoldCount = materials
+        .where((item) => item.inventoryState == InventoryState.qualityHold)
+        .length;
+    final pendingReconciliationCount = materials
+        .where((item) => item.pendingAlertCount > 0)
+        .length;
+    return InventoryHealthSnapshot(
+      lowStockCount: lowStockCount,
+      reservedRiskCount: reservedRiskCount,
+      incomingTodayCount: incomingTodayCount,
+      qualityHoldCount: qualityHoldCount,
+      unitMismatchCount: pendingReconciliationCount,
+      pendingReconciliationCount: pendingReconciliationCount,
+    );
+  }
+
+  @override
+  Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
+    String barcode,
+  ) async {
+    final material = await getMaterialByBarcode(barcode);
+    if (material == null) {
+      return null;
+    }
+    final stockPositions = <StockPosition>[
+      StockPosition(
+        locationId: material.location.trim().isEmpty
+            ? 'MAIN'
+            : material.location.trim(),
+        locationName: material.location.trim().isEmpty
+            ? 'Main Warehouse'
+            : material.location.trim(),
+        lotCode: material.barcode,
+        unitId: material.unitId,
+        onHandQty: material.onHand,
+        reservedQty: material.reserved,
+        damagedQty: 0,
+        updatedAt: material.updatedAt,
+      ),
+    ];
+    final activity = await getMaterialActivity(barcode);
+    final movements = activity
+        .map(
+          (event) => InventoryMovement(
+            id: '${event.id ?? 0}',
+            materialBarcode: event.barcode,
+            movementType: InventoryMovementType.adjust,
+            qty: 0,
+            fromLocationId: null,
+            toLocationId: material.location,
+            reasonCode: event.type,
+            referenceType: null,
+            referenceId: null,
+            actor: event.actor,
+            createdAt: event.createdAt,
+          ),
+        )
+        .toList(growable: false);
+    return MaterialControlTowerDetail(
+      material: material,
+      stockPositions: stockPositions,
+      movements: movements,
+      reservations: const [],
+      alerts: const [],
+      linkedOrderDemand: material.linkedOrderCount.toDouble(),
+      linkedPipelineDemand: material.linkedPipelineCount.toDouble(),
+      pendingAlertsCount: material.pendingAlertCount,
+    );
+  }
+
+  @override
+  Future<MaterialControlTowerDetail> createInventoryMovement(
+    CreateInventoryMovementInput input,
+  ) async {
+    final material = await getMaterialByBarcode(input.materialBarcode);
+    if (material == null) {
+      throw Exception('Material not found.');
+    }
+    final now = DateTime.now();
+    final nextOnHand = switch (input.movementType) {
+      InventoryMovementType.receive => material.onHand + input.qty,
+      InventoryMovementType.issue => material.onHand - input.qty,
+      InventoryMovementType.consume => material.onHand - input.qty,
+      InventoryMovementType.adjust => material.onHand + input.qty,
+      _ => material.onHand,
+    };
+    final nextReserved = switch (input.movementType) {
+      InventoryMovementType.reserve => material.reserved + input.qty,
+      InventoryMovementType.release => max(0, material.reserved - input.qty),
+      _ => material.reserved,
+    };
+    final db = await _db;
+    await db.update(
+      'materials',
+      {
+        'on_hand_qty': nextOnHand,
+        'reserved_qty': nextReserved,
+        'available_to_promise_qty': nextOnHand - nextReserved,
+        'updated_at': now.toIso8601String(),
+      },
+      where: 'barcode = ?',
+      whereArgs: [material.barcode],
+    );
+    await _recordActivity(
+      db,
+      barcode: material.barcode,
+      type: input.movementType.name,
+      label: 'Inventory movement posted',
+      description:
+          '${input.movementType.name} ${input.qty.toStringAsFixed(2)} ${material.unit}',
+      actor: input.actor ?? 'Demo Admin',
+      createdAt: now,
+    );
+    final detail = await getMaterialControlTowerDetail(input.materialBarcode);
+    if (detail == null) {
+      throw Exception('Failed to load material detail.');
+    }
+    return detail;
+  }
+
+  @override
   Future<MaterialGroupConfiguration> getGroupConfiguration(
     String barcode,
   ) async {
@@ -838,6 +1101,8 @@ class LocalInventoryRepository implements InventoryRepository {
     required bool inheritanceEnabled,
     required List<int> selectedItemIds,
     required List<GroupPropertyDraft> propertyDrafts,
+    required List<GroupUnitGovernance> unitGovernance,
+    required GroupUiPreferences uiPreferences,
   }) async {
     final db = await _db;
     return db.transaction((txn) async {
@@ -864,6 +1129,8 @@ class LocalInventoryRepository implements InventoryRepository {
         materialId: materialId,
         selectedItemIds: selectedItemIds,
         propertyDrafts: propertyDrafts,
+        unitGovernance: unitGovernance,
+        uiPreferences: uiPreferences,
         createdAt: now,
       );
       await _recordActivity(
@@ -888,6 +1155,8 @@ class LocalInventoryRepository implements InventoryRepository {
     required int materialId,
     required List<int> selectedItemIds,
     required List<GroupPropertyDraft> propertyDrafts,
+    required List<GroupUnitGovernance> unitGovernance,
+    required GroupUiPreferences uiPreferences,
     required DateTime createdAt,
   }) async {
     final nowIso = createdAt.toIso8601String();
@@ -901,6 +1170,16 @@ class LocalInventoryRepository implements InventoryRepository {
       where: 'material_id = ?',
       whereArgs: [materialId],
     );
+    await executor.delete(
+      'material_group_units',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+    );
+    await executor.delete(
+      'material_group_preferences',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+    );
 
     for (var i = 0; i < selectedItemIds.length; i++) {
       await executor.insert('material_group_item_links', {
@@ -911,6 +1190,30 @@ class LocalInventoryRepository implements InventoryRepository {
         'updated_at': nowIso,
       });
     }
+
+    for (final unitRow in unitGovernance) {
+      if (unitRow.unitId <= 0) {
+        continue;
+      }
+      await executor.insert('material_group_units', {
+        'material_id': materialId,
+        'unit_id': unitRow.unitId,
+        'state': unitRow.state == GroupUnitState.detached
+            ? 'detached'
+            : 'active',
+        'is_primary': unitRow.isPrimary ? 1 : 0,
+        'created_at': nowIso,
+        'updated_at': nowIso,
+      });
+    }
+
+    await executor.insert('material_group_preferences', {
+      'material_id': materialId,
+      'common_only_mode': uiPreferences.commonOnlyMode ? 1 : 0,
+      'show_partial_matches': uiPreferences.showPartialMatches ? 1 : 0,
+      'created_at': nowIso,
+      'updated_at': nowIso,
+    });
 
     final seenKeys = <String>{};
     for (final property in propertyDrafts) {
@@ -945,6 +1248,10 @@ class LocalInventoryRepository implements InventoryRepository {
         },
         'override_locked': property.overrideLocked ? 1 : 0,
         'has_type_conflict': property.hasTypeConflict ? 1 : 0,
+        'coverage_count': property.coverageCount,
+        'selected_item_count_at_resolution':
+            property.selectedItemCountAtResolution,
+        'resolution_source': property.resolutionSource,
         'created_at': nowIso,
         'updated_at': nowIso,
       });
@@ -969,6 +1276,19 @@ class LocalInventoryRepository implements InventoryRepository {
       whereArgs: [materialId],
       orderBy: 'id ASC',
     );
+    final unitRows = await executor.query(
+      'material_group_units',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+      orderBy: 'is_primary DESC, id ASC',
+    );
+    final preferenceRows = await executor.query(
+      'material_group_preferences',
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+      limit: 1,
+    );
+    final preference = preferenceRows.isEmpty ? null : preferenceRows.first;
 
     return MaterialGroupConfiguration(
       inheritanceEnabled: inheritanceEnabled,
@@ -1002,9 +1322,32 @@ class LocalInventoryRepository implements InventoryRepository {
                   .toList(growable: false),
               overrideLocked: (row['override_locked'] as int? ?? 0) == 1,
               hasTypeConflict: (row['has_type_conflict'] as int? ?? 0) == 1,
+              coverageCount: (row['coverage_count'] as int? ?? 0),
+              selectedItemCountAtResolution:
+                  (row['selected_item_count_at_resolution'] as int? ?? 0),
+              resolutionSource: (row['resolution_source'] as String?)?.trim(),
             );
           })
           .toList(growable: false),
+      unitGovernance: unitRows
+          .map((row) {
+            final stateWire = (row['state'] as String? ?? 'active')
+                .trim()
+                .toLowerCase();
+            return GroupUnitGovernance(
+              unitId: (row['unit_id'] as num?)?.toInt() ?? 0,
+              state: stateWire == 'detached'
+                  ? GroupUnitState.detached
+                  : GroupUnitState.active,
+              isPrimary: (row['is_primary'] as int? ?? 0) == 1,
+            );
+          })
+          .toList(growable: false),
+      uiPreferences: GroupUiPreferences(
+        commonOnlyMode: (preference?['common_only_mode'] as int? ?? 1) == 1,
+        showPartialMatches:
+            (preference?['show_partial_matches'] as int? ?? 1) == 1,
+      ),
     );
   }
 

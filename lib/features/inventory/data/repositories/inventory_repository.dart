@@ -1,6 +1,8 @@
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/group_property_draft.dart';
+import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
+import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
@@ -22,12 +24,21 @@ abstract class InventoryRepository {
   Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId);
   Future<MaterialRecord> unlinkMaterial(String barcode);
   Future<List<MaterialActivityEvent>> getMaterialActivity(String barcode);
+  Future<InventoryHealthSnapshot> getInventoryHealth();
+  Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
+    String barcode,
+  );
+  Future<MaterialControlTowerDetail> createInventoryMovement(
+    CreateInventoryMovementInput input,
+  );
   Future<MaterialGroupConfiguration> getGroupConfiguration(String barcode);
   Future<MaterialGroupConfiguration> updateGroupConfiguration(
     String barcode, {
     required bool inheritanceEnabled,
     required List<int> selectedItemIds,
     required List<GroupPropertyDraft> propertyDrafts,
+    required List<GroupUnitGovernance> unitGovernance,
+    required GroupUiPreferences uiPreferences,
   });
 }
 

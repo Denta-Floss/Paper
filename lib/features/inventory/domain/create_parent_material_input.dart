@@ -1,4 +1,5 @@
 import 'group_property_draft.dart';
+import 'material_group_configuration.dart';
 
 class CreateParentMaterialInput {
   const CreateParentMaterialInput({
@@ -15,6 +16,8 @@ class CreateParentMaterialInput {
     this.inheritanceEnabled = false,
     this.selectedItemIds = const <int>[],
     this.propertyDrafts = const <GroupPropertyDraft>[],
+    this.unitGovernance = const <GroupUnitGovernance>[],
+    this.uiPreferences = const GroupUiPreferences(),
     this.notes = '',
   });
 
@@ -31,5 +34,7 @@ class CreateParentMaterialInput {
   final bool inheritanceEnabled;
   final List<int> selectedItemIds;
   final List<GroupPropertyDraft> propertyDrafts;
+  final List<GroupUnitGovernance> unitGovernance;
+  final GroupUiPreferences uiPreferences;
   final String notes;
 }

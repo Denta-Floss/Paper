@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/inventory_repository.dart';
-import '../../domain/material_activity_event.dart';
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/group_property_draft.dart';
+import '../../domain/inventory_control_tower.dart';
+import '../../domain/material_activity_event.dart';
+import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
@@ -23,6 +25,8 @@ class InventoryProvider extends ChangeNotifier {
   String _searchQuery = '';
   bool _initialized = false;
   final Map<String, List<MaterialActivityEvent>> _activityByBarcode = {};
+  final Map<String, MaterialControlTowerDetail> _detailByBarcode = {};
+  InventoryHealthSnapshot _healthSnapshot = const InventoryHealthSnapshot();
 
   List<MaterialRecord> get materials => _materials;
   MaterialRecord? get selectedMaterial => _selectedMaterial;
@@ -31,6 +35,9 @@ class InventoryProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get lastLookupBarcode => _lastLookupBarcode;
   String get searchQuery => _searchQuery;
+  InventoryHealthSnapshot get healthSnapshot => _healthSnapshot;
+  MaterialControlTowerDetail? detailFor(String barcode) =>
+      _detailByBarcode[barcode];
 
   List<MaterialActivityEvent> activityFor(String barcode) =>
       _activityByBarcode[barcode] ?? const [];
@@ -49,6 +56,7 @@ class InventoryProvider extends ChangeNotifier {
       await _repository.init();
       await _repository.seedIfEmpty();
       await _reloadMaterials();
+      await loadInventoryHealth(silent: true);
       if (_materials.isNotEmpty) {
         _selectedMaterial = _materials.first;
       }
@@ -251,6 +259,85 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
+  Future<InventoryHealthSnapshot> loadInventoryHealth({
+    bool silent = false,
+  }) async {
+    try {
+      _healthSnapshot = await _repository.getInventoryHealth();
+    } catch (_) {
+      final lowStock = _materials
+          .where((item) => item.availableToPromise <= 100 && item.onHand > 0)
+          .length;
+      final reservedRisk = _materials
+          .where((item) => item.reserved > item.onHand && item.reserved > 0)
+          .length;
+      _healthSnapshot = InventoryHealthSnapshot(
+        lowStockCount: lowStock,
+        reservedRiskCount: reservedRisk,
+        incomingTodayCount: _materials.where((item) => item.incoming > 0).length,
+        qualityHoldCount: _materials
+            .where((item) => item.inventoryState == InventoryState.qualityHold)
+            .length,
+        unitMismatchCount:
+            _materials.where((item) => item.pendingAlertCount > 0).length,
+        pendingReconciliationCount:
+            _materials.where((item) => item.pendingAlertCount > 0).length,
+      );
+    }
+    if (!silent) {
+      notifyListeners();
+    }
+    return _healthSnapshot;
+  }
+
+  Future<MaterialControlTowerDetail?> loadMaterialControlTowerDetail(
+    String barcode,
+  ) async {
+    try {
+      final detail = await _repository.getMaterialControlTowerDetail(barcode);
+      if (detail != null) {
+        _detailByBarcode[barcode] = detail;
+      }
+      notifyListeners();
+      return detail;
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to load material detail.',
+        error: error,
+      );
+      notifyListeners();
+      return _detailByBarcode[barcode];
+    }
+  }
+
+  Future<MaterialControlTowerDetail?> postInventoryMovement(
+    CreateInventoryMovementInput input,
+  ) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final detail = await _repository.createInventoryMovement(input);
+      _detailByBarcode[input.materialBarcode] = detail;
+      await _reloadMaterials();
+      await loadInventoryHealth(silent: true);
+      _selectedMaterial = _materials
+          .where((item) => item.barcode == input.materialBarcode)
+          .firstOrNull;
+      return detail;
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to post inventory movement.',
+        error: error,
+      );
+      return null;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
   Future<MaterialGroupConfiguration?> loadGroupConfiguration(
     String barcode,
   ) async {
@@ -273,6 +360,8 @@ class InventoryProvider extends ChangeNotifier {
     required bool inheritanceEnabled,
     required List<int> selectedItemIds,
     required List<GroupPropertyDraft> propertyDrafts,
+    required List<GroupUnitGovernance> unitGovernance,
+    required GroupUiPreferences uiPreferences,
   }) async {
     _isSaving = true;
     _errorMessage = null;
@@ -284,6 +373,8 @@ class InventoryProvider extends ChangeNotifier {
         inheritanceEnabled: inheritanceEnabled,
         selectedItemIds: selectedItemIds,
         propertyDrafts: propertyDrafts,
+        unitGovernance: unitGovernance,
+        uiPreferences: uiPreferences,
       );
       await _reloadMaterials();
       _selectedMaterial = _materials

@@ -19,6 +19,9 @@ class GroupPropertyDraft {
     this.sources = const <GroupPropertySource>[],
     this.overrideLocked = false,
     this.hasTypeConflict = false,
+    this.coverageCount = 0,
+    this.selectedItemCountAtResolution = 0,
+    this.resolutionSource,
   });
 
   final String name;
@@ -29,6 +32,9 @@ class GroupPropertyDraft {
   final List<GroupPropertySource> sources;
   final bool overrideLocked;
   final bool hasTypeConflict;
+  final int coverageCount;
+  final int selectedItemCountAtResolution;
+  final String? resolutionSource;
 
   GroupPropertyDraft copyWith({
     String? name,
@@ -39,6 +45,9 @@ class GroupPropertyDraft {
     List<GroupPropertySource>? sources,
     bool? overrideLocked,
     bool? hasTypeConflict,
+    int? coverageCount,
+    int? selectedItemCountAtResolution,
+    String? resolutionSource,
   }) {
     return GroupPropertyDraft(
       name: name ?? this.name,
@@ -49,6 +58,10 @@ class GroupPropertyDraft {
       sources: sources ?? this.sources,
       overrideLocked: overrideLocked ?? this.overrideLocked,
       hasTypeConflict: hasTypeConflict ?? this.hasTypeConflict,
+      coverageCount: coverageCount ?? this.coverageCount,
+      selectedItemCountAtResolution:
+          selectedItemCountAtResolution ?? this.selectedItemCountAtResolution,
+      resolutionSource: resolutionSource ?? this.resolutionSource,
     );
   }
 }

@@ -8,7 +8,9 @@ import 'package:paper/features/groups/domain/group_inputs.dart';
 import 'package:paper/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:paper/features/inventory/domain/create_parent_material_input.dart';
 import 'package:paper/features/inventory/domain/group_property_draft.dart';
+import 'package:paper/features/inventory/domain/inventory_control_tower.dart';
 import 'package:paper/features/inventory/domain/material_activity_event.dart';
+import 'package:paper/features/inventory/domain/material_control_tower_detail.dart';
 import 'package:paper/features/inventory/domain/material_group_configuration.dart';
 import 'package:paper/features/inventory/domain/material_inputs.dart';
 import 'package:paper/features/inventory/domain/material_record.dart';
@@ -459,6 +461,57 @@ class FakeInventoryRepository extends InventoryRepository {
   }
 
   @override
+  Future<InventoryHealthSnapshot> getInventoryHealth() async {
+    return const InventoryHealthSnapshot(
+      lowStockCount: 1,
+      reservedRiskCount: 0,
+      incomingTodayCount: 0,
+      qualityHoldCount: 0,
+      unitMismatchCount: 0,
+      pendingReconciliationCount: 0,
+    );
+  }
+
+  @override
+  Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
+    String barcode,
+  ) async {
+    final record = _materials.where((item) => item.barcode == barcode).firstOrNull;
+    if (record == null) {
+      return null;
+    }
+    return MaterialControlTowerDetail(
+      material: record,
+      stockPositions: [
+        StockPosition(
+          locationId: 'MAIN',
+          locationName: 'Main Warehouse',
+          lotCode: record.barcode,
+          unitId: record.unitId,
+          onHandQty: record.onHand,
+          reservedQty: record.reserved,
+          damagedQty: 0,
+          updatedAt: record.updatedAt,
+        ),
+      ],
+      linkedOrderDemand: record.linkedOrderCount.toDouble(),
+      linkedPipelineDemand: record.linkedPipelineCount.toDouble(),
+      pendingAlertsCount: record.pendingAlertCount,
+    );
+  }
+
+  @override
+  Future<MaterialControlTowerDetail> createInventoryMovement(
+    CreateInventoryMovementInput input,
+  ) async {
+    final detail = await getMaterialControlTowerDetail(input.materialBarcode);
+    if (detail == null) {
+      throw Exception('Material not found');
+    }
+    return detail;
+  }
+
+  @override
   Future<MaterialGroupConfiguration> getGroupConfiguration(
     String barcode,
   ) async {
@@ -471,11 +524,15 @@ class FakeInventoryRepository extends InventoryRepository {
     required bool inheritanceEnabled,
     required List<int> selectedItemIds,
     required List<GroupPropertyDraft> propertyDrafts,
+    required List<GroupUnitGovernance> unitGovernance,
+    required GroupUiPreferences uiPreferences,
   }) async {
     final next = MaterialGroupConfiguration(
       inheritanceEnabled: inheritanceEnabled,
       selectedItemIds: selectedItemIds,
       propertyDrafts: propertyDrafts,
+      unitGovernance: unitGovernance,
+      uiPreferences: uiPreferences,
     );
     _groupConfigurations[barcode] = next;
     return next;

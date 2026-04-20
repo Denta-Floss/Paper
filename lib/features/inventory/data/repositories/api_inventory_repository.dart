@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/group_property_draft.dart';
+import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
+import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
@@ -79,6 +81,8 @@ class ApiInventoryRepository implements InventoryRepository {
     required bool inheritanceEnabled,
     required List<int> selectedItemIds,
     required List<GroupPropertyDraft> propertyDrafts,
+    required List<GroupUnitGovernance> unitGovernance,
+    required GroupUiPreferences uiPreferences,
   }) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
@@ -121,6 +125,8 @@ class ApiInventoryRepository implements InventoryRepository {
         inheritanceEnabled: inheritanceEnabled,
         selectedItemIds: selectedItemIds,
         propertyDrafts: propertyDrafts,
+        unitGovernance: unitGovernance,
+        uiPreferences: uiPreferences,
       );
       _mockGroupConfigs[barcode] = config;
       return config;
@@ -133,6 +139,10 @@ class ApiInventoryRepository implements InventoryRepository {
       'propertyDrafts': propertyDrafts
           .map((draft) => GroupPropertyDraftDto.fromDomain(draft).toJson())
           .toList(growable: false),
+      'unitGovernance': unitGovernance
+          .map((row) => GroupUnitGovernanceDto.fromDomain(row).toJson())
+          .toList(growable: false),
+      'uiPreferences': GroupUiPreferencesDto.fromDomain(uiPreferences).toJson(),
     };
     final response = await _client.patch(
       uri,
@@ -801,6 +811,121 @@ class ApiInventoryRepository implements InventoryRepository {
     return events;
   }
 
+  @override
+  Future<InventoryHealthSnapshot> getInventoryHealth() async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final materials = _mockMaterials.map((item) => item.toRecord()).toList();
+      final lowStock = materials
+          .where((item) => item.availableToPromise <= 100 && item.onHand > 0)
+          .length;
+      final reservedRisk = materials
+          .where((item) => item.reserved > item.onHand && item.reserved > 0)
+          .length;
+      return InventoryHealthSnapshot(
+        lowStockCount: lowStock,
+        reservedRiskCount: reservedRisk,
+        incomingTodayCount: materials.where((item) => item.incoming > 0).length,
+        qualityHoldCount: materials
+            .where((item) => item.inventoryState == InventoryState.qualityHold)
+            .length,
+        unitMismatchCount: materials
+            .where((item) => item.pendingAlertCount > 0)
+            .length,
+        pendingReconciliationCount: materials
+            .where((item) => item.pendingAlertCount > 0)
+            .length,
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl/api/inventory/health');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final parsed = InventoryHealthResponse.fromJson(payload);
+    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+      throw InventoryApiException(parsed.error ?? 'Failed to load inventory health.');
+    }
+    return parsed.health;
+  }
+
+  @override
+  Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
+    String barcode,
+  ) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final material = _mockMaterials
+          .where(
+            (item) =>
+                _normalizeBarcode(item.barcode) == _normalizeBarcode(barcode),
+          )
+          .firstOrNull;
+      if (material == null) {
+        return null;
+      }
+      final location = material.location.trim();
+      final stock = StockPosition(
+        locationId: location.isEmpty ? 'MAIN' : location,
+        locationName: location.isEmpty ? 'Main Warehouse' : location,
+        lotCode: material.barcode,
+        unitId: material.unitId,
+        onHandQty: material.onHand,
+        reservedQty: material.reserved,
+        damagedQty: 0,
+        updatedAt: material.updatedAt,
+      );
+      return MaterialControlTowerDetail(
+        material: material.toRecord(),
+        stockPositions: [stock],
+        movements: const [],
+        reservations: const [],
+        alerts: const [],
+        linkedOrderDemand: material.linkedOrderCount.toDouble(),
+        linkedPipelineDemand: material.linkedPipelineCount.toDouble(),
+        pendingAlertsCount: material.pendingAlertCount,
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl/api/materials/$barcode/detail');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final parsed = MaterialControlTowerDetailResponse.fromJson(payload);
+    if (response.statusCode == 404 || parsed.material == null) {
+      return null;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+      throw InventoryApiException(parsed.error ?? 'Failed to load material detail.');
+    }
+    return parsed.toDomain();
+  }
+
+  @override
+  Future<MaterialControlTowerDetail> createInventoryMovement(
+    CreateInventoryMovementInput input,
+  ) async {
+    if (useMockResponses) {
+      final material = await getMaterialControlTowerDetail(input.materialBarcode);
+      if (material == null) {
+        throw const InventoryApiException('Material not found.');
+      }
+      return material;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/inventory/movements');
+    final request = CreateInventoryMovementRequest.fromInput(input);
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(request.toJson()),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final parsed = MaterialControlTowerDetailResponse.fromJson(payload);
+    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+      throw InventoryApiException(parsed.error ?? 'Failed to apply inventory movement.');
+    }
+    return parsed.toDomain();
+  }
+
   MaterialResponse _saveParentMock(CreateParentMaterialInput input) {
     _seedMockStoreIfNeeded();
 
@@ -848,6 +973,8 @@ class ApiInventoryRepository implements InventoryRepository {
       inheritanceEnabled: input.inheritanceEnabled,
       selectedItemIds: input.selectedItemIds,
       propertyDrafts: input.propertyDrafts,
+      unitGovernance: input.unitGovernance,
+      uiPreferences: input.uiPreferences,
     );
 
     for (var i = 0; i < childBarcodes.length; i++) {

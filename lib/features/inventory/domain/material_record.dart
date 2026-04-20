@@ -1,3 +1,5 @@
+import 'inventory_control_tower.dart';
+
 class MaterialRecord {
   const MaterialRecord({
     required this.id,
@@ -24,6 +26,17 @@ class MaterialRecord {
     this.displayStock = '',
     this.createdBy = '',
     this.workflowStatus = 'notStarted',
+    this.materialClass = MaterialClass.rawMaterial,
+    this.inventoryState = InventoryState.available,
+    this.procurementState = ProcurementState.notOrdered,
+    this.traceabilityMode = TraceabilityMode.bulk,
+    this.onHand = 0,
+    this.reserved = 0,
+    this.availableToPromise = 0,
+    this.incoming = 0,
+    this.linkedOrderCount = 0,
+    this.linkedPipelineCount = 0,
+    this.pendingAlertCount = 0,
     DateTime? updatedAt,
     this.lastScannedAt,
   }) : updatedAt = updatedAt ?? createdAt;
@@ -52,6 +65,17 @@ class MaterialRecord {
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
+  final MaterialClass materialClass;
+  final InventoryState inventoryState;
+  final ProcurementState procurementState;
+  final TraceabilityMode traceabilityMode;
+  final double onHand;
+  final double reserved;
+  final double availableToPromise;
+  final double incoming;
+  final int linkedOrderCount;
+  final int linkedPipelineCount;
+  final int pendingAlertCount;
   final DateTime updatedAt;
   final DateTime? lastScannedAt;
 

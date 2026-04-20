@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../features/groups/presentation/screens/groups_screen.dart';
+import '../../features/auth/presentation/screens/user_management_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
 import '../../features/inventory/presentation/screens/material_scan_screen.dart';
 import '../../features/items/presentation/screens/items_screen.dart';
@@ -183,6 +184,7 @@ class _ShellContentSwitcher extends StatelessWidget {
               'configurator_items' => const ItemsScreen(),
               'configurator_groups' => const GroupsScreen(),
               'configurator_units' => const UnitsScreen(),
+              'user_management' => const UserManagementScreen(),
               _ => const _ModulePlaceholder(
                 title: 'Dashboard',
                 description:

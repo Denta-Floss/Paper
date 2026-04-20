@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/widgets/app_button.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/clients/presentation/providers/clients_provider.dart';
 import '../../features/groups/presentation/providers/groups_provider.dart';
 import '../../features/inventory/presentation/providers/inventory_provider.dart';
@@ -144,6 +145,17 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
       return const ShellTopStripConfig(title: 'Configurator');
     case 'configurator_vendors':
       return const ShellTopStripConfig(title: 'Vendors');
+    case 'user_management':
+      return ShellTopStripConfig(
+        title: 'User Management',
+        actions: [
+          ShellTopStripAction(
+            label: 'Sign out',
+            icon: Icons.logout,
+            onPressed: () => context.read<AuthProvider>().logout(),
+          ),
+        ],
+      );
     default:
       return const ShellTopStripConfig(title: 'Dashboard');
   }

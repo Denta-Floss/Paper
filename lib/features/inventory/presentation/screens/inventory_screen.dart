@@ -12,6 +12,7 @@ import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
@@ -21,7 +22,9 @@ import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/group_property_draft.dart' as governance;
-import '../../domain/material_activity_event.dart';
+import '../../domain/inventory_control_tower.dart';
+import '../../domain/material_control_tower_detail.dart';
+import '../../domain/material_group_configuration.dart' as groupcfg;
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 import '../providers/inventory_provider.dart';
@@ -111,6 +114,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
   bool _sortNewestFirst = true;
   bool _isBulkRunning = false;
   String? _bulkProgressLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      context.read<InventoryProvider>().loadInventoryHealth();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -203,6 +217,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         onNewGroup: _openCreateGroupEditor,
                         onAddStock: () =>
                             InventoryScreen.openAddStockForm(context),
+                        onReceiveStock: () =>
+                            _openMovementComposer(movementType: InventoryMovementType.receive),
+                        onTransferStock: () =>
+                            _openMovementComposer(movementType: InventoryMovementType.transfer),
+                        onAdjustStock: () =>
+                            _openMovementComposer(movementType: InventoryMovementType.adjust),
                       ),
                       const SizedBox(height: 14),
                       _InventoryControlsRow(
@@ -259,12 +279,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         scannedRecords: scannedCount,
                         awaitingScanRecords: awaitingScanCount,
                         totalScanEvents: totalScanEvents,
+                        health: inventory.healthSnapshot,
                       ),
                       if (selectedRecords.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         _InventoryBulkActionBar(
                           selectedCount: selectedRecords.length,
                           isBusy: _isBulkRunning,
+                          isRequestDelete: context.select<AuthProvider, bool>(
+                            (auth) => auth.isRegularUser,
+                          ),
                           progressLabel: _bulkProgressLabel,
                           onClearSelection: () {
                             setState(_selectedBarcodes.clear);
@@ -704,6 +728,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _confirmDelete(MaterialRecord record) async {
+    final auth = context.read<AuthProvider>();
+    if (auth.isRegularUser) {
+      await _requestDelete(record);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -729,6 +758,57 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return;
     }
     await context.read<InventoryProvider>().deleteMaterial(record.barcode);
+  }
+
+  Future<void> _requestDelete(MaterialRecord record) async {
+    final controller = TextEditingController();
+    final requested = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(record.isParent ? 'Request group deletion' : 'Request item deletion'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Reason',
+            hintText: 'Tell an admin why this should be deleted.',
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Request delete'),
+          ),
+        ],
+      ),
+    );
+    if (requested != true || !mounted) {
+      controller.dispose();
+      return;
+    }
+    final ok = await context.read<AuthProvider>().requestDelete(
+      entityType: 'material',
+      entityId: record.barcode,
+      entityLabel: record.name,
+      reason: controller.text,
+    );
+    controller.dispose();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Delete request sent to admins.'
+              : context.read<AuthProvider>().errorMessage ?? 'Failed to request deletion.',
+        ),
+      ),
+    );
   }
 
   Future<void> _openGroupLinker(MaterialRecord record) async {
@@ -759,6 +839,72 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _unlinkInheritance(MaterialRecord record) async {
     await context.read<InventoryProvider>().unlinkMaterial(record.barcode);
+  }
+
+  Future<void> _openMovementComposer({
+    required InventoryMovementType movementType,
+  }) async {
+    final inventory = context.read<InventoryProvider>();
+    final materials = inventory.materials;
+    if (materials.isEmpty) {
+      return;
+    }
+
+    final initialBarcode =
+        inventory.selectedMaterial?.barcode ?? materials.first.barcode;
+    final draft = await showDialog<_MovementComposerDraft>(
+      context: context,
+      builder: (dialogContext) => _InventoryMovementComposerDialog(
+        movementType: movementType,
+        materials: materials,
+        initialBarcode: initialBarcode,
+      ),
+    );
+
+    if (draft == null || !mounted) {
+      return;
+    }
+
+    final detail = await inventory.postInventoryMovement(
+      CreateInventoryMovementInput(
+        materialBarcode: draft.materialBarcode,
+        movementType: movementType,
+        qty: draft.qty,
+        fromLocationId: draft.fromLocationId,
+        toLocationId: draft.toLocationId,
+        reasonCode: draft.reasonCode,
+        referenceType: draft.referenceType,
+        referenceId: draft.referenceId,
+        actor: 'Inventory UI',
+        lotCode: draft.lotCode,
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    if (detail == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            inventory.errorMessage ?? 'Failed to post movement.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          '${_movementTypeLabel(movementType)} posted for ${draft.materialBarcode}.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _bulkResetTrace(List<MaterialRecord> records) async {
@@ -863,6 +1009,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (_isBulkRunning || records.isEmpty) {
       return;
     }
+    if (context.read<AuthProvider>().isRegularUser) {
+      await _bulkRequestDelete(records);
+      return;
+    }
     final count = records.length;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -935,6 +1085,58 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _bulkRequestDelete(List<MaterialRecord> records) async {
+    final controller = TextEditingController();
+    final requested = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Request deletion for ${records.length} records?'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Reason',
+            hintText: 'This reason will be attached to every selected record.',
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Request delete'),
+          ),
+        ],
+      ),
+    );
+    if (requested != true || !mounted) {
+      controller.dispose();
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    var success = 0;
+    for (final record in records) {
+      final ok = await auth.requestDelete(
+        entityType: 'material',
+        entityId: record.barcode,
+        entityLabel: record.name,
+        reason: controller.text,
+      );
+      if (ok) {
+        success += 1;
+      }
+    }
+    controller.dispose();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sent $success delete request${success == 1 ? '' : 's'}.')),
+    );
   }
 
   Future<void> _runBulkOperation({
@@ -1085,6 +1287,310 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _normalize(String value) {
     return value.trim().toLowerCase();
   }
+
+  String _movementTypeLabel(InventoryMovementType type) {
+    switch (type) {
+      case InventoryMovementType.receive:
+        return 'Receive';
+      case InventoryMovementType.issue:
+        return 'Issue';
+      case InventoryMovementType.transfer:
+        return 'Transfer';
+      case InventoryMovementType.adjust:
+        return 'Adjust';
+      case InventoryMovementType.reserve:
+        return 'Reserve';
+      case InventoryMovementType.release:
+        return 'Release';
+      case InventoryMovementType.consume:
+        return 'Consume';
+      case InventoryMovementType.split:
+        return 'Split';
+      case InventoryMovementType.merge:
+        return 'Merge';
+    }
+  }
+}
+
+class _MovementComposerDraft {
+  const _MovementComposerDraft({
+    required this.materialBarcode,
+    required this.qty,
+    this.fromLocationId,
+    this.toLocationId,
+    this.reasonCode,
+    this.referenceType,
+    this.referenceId,
+    this.lotCode,
+  });
+
+  final String materialBarcode;
+  final double qty;
+  final String? fromLocationId;
+  final String? toLocationId;
+  final String? reasonCode;
+  final String? referenceType;
+  final String? referenceId;
+  final String? lotCode;
+}
+
+class _InventoryMovementComposerDialog extends StatefulWidget {
+  const _InventoryMovementComposerDialog({
+    required this.movementType,
+    required this.materials,
+    required this.initialBarcode,
+  });
+
+  final InventoryMovementType movementType;
+  final List<MaterialRecord> materials;
+  final String initialBarcode;
+
+  @override
+  State<_InventoryMovementComposerDialog> createState() =>
+      _InventoryMovementComposerDialogState();
+}
+
+class _InventoryMovementComposerDialogState
+    extends State<_InventoryMovementComposerDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _qtyController;
+  late final TextEditingController _fromLocationController;
+  late final TextEditingController _toLocationController;
+  late final TextEditingController _reasonController;
+  late final TextEditingController _referenceTypeController;
+  late final TextEditingController _referenceIdController;
+  late final TextEditingController _lotCodeController;
+  late String _selectedBarcode;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedBarcode = widget.initialBarcode;
+    _qtyController = TextEditingController(text: '1');
+    _fromLocationController = TextEditingController();
+    _toLocationController = TextEditingController();
+    _reasonController = TextEditingController();
+    _referenceTypeController = TextEditingController();
+    _referenceIdController = TextEditingController();
+    _lotCodeController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    _fromLocationController.dispose();
+    _toLocationController.dispose();
+    _reasonController.dispose();
+    _referenceTypeController.dispose();
+    _referenceIdController.dispose();
+    _lotCodeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_movementTypeLabel(widget.movementType)} Stock',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedBarcode,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Material',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: widget.materials
+                      .map(
+                        (material) => DropdownMenuItem<String>(
+                          value: material.barcode,
+                          child: Text('${material.name} (${material.barcode})'),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() {
+                      _selectedBarcode = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _qtyController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    final parsed = double.tryParse(value?.trim() ?? '');
+                    if (parsed == null || parsed <= 0) {
+                      return 'Enter a valid quantity';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                if (widget.movementType == InventoryMovementType.transfer) ...[
+                  TextFormField(
+                    controller: _fromLocationController,
+                    decoration: const InputDecoration(
+                      labelText: 'From Location',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _toLocationController,
+                    decoration: const InputDecoration(
+                      labelText: 'To Location',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  TextFormField(
+                    controller: _toLocationController,
+                    decoration: const InputDecoration(
+                      labelText: 'Location',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextFormField(
+                  controller: _lotCodeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Lot Code (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _reasonController,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason Code (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _referenceTypeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Reference Type',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _referenceIdController,
+                        decoration: const InputDecoration(
+                          labelText: 'Reference ID',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    AppButton(
+                      label: 'Cancel',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 10),
+                    AppButton(
+                      label: _movementTypeLabel(widget.movementType),
+                      onPressed: _submit,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    final qty = double.parse(_qtyController.text.trim());
+    Navigator.of(context).pop(
+      _MovementComposerDraft(
+        materialBarcode: _selectedBarcode,
+        qty: qty,
+        fromLocationId: _normalized(_fromLocationController.text),
+        toLocationId: _normalized(_toLocationController.text),
+        reasonCode: _normalized(_reasonController.text),
+        referenceType: _normalized(_referenceTypeController.text),
+        referenceId: _normalized(_referenceIdController.text),
+        lotCode: _normalized(_lotCodeController.text),
+      ),
+    );
+  }
+
+  String? _normalized(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed;
+  }
+
+  String _movementTypeLabel(InventoryMovementType type) {
+    switch (type) {
+      case InventoryMovementType.receive:
+        return 'Receive';
+      case InventoryMovementType.issue:
+        return 'Issue';
+      case InventoryMovementType.transfer:
+        return 'Transfer';
+      case InventoryMovementType.adjust:
+        return 'Adjust';
+      case InventoryMovementType.reserve:
+        return 'Reserve';
+      case InventoryMovementType.release:
+        return 'Release';
+      case InventoryMovementType.consume:
+        return 'Consume';
+      case InventoryMovementType.split:
+        return 'Split';
+      case InventoryMovementType.merge:
+        return 'Merge';
+    }
+  }
 }
 
 class _InventoryWorkspaceHeader extends StatelessWidget {
@@ -1093,12 +1599,18 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
     required this.onViewModeChanged,
     required this.onNewGroup,
     required this.onAddStock,
+    required this.onReceiveStock,
+    required this.onTransferStock,
+    required this.onAdjustStock,
   });
 
   final _InventoryViewMode viewMode;
   final ValueChanged<_InventoryViewMode> onViewModeChanged;
   final VoidCallback onNewGroup;
   final VoidCallback onAddStock;
+  final VoidCallback onReceiveStock;
+  final VoidCallback onTransferStock;
+  final VoidCallback onAdjustStock;
 
   @override
   Widget build(BuildContext context) {
@@ -1126,6 +1638,21 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
           label: '+ Add Stock',
           onTap: onAddStock,
           isPrimary: true,
+        ),
+        _InventoryToolbarButton(
+          label: 'Receive',
+          onTap: onReceiveStock,
+          isPrimary: false,
+        ),
+        _InventoryToolbarButton(
+          label: 'Transfer',
+          onTap: onTransferStock,
+          isPrimary: false,
+        ),
+        _InventoryToolbarButton(
+          label: 'Adjust',
+          onTap: onAdjustStock,
+          isPrimary: false,
         ),
       ],
     );
@@ -1504,6 +2031,7 @@ class _InventoryBulkActionBar extends StatelessWidget {
   const _InventoryBulkActionBar({
     required this.selectedCount,
     required this.isBusy,
+    required this.isRequestDelete,
     required this.onClearSelection,
     required this.onResetTrace,
     required this.onUnlink,
@@ -1514,6 +2042,7 @@ class _InventoryBulkActionBar extends StatelessWidget {
 
   final int selectedCount;
   final bool isBusy;
+  final bool isRequestDelete;
   final VoidCallback onClearSelection;
   final String? progressLabel;
   final VoidCallback? onOpenSingleDetails;
@@ -1578,7 +2107,7 @@ class _InventoryBulkActionBar extends StatelessWidget {
                 onTap: onUnlink,
               ),
               _InventoryBulkActionButton(
-                label: 'Delete',
+                label: isRequestDelete ? 'Request Delete' : 'Delete',
                 icon: Icons.delete_outline_rounded,
                 isDestructive: true,
                 isDisabled: isBusy,
@@ -1685,6 +2214,7 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
     required this.scannedRecords,
     required this.awaitingScanRecords,
     required this.totalScanEvents,
+    required this.health,
   });
 
   final int totalRecords;
@@ -1692,6 +2222,7 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
   final int scannedRecords;
   final int awaitingScanRecords;
   final int totalScanEvents;
+  final InventoryHealthSnapshot health;
 
   @override
   Widget build(BuildContext context) {
@@ -1728,7 +2259,7 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: const Text(
-                      'Demo Mode',
+                      'Control Tower',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -1737,7 +2268,7 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Inventory Overview',
+                    'Operational Health',
                     style: const TextStyle(
                       color: Color(0xFF3F4460),
                       fontSize: 13,
@@ -1745,7 +2276,7 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Showcase quick insights and keyboard controls',
+                    'Raw-material-first live signals and keyboard controls',
                     style: const TextStyle(
                       color: Color(0xFF6D7687),
                       fontSize: 12,
@@ -1759,6 +2290,31 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  _DemoMetricChip(
+                    label: 'Low Stock',
+                    value: '${health.lowStockCount}',
+                    color: const Color(0xFFB45309),
+                  ),
+                  _DemoMetricChip(
+                    label: 'Reserved Risk',
+                    value: '${health.reservedRiskCount}',
+                    color: const Color(0xFFB91C1C),
+                  ),
+                  _DemoMetricChip(
+                    label: 'Incoming Today',
+                    value: '${health.incomingTodayCount}',
+                    color: const Color(0xFF1D4ED8),
+                  ),
+                  _DemoMetricChip(
+                    label: 'Quality Hold',
+                    value: '${health.qualityHoldCount}',
+                    color: const Color(0xFF7C3AED),
+                  ),
+                  _DemoMetricChip(
+                    label: 'Pending Recon',
+                    value: '${health.pendingReconciliationCount}',
+                    color: const Color(0xFF334155),
+                  ),
                   _DemoMetricChip(
                     label: 'Records',
                     value: '$totalRecords',
@@ -1780,7 +2336,7 @@ class _InventoryDemoShowcaseStrip extends StatelessWidget {
                     color: const Color(0xFFB06A00),
                   ),
                   _DemoMetricChip(
-                    label: 'Total Scan Events',
+                    label: 'Scan Events',
                     value: '$totalScanEvents',
                     color: const Color(0xFF2768D8),
                   ),
@@ -2276,6 +2832,9 @@ class _InventoryTableState extends State<_InventoryTable> {
                             record.barcode,
                           ),
                           isStriped: index.isOdd,
+                          isRequestDelete: context.select<AuthProvider, bool>(
+                            (auth) => auth.isRegularUser,
+                          ),
                           onTap: () => widget.onOpenDetails(record),
                           onAddSubGroup: () => widget.onAddSubGroup(record),
                           onEdit: () => widget.onEdit(record),
@@ -2573,6 +3132,7 @@ class _InventoryActionsCell extends StatelessWidget {
     required this.metrics,
     required this.isSelected,
     required this.isStriped,
+    required this.isRequestDelete,
     required this.onTap,
     required this.onAddSubGroup,
     required this.onEdit,
@@ -2586,6 +3146,7 @@ class _InventoryActionsCell extends StatelessWidget {
   final _InventoryTableMetrics metrics;
   final bool isSelected;
   final bool isStriped;
+  final bool isRequestDelete;
   final VoidCallback onTap;
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
@@ -2615,6 +3176,7 @@ class _InventoryActionsCell extends StatelessWidget {
           canAddSubGroup:
               record.numberOfChildren > 0 ||
               (record.parentBarcode ?? '').isEmpty,
+          isRequestDelete: isRequestDelete,
           onAddSubGroup: onAddSubGroup,
           onEdit: onEdit,
           onDelete: onDelete,
@@ -2848,7 +3410,7 @@ class _InventoryDetailSheet extends StatelessWidget {
     final linkedItem = items.items
         .where((item) => item.id == record.linkedItemId)
         .firstOrNull;
-    final cachedActivity = inventory.activityFor(record.barcode);
+    final cachedDetail = inventory.detailFor(record.barcode);
 
     return Material(
       color: Colors.white,
@@ -2880,25 +3442,33 @@ class _InventoryDetailSheet extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: FutureBuilder<List<MaterialActivityEvent>>(
-              future: cachedActivity.isNotEmpty
+            child: FutureBuilder<MaterialControlTowerDetail?>(
+              future: cachedDetail != null
                   ? null
-                  : context.read<InventoryProvider>().loadMaterialActivity(
+                  : context
+                        .read<InventoryProvider>()
+                        .loadMaterialControlTowerDetail(
                       record.barcode,
                     ),
-              initialData: cachedActivity,
+              initialData: cachedDetail,
               builder: (context, snapshot) {
-                final activity =
-                    snapshot.data ?? const <MaterialActivityEvent>[];
+                final detail = snapshot.data;
+                final material = detail?.material ?? record;
+                final stockPositions =
+                    detail?.stockPositions ?? const <StockPosition>[];
+                final movements =
+                    detail?.movements ?? const <InventoryMovement>[];
+                final reservations =
+                    detail?.reservations ?? const <InventoryReservation>[];
+                final alerts = detail?.alerts ?? const <InventoryAlert>[];
                 return Padding(
                   padding: const EdgeInsets.all(20),
                   child: AppInfoPanel(
-                    title: record.barcode,
-                    subtitle: record.isParent
-                        ? 'Parent inventory group'
-                        : 'Child inventory item',
+                    title: material.barcode,
+                    subtitle:
+                        '${_materialClassLabel(material.materialClass)} • ${_inventoryStateLabel(material.inventoryState)}',
                     headerTrailing: BarcodeTraceBadge(
-                      scanCount: record.scanCount,
+                      scanCount: material.scanCount,
                     ),
                     rows: [
                       if (linkedGroup != null)
@@ -2912,45 +3482,126 @@ class _InventoryDetailSheet extends StatelessWidget {
                           value: linkedItem.displayName,
                         ),
                       AppInfoRow(
+                        label: 'Material class',
+                        value: _materialClassLabel(material.materialClass),
+                      ),
+                      AppInfoRow(
+                        label: 'Inventory state',
+                        value: _inventoryStateLabel(material.inventoryState),
+                      ),
+                      AppInfoRow(
+                        label: 'Procurement',
+                        value: _procurementStateLabel(
+                          material.procurementState,
+                        ),
+                      ),
+                      AppInfoRow(
+                        label: 'Traceability',
+                        value: _traceabilityModeLabel(material.traceabilityMode),
+                      ),
+                      AppInfoRow(
                         label: 'Location',
-                        value: record.location.ifEmpty('Unassigned'),
+                        value: material.location.ifEmpty('Unassigned'),
                       ),
                       AppInfoRow(
                         label: 'Last activity',
                         value: _formatDateTime(
-                          record.lastScannedAt ?? record.updatedAt,
+                          material.lastScannedAt ?? material.updatedAt,
                         ),
                       ),
                       AppInfoRow(
                         label: 'Last scanned',
-                        value: record.lastScannedAt == null
+                        value: material.lastScannedAt == null
                             ? 'Awaiting first scan'
-                            : _formatDateTime(record.lastScannedAt!),
+                            : _formatDateTime(material.lastScannedAt!),
                       ),
                       AppInfoRow(
-                        label: 'Traceability',
-                        value: record.hasBeenScanned
-                            ? 'Scanned ${record.scanCount} time${record.scanCount == 1 ? '' : 's'}'
-                            : 'No scan trace yet',
+                        label: 'Stock summary',
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _Badge(
+                              label:
+                                  'On hand ${_formatQuantity(material.onHand)}',
+                              color: const Color(0xFFE7F8EE),
+                              borderColor: const Color(0xFF9CD3AF),
+                              textColor: const Color(0xFF106B36),
+                            ),
+                            _Badge(
+                              label:
+                                  'Reserved ${_formatQuantity(material.reserved)}',
+                              color: const Color(0xFFFFF3E6),
+                              borderColor: const Color(0xFFE9C69A),
+                              textColor: const Color(0xFF8A4D00),
+                            ),
+                            _Badge(
+                              label:
+                                  'ATP ${_formatQuantity(material.availableToPromise)}',
+                              color: const Color(0xFFEAF2FF),
+                              borderColor: const Color(0xFFB2CAFA),
+                              textColor: const Color(0xFF1F4DBA),
+                            ),
+                            _Badge(
+                              label:
+                                  'Incoming ${_formatQuantity(material.incoming)}',
+                              color: const Color(0xFFF4EEFF),
+                              borderColor: const Color(0xFFD4C2FF),
+                              textColor: const Color(0xFF5D35B4),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AppInfoRow(
+                        label: 'Stock by location',
+                        child: _StockPositionList(
+                          positions: stockPositions,
+                          fallbackUnit: material.unit,
+                        ),
+                      ),
+                      AppInfoRow(
+                        label: 'Reservations',
+                        child: _ReservationList(reservations: reservations),
+                      ),
+                      AppInfoRow(
+                        label: 'Alerts',
+                        child: _InventoryAlertList(alerts: alerts),
+                      ),
+                      AppInfoRow(
+                        label: 'Linked demand',
+                        value:
+                            'Orders ${detail?.linkedOrderDemand.toStringAsFixed(0) ?? material.linkedOrderCount} • Pipeline ${detail?.linkedPipelineDemand.toStringAsFixed(0) ?? material.linkedPipelineCount}',
                       ),
                       ...buildMaterialBarcodeInfoRows(
-                        record,
+                        material,
                         includeBarcodeImage: InventoryScreen._isDesktopPlatform,
                       ),
-                      if (record.isParent)
+                      if (material.isParent)
                         AppInfoRow(
                           label: 'Child barcodes',
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: record.linkedChildBarcodes
+                          child: material.linkedChildBarcodes.isEmpty
+                              ? const Text(
+                                  'No child barcodes linked.',
+                                  style: TextStyle(
+                                    color: Color(0xFF717B8C),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                )
+                              : Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: material.linkedChildBarcodes
                                 .map((barcode) => _Badge(label: barcode))
                                 .toList(growable: false),
-                          ),
+                                ),
                         ),
                       AppInfoRow(
-                        label: 'Activity',
-                        child: _MaterialActivityTimeline(events: activity),
+                        label: 'Movement timeline',
+                        child: _InventoryMovementTimeline(
+                          movements: movements,
+                          fallbackUnit: material.unit,
+                        ),
                       ),
                     ],
                     footer: Wrap(
@@ -2958,7 +3609,7 @@ class _InventoryDetailSheet extends StatelessWidget {
                       runSpacing: 12,
                       children: [
                         if (InventoryScreen._isDesktopPlatform)
-                          ShowBarcodeButton(material: record),
+                          ShowBarcodeButton(material: material),
                         if (kDebugMode)
                           AppButton(
                             label: 'Reset Trace',
@@ -2966,7 +3617,7 @@ class _InventoryDetailSheet extends StatelessWidget {
                             variant: AppButtonVariant.secondary,
                             onPressed: () {
                               context.read<InventoryProvider>().resetScanTrace(
-                                record.barcode,
+                                material.barcode,
                               );
                               Navigator.of(context).pop();
                             },
@@ -2990,18 +3641,83 @@ class _InventoryDetailSheet extends StatelessWidget {
     final minute = value.minute.toString().padLeft(2, '0');
     return '$day-$month-${value.year} $hour:$minute';
   }
+
+  String _materialClassLabel(MaterialClass value) {
+    switch (value) {
+      case MaterialClass.rawMaterial:
+        return 'Raw Material';
+      case MaterialClass.wip:
+        return 'WIP';
+      case MaterialClass.finishedGood:
+        return 'Finished Good';
+      case MaterialClass.packaging:
+        return 'Packaging';
+      case MaterialClass.consumable:
+        return 'Consumable';
+    }
+  }
+
+  String _inventoryStateLabel(InventoryState value) {
+    switch (value) {
+      case InventoryState.available:
+        return 'Available';
+      case InventoryState.reserved:
+        return 'Reserved';
+      case InventoryState.inProduction:
+        return 'In Production';
+      case InventoryState.qualityHold:
+        return 'Quality Hold';
+      case InventoryState.damaged:
+        return 'Damaged';
+      case InventoryState.archived:
+        return 'Archived';
+    }
+  }
+
+  String _procurementStateLabel(ProcurementState value) {
+    switch (value) {
+      case ProcurementState.notOrdered:
+        return 'Not Ordered';
+      case ProcurementState.ordered:
+        return 'Ordered';
+      case ProcurementState.receivedPartial:
+        return 'Received Partial';
+      case ProcurementState.receivedComplete:
+        return 'Received Complete';
+    }
+  }
+
+  String _traceabilityModeLabel(TraceabilityMode value) {
+    switch (value) {
+      case TraceabilityMode.lotTracked:
+        return 'Lot Tracked';
+      case TraceabilityMode.serialTracked:
+        return 'Serial Tracked';
+      case TraceabilityMode.bulk:
+        return 'Bulk';
+    }
+  }
+
+  String _formatQuantity(double value) {
+    final rounded = value.roundToDouble();
+    if ((value - rounded).abs() < 0.0001) {
+      return rounded.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
 }
 
-class _MaterialActivityTimeline extends StatelessWidget {
-  const _MaterialActivityTimeline({required this.events});
+class _StockPositionList extends StatelessWidget {
+  const _StockPositionList({required this.positions, required this.fallbackUnit});
 
-  final List<MaterialActivityEvent> events;
+  final List<StockPosition> positions;
+  final String fallbackUnit;
 
   @override
   Widget build(BuildContext context) {
-    if (events.isEmpty) {
+    if (positions.isEmpty) {
       return const Text(
-        'No activity yet.',
+        'No stock positions available.',
         style: TextStyle(
           color: Color(0xFF717B8C),
           fontSize: 12,
@@ -3011,55 +3727,50 @@ class _MaterialActivityTimeline extends StatelessWidget {
     }
 
     return Column(
-      children: events
-          .take(6)
-          .map((event) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+      children: positions
+          .map((position) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFD9E1F3)),
+              ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.only(top: 5),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF6E56FF),
-                      shape: BoxShape.circle,
+                  Expanded(
+                    child: Text(
+                      '${position.locationName} • Lot ${position.lotCode}',
+                      style: const TextStyle(
+                        color: Color(0xFF2F2F2F),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'On hand ${_formatQty(position.onHandQty)}',
+                    style: const TextStyle(
+                      color: Color(0xFF23448A),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          event.label,
-                          style: const TextStyle(
-                            color: Color(0xFF2F2F2F),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (event.description.trim().isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            event.description,
-                            style: const TextStyle(
-                              color: Color(0xFF717B8C),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ],
+                  Text(
+                    'Res ${_formatQty(position.reservedQty)}',
+                    style: const TextStyle(
+                      color: Color(0xFF8A4D00),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Text(
-                    _formatTimelineDate(event.createdAt),
+                    fallbackUnit.ifEmpty('Units'),
                     style: const TextStyle(
-                      color: Color(0xFF8C93A1),
+                      color: Color(0xFF6F7480),
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
@@ -3071,13 +3782,308 @@ class _MaterialActivityTimeline extends StatelessWidget {
           .toList(growable: false),
     );
   }
+}
 
-  String _formatTimelineDate(DateTime value) {
-    final day = value.day.toString().padLeft(2, '0');
-    final month = value.month.toString().padLeft(2, '0');
-    final hour = value.hour.toString().padLeft(2, '0');
-    final minute = value.minute.toString().padLeft(2, '0');
-    return '$day-$month $hour:$minute';
+class _ReservationList extends StatelessWidget {
+  const _ReservationList({required this.reservations});
+
+  final List<InventoryReservation> reservations;
+
+  @override
+  Widget build(BuildContext context) {
+    if (reservations.isEmpty) {
+      return const Text(
+        'No active reservations.',
+        style: TextStyle(
+          color: Color(0xFF717B8C),
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+    return Column(
+      children: reservations
+          .map(
+            (reservation) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${reservation.referenceType.toUpperCase()} • ${reservation.referenceId}',
+                      style: const TextStyle(
+                        color: Color(0xFF2F2F2F),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _formatQty(reservation.reservedQty),
+                    style: const TextStyle(
+                      color: Color(0xFF8A4D00),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _Badge(
+                    label: reservation.status,
+                    color: const Color(0xFFF5F2FF),
+                    borderColor: const Color(0xFFDED5FF),
+                    textColor: const Color(0xFF5F4BCB),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class _InventoryAlertList extends StatelessWidget {
+  const _InventoryAlertList({required this.alerts});
+
+  final List<InventoryAlert> alerts;
+
+  @override
+  Widget build(BuildContext context) {
+    final openAlerts = alerts.where((alert) => alert.isOpen).toList(growable: false);
+    if (openAlerts.isEmpty) {
+      return const Text(
+        'No open alerts.',
+        style: TextStyle(
+          color: Color(0xFF717B8C),
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+    return Column(
+      children: openAlerts
+          .map(
+            (alert) => Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: _alertBackground(alert.severity),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _alertBorder(alert.severity)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Badge(
+                    label: _alertLabel(alert.severity),
+                    color: Colors.white,
+                    borderColor: _alertBorder(alert.severity),
+                    textColor: _alertText(alert.severity),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      alert.message,
+                      style: const TextStyle(
+                        color: Color(0xFF333A48),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class _InventoryMovementTimeline extends StatelessWidget {
+  const _InventoryMovementTimeline({
+    required this.movements,
+    required this.fallbackUnit,
+  });
+
+  final List<InventoryMovement> movements;
+  final String fallbackUnit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (movements.isEmpty) {
+      return const Text(
+        'No movements posted yet.',
+        style: TextStyle(
+          color: Color(0xFF717B8C),
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+
+    final sorted = movements.toList(growable: false)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return Column(
+      children: sorted.take(8).map((movement) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(top: 5),
+                decoration: BoxDecoration(
+                  color: _movementColor(movement.movementType),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _movementTitle(movement.movementType),
+                      style: const TextStyle(
+                        color: Color(0xFF2F2F2F),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatQty(movement.qty)} ${fallbackUnit.ifEmpty('Units')} • ${movement.reasonCode?.ifEmpty('No reason') ?? 'No reason'}',
+                      style: const TextStyle(
+                        color: Color(0xFF717B8C),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                _formatTimelineDate(movement.createdAt),
+                style: const TextStyle(
+                  color: Color(0xFF8C93A1),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(growable: false),
+    );
+  }
+}
+
+String _movementTitle(InventoryMovementType type) {
+  switch (type) {
+    case InventoryMovementType.receive:
+      return 'Received stock';
+    case InventoryMovementType.issue:
+      return 'Issued stock';
+    case InventoryMovementType.transfer:
+      return 'Transferred stock';
+    case InventoryMovementType.adjust:
+      return 'Adjusted stock';
+    case InventoryMovementType.reserve:
+      return 'Reserved stock';
+    case InventoryMovementType.release:
+      return 'Released reservation';
+    case InventoryMovementType.consume:
+      return 'Consumed stock';
+    case InventoryMovementType.split:
+      return 'Split lot';
+    case InventoryMovementType.merge:
+      return 'Merged lots';
+  }
+}
+
+Color _movementColor(InventoryMovementType type) {
+  switch (type) {
+    case InventoryMovementType.receive:
+      return const Color(0xFF117B3A);
+    case InventoryMovementType.issue:
+    case InventoryMovementType.consume:
+      return const Color(0xFFB42318);
+    case InventoryMovementType.transfer:
+      return const Color(0xFF1E4FB9);
+    case InventoryMovementType.adjust:
+      return const Color(0xFF7B3FC1);
+    case InventoryMovementType.reserve:
+    case InventoryMovementType.release:
+      return const Color(0xFFB86B00);
+    case InventoryMovementType.split:
+    case InventoryMovementType.merge:
+      return const Color(0xFF4B5565);
+  }
+}
+
+String _formatTimelineDate(DateTime value) {
+  final day = value.day.toString().padLeft(2, '0');
+  final month = value.month.toString().padLeft(2, '0');
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  return '$day-$month $hour:$minute';
+}
+
+String _formatQty(double value) {
+  final rounded = value.roundToDouble();
+  if ((value - rounded).abs() < 0.0001) {
+    return rounded.toStringAsFixed(0);
+  }
+  return value.toStringAsFixed(2);
+}
+
+String _alertLabel(InventoryAlertSeverity severity) {
+  switch (severity) {
+    case InventoryAlertSeverity.info:
+      return 'Info';
+    case InventoryAlertSeverity.warning:
+      return 'Warning';
+    case InventoryAlertSeverity.critical:
+      return 'Critical';
+  }
+}
+
+Color _alertBackground(InventoryAlertSeverity severity) {
+  switch (severity) {
+    case InventoryAlertSeverity.info:
+      return const Color(0xFFEFF5FF);
+    case InventoryAlertSeverity.warning:
+      return const Color(0xFFFFF6EA);
+    case InventoryAlertSeverity.critical:
+      return const Color(0xFFFFF1F1);
+  }
+}
+
+Color _alertBorder(InventoryAlertSeverity severity) {
+  switch (severity) {
+    case InventoryAlertSeverity.info:
+      return const Color(0xFFB8CBF5);
+    case InventoryAlertSeverity.warning:
+      return const Color(0xFFE9C78D);
+    case InventoryAlertSeverity.critical:
+      return const Color(0xFFF2B6B6);
+  }
+}
+
+Color _alertText(InventoryAlertSeverity severity) {
+  switch (severity) {
+    case InventoryAlertSeverity.info:
+      return const Color(0xFF1D4FB7);
+    case InventoryAlertSeverity.warning:
+      return const Color(0xFF8A4D00);
+    case InventoryAlertSeverity.critical:
+      return const Color(0xFFB42318);
   }
 }
 
@@ -3431,6 +4437,7 @@ class _InventoryActionsOverlayAnchor extends StatefulWidget {
   const _InventoryActionsOverlayAnchor({
     required this.triggerSize,
     required this.canAddSubGroup,
+    required this.isRequestDelete,
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
@@ -3438,6 +4445,7 @@ class _InventoryActionsOverlayAnchor extends StatefulWidget {
 
   final double triggerSize;
   final bool canAddSubGroup;
+  final bool isRequestDelete;
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -3537,7 +4545,9 @@ class _InventoryActionsOverlayAnchorState
                             ),
                             _InventoryActionMenuButton(
                               icon: Icons.delete_outline_rounded,
-                              label: 'Delete',
+                              label: widget.isRequestDelete
+                                  ? 'Request Delete'
+                                  : 'Delete',
                               isDestructive: true,
                               onPressed: () {
                                 _removeOverlay();
@@ -4741,11 +5751,15 @@ class _InventoryCreateGroupEditorState
   bool _enableVariants = false;
   bool _showSelectedItemsOnly = false;
   bool _inheritPropertiesFromItems = true;
+  bool _commonOnlyMode = true;
+  bool _showPartialMatches = true;
   String _propertyInputType = 'Text';
   bool _propertyMandatory = false;
   final Set<int> _selectedItemIds = <int>{};
   final Set<String> _unlinkedInheritedPropertyKeys = <String>{};
   final List<_GroupPropertyDraft> _properties = <_GroupPropertyDraft>[];
+  final Map<int, _UnitGovernanceDraft> _unitGovernanceByUnitId =
+      <int, _UnitGovernanceDraft>{};
   bool _isHydratingExisting = false;
   bool _didHydrateExisting = false;
 
@@ -4788,11 +5802,7 @@ class _InventoryCreateGroupEditorState
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final items = context
-        .watch<ItemsProvider>()
-        .items
-        .where((item) => !item.isArchived)
-        .toList(growable: false);
+    final items = context.watch<ItemsProvider>().items.toList(growable: false);
     final unitGroups =
         context
             .watch<UnitsProvider>()
@@ -4804,12 +5814,18 @@ class _InventoryCreateGroupEditorState
           ..sort();
     final units = context.watch<UnitsProvider>().activeUnits;
     final inheritedProperties = _derivedPropertiesFromItems(items);
+    final selectedCount = _selectedItemIds.length;
     final activeInheritedProperties = _inheritPropertiesFromItems
         ? inheritedProperties
               .where(
-                (property) => !_unlinkedInheritedPropertyKeys.contains(
-                  _propertyKey(property.name),
-                ),
+                (property) =>
+                    !_unlinkedInheritedPropertyKeys.contains(
+                      _propertyKey(property.name),
+                    ) &&
+                    (!_commonOnlyMode ||
+                        property.coverageCount == selectedCount) &&
+                    (_showPartialMatches ||
+                        property.coverageCount == selectedCount),
               )
               .toList(growable: false)
         : const <_GroupPropertyDraft>[];
@@ -4841,9 +5857,36 @@ class _InventoryCreateGroupEditorState
       inheritedProperties: activeInheritedProperties,
     );
     final selectedUnitCards = _derivedUnitCards(items, units);
+    _syncUnitGovernanceDrafts(selectedUnitCards);
+    final effectiveUnitGovernance = _effectiveUnitGovernance(selectedUnitCards);
+    final unitGroupMismatch = _hasUnitGroupMismatch(
+      selectedUnitCards,
+      units,
+      effectiveUnitGovernance,
+    );
     final overriddenCount = combinedProperties
         .where((property) => property.state == _EditorPropertyState.overridden)
         .length;
+    final conflictedCount = combinedProperties
+        .where((property) => property.hasTypeConflict)
+        .length;
+    final partialCoverageCount = activeInheritedProperties
+        .where((property) => property.coverageCount < selectedCount)
+        .length;
+    final allCoverageCount = activeInheritedProperties
+        .where((property) => property.coverageCount == selectedCount)
+        .length;
+    final hasBlockingReview =
+        conflictedCount > 0 ||
+        unitGroupMismatch ||
+        (_inheritPropertiesFromItems && _selectedItemIds.isEmpty);
+    final blockingReviewReasons = <String>[
+      if (conflictedCount > 0)
+        '$conflictedCount conflicted ${conflictedCount == 1 ? 'property' : 'properties'}',
+      if (unitGroupMismatch) 'Unit strategy mismatch',
+      if (_inheritPropertiesFromItems && _selectedItemIds.isEmpty)
+        'Select at least one source item',
+    ];
 
     final basicInformationCard = _CreateGroupEditorCard(
       title: 'Basic Information',
@@ -4912,7 +5955,15 @@ class _InventoryCreateGroupEditorState
               });
             },
           ),
-          const SizedBox(height: 22),
+        ],
+      ),
+    );
+
+    final sourceWorkbenchCard = _CreateGroupEditorCard(
+      title: 'Source Items',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
               Expanded(
@@ -4926,7 +5977,7 @@ class _InventoryCreateGroupEditorState
                 ),
               ),
               Text(
-                '${_selectedItemIds.length} Selected',
+                '${_selectedItemIds.length} selected',
                 style: _inventoryInterStyle(
                   color: const Color(0xFF2D8CFF),
                   size: 12,
@@ -4937,7 +5988,7 @@ class _InventoryCreateGroupEditorState
           ),
           const SizedBox(height: 4),
           Text(
-            'Include pre-existing items in this group',
+            'Pick items to seed this group schema and inheritance rules.',
             style: _inventoryInterStyle(
               color: const Color(0xFF94A3B8),
               size: 12,
@@ -4945,18 +5996,10 @@ class _InventoryCreateGroupEditorState
             ),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _EditorTextField(
-                  controller: _itemSearchController,
-                  hintText: 'Search items...',
-                  prefixIcon: Icons.search_rounded,
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ChoiceChip(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compactSearchControls = constraints.maxWidth < 430;
+              final toggleChip = ChoiceChip(
                 label: Text(_showSelectedItemsOnly ? 'Selected' : 'All Items'),
                 selected: _showSelectedItemsOnly,
                 onSelected: (selected) {
@@ -4977,11 +6020,36 @@ class _InventoryCreateGroupEditorState
                   size: 12,
                   weight: FontWeight.w500,
                 ),
-              ),
-            ],
+              );
+              final searchField = _EditorTextField(
+                controller: _itemSearchController,
+                hintText: 'Search items...',
+                prefixIcon: Icons.search_rounded,
+                onChanged: (_) => setState(() {}),
+              );
+              if (compactSearchControls) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    searchField,
+                    const SizedBox(height: 8),
+                    Align(alignment: Alignment.centerLeft, child: toggleChip),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: searchField),
+                  const SizedBox(width: 8),
+                  toggleChip,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 10),
-          Row(
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: [
               TextButton.icon(
                 onPressed: filteredItems.isEmpty
@@ -4989,7 +6057,9 @@ class _InventoryCreateGroupEditorState
                     : () {
                         setState(() {
                           _selectedItemIds.addAll(
-                            filteredItems.map((item) => item.id),
+                            filteredItems
+                                .where((item) => !item.isArchived)
+                                .map((item) => item.id),
                           );
                           final availablePropertyKeys =
                               _derivedPropertiesFromItems(items)
@@ -5005,14 +6075,15 @@ class _InventoryCreateGroupEditorState
                 icon: const Icon(Icons.done_all_rounded, size: 16),
                 label: const Text('Select visible'),
               ),
-              const SizedBox(width: 6),
               TextButton.icon(
                 onPressed: matchingItems.isEmpty
                     ? null
                     : () {
                         setState(() {
                           _selectedItemIds.addAll(
-                            matchingItems.map((item) => item.id),
+                            matchingItems
+                                .where((item) => !item.isArchived)
+                                .map((item) => item.id),
                           );
                           final availablePropertyKeys =
                               _derivedPropertiesFromItems(items)
@@ -5028,7 +6099,6 @@ class _InventoryCreateGroupEditorState
                 icon: const Icon(Icons.playlist_add_check_rounded, size: 16),
                 label: const Text('Select all matching'),
               ),
-              const SizedBox(width: 6),
               TextButton.icon(
                 onPressed: _selectedItemIds.isEmpty
                     ? null
@@ -5045,7 +6115,7 @@ class _InventoryCreateGroupEditorState
           ),
           const SizedBox(height: 8),
           Container(
-            height: 290,
+            height: 420,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
@@ -5061,9 +6131,20 @@ class _InventoryCreateGroupEditorState
                 itemBuilder: (context, index) {
                   final item = filteredItems[index];
                   final isSelected = _selectedItemIds.contains(item.id);
+                  final compatibility = _itemCompatibilityLabel(
+                    item: item,
+                    selectedItems: items
+                        .where((entry) => _selectedItemIds.contains(entry.id))
+                        .toList(growable: false),
+                    units: units,
+                  );
                   return _EditorSelectableItemTile(
                     item: item,
                     selected: isSelected,
+                    compatibilityLabel: compatibility.$1,
+                    compatibilityTone: compatibility.$2,
+                    propertyContributionCount: item.topLevelProperties.length,
+                    isDisabled: item.isArchived,
                     onChanged: (selected) {
                       setState(() {
                         if (selected) {
@@ -5125,6 +6206,26 @@ class _InventoryCreateGroupEditorState
                       _propertyInputType = value;
                     });
                   },
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _propertyInputTypes
+                      .map(
+                        (type) => ActionChip(
+                          label: Text(type),
+                          onPressed: () {
+                            setState(() {
+                              _propertyInputType = type;
+                            });
+                          },
+                          backgroundColor: _propertyInputType == type
+                              ? const Color(0xFFE0EEFF)
+                              : Colors.white,
+                        ),
+                      )
+                      .toList(growable: false),
                 ),
                 const SizedBox(height: 10),
                 _EditorCheckboxTile(
@@ -5210,6 +6311,50 @@ class _InventoryCreateGroupEditorState
                   .map(
                     (unitCard) => _EditorUnitCard(
                       unitCard: unitCard,
+                      state:
+                          _unitGovernanceByUnitId[unitCard.unitId]?.state ??
+                          groupcfg.GroupUnitState.active,
+                      isPrimary:
+                          _unitGovernanceByUnitId[unitCard.unitId]?.isPrimary ??
+                          false,
+                      onToggleDetach: () {
+                        setState(() {
+                          final current =
+                              _unitGovernanceByUnitId[unitCard.unitId] ??
+                              _UnitGovernanceDraft(unitId: unitCard.unitId);
+                          _unitGovernanceByUnitId[unitCard.unitId] = current
+                              .copyWith(
+                                state:
+                                    current.state ==
+                                        groupcfg.GroupUnitState.detached
+                                    ? groupcfg.GroupUnitState.active
+                                    : groupcfg.GroupUnitState.detached,
+                                isPrimary:
+                                    current.state ==
+                                        groupcfg.GroupUnitState.detached
+                                    ? current.isPrimary
+                                    : false,
+                              );
+                        });
+                      },
+                      onSetPrimary: () {
+                        setState(() {
+                          final next = <int, _UnitGovernanceDraft>{};
+                          for (final row in _unitGovernanceByUnitId.values) {
+                            next[row.unitId] = row.copyWith(isPrimary: false);
+                          }
+                          final current =
+                              next[unitCard.unitId] ??
+                              _UnitGovernanceDraft(unitId: unitCard.unitId);
+                          next[unitCard.unitId] = current.copyWith(
+                            state: groupcfg.GroupUnitState.active,
+                            isPrimary: true,
+                          );
+                          _unitGovernanceByUnitId
+                            ..clear()
+                            ..addAll(next);
+                        });
+                      },
                       onRemove: () {
                         setState(() {
                           _selectedItemIds.removeWhere(
@@ -5225,6 +6370,26 @@ class _InventoryCreateGroupEditorState
                   )
                   .toList(growable: false),
             ),
+          if (unitGroupMismatch) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFED7AA)),
+              ),
+              child: Text(
+                'Unit group mismatch detected across active unit cards. Set one primary unit or detach incompatible units before saving.',
+                style: _inventoryInterStyle(
+                  color: const Color(0xFFB45309),
+                  size: 11,
+                  weight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           if (_inheritPropertiesFromItems) ...[
             Row(
@@ -5251,6 +6416,42 @@ class _InventoryCreateGroupEditorState
               ],
             ),
             const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('All inherited'),
+                  selected: !_commonOnlyMode,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _commonOnlyMode = false;
+                      }
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Only common to all'),
+                  selected: _commonOnlyMode,
+                  onSelected: (selected) {
+                    setState(() {
+                      _commonOnlyMode = selected;
+                    });
+                  },
+                ),
+                FilterChip(
+                  label: const Text('Show partial matches'),
+                  selected: _showPartialMatches,
+                  onSelected: (selected) {
+                    setState(() {
+                      _showPartialMatches = selected;
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             TextButton.icon(
               onPressed: activeInheritedProperties.isEmpty
                   ? null
@@ -5267,26 +6468,67 @@ class _InventoryCreateGroupEditorState
               label: const Text('Remove all inherited'),
             ),
             const SizedBox(height: 10),
-            if (activeInheritedProperties.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Text(
-                  _selectedItemIds.isEmpty
-                      ? 'Select items to inherit their properties.'
-                      : 'No inheritable properties found on selected items.',
-                  style: _inventoryInterStyle(
-                    color: const Color(0xFF94A3B8),
-                    size: 12,
-                    weight: FontWeight.w400,
-                  ),
-                ),
-              ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 320),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: conflictedCount > 0
+                  ? Container(
+                      key: const ValueKey('conflict-center-visible'),
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
+                      ),
+                      child: Text(
+                        'Conflict Center: $conflictedCount property types need resolution before this group is safe to create.',
+                        style: _inventoryInterStyle(
+                          color: const Color(0xFF9A3412),
+                          size: 11,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(
+                      key: ValueKey('conflict-center-hidden'),
+                    ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: activeInheritedProperties.isEmpty
+                  ? Container(
+                      key: ValueKey(
+                        _selectedItemIds.isEmpty
+                            ? 'inherited-empty-no-items'
+                            : 'inherited-empty-no-properties',
+                      ),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        _selectedItemIds.isEmpty
+                            ? 'Select items to inherit their properties.'
+                            : 'No inheritable properties found on selected items.',
+                        style: _inventoryInterStyle(
+                          color: const Color(0xFF94A3B8),
+                          size: 12,
+                          weight: FontWeight.w400,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(
+                      key: ValueKey('inherited-empty-hidden'),
+                    ),
+            ),
             const SizedBox(height: 16),
           ],
           Text(
@@ -5415,6 +6657,9 @@ class _InventoryCreateGroupEditorState
                                   sourceLabel:
                                       inherited?.sourceLabel ??
                                       property.sourceLabel,
+                                  selectedItemCountAtResolution:
+                                      _selectedItemIds.length,
+                                  resolutionSource: 'resolved_by_user',
                                 );
                                 _upsertPropertyDraft(resolved);
                               });
@@ -5447,52 +6692,180 @@ class _InventoryCreateGroupEditorState
                 _Badge(
                   label: 'Unlinked: ${_unlinkedInheritedPropertyKeys.length}',
                 ),
+                _Badge(label: 'Conflicted: $conflictedCount'),
+                _Badge(label: 'All-source: $allCoverageCount'),
+                _Badge(label: 'Partial-source: $partialCoverageCount'),
               ],
             ),
           ),
-          if (_inheritPropertiesFromItems &&
-              relinkableInheritedProperties.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Unlinked Inherited Properties',
-              style: _inventoryInterStyle(
-                color: const Color(0xFF64748B),
-                size: 12,
-                weight: FontWeight.w600,
+          AnimatedSize(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: (_inheritPropertiesFromItems &&
+                      relinkableInheritedProperties.isNotEmpty)
+                  ? Column(
+                      key: const ValueKey('relink-section-visible'),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 10),
+                        Text(
+                          'Unlinked Inherited Properties',
+                          style: _inventoryInterStyle(
+                            color: const Color(0xFF64748B),
+                            size: 12,
+                            weight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: relinkableInheritedProperties
+                              .map(
+                                (property) => ActionChip(
+                                  avatar: const Icon(
+                                    Icons.link_rounded,
+                                    size: 14,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                  label: Text('Relink ${property.name}'),
+                                  onPressed: () {
+                                    setState(() {
+                                      _unlinkedInheritedPropertyKeys.remove(
+                                        _propertyKey(property.name),
+                                      );
+                                    });
+                                  },
+                                  backgroundColor: const Color(0xFFEFF6FF),
+                                  side: const BorderSide(
+                                    color: Color(0xFFBFDBFE),
+                                  ),
+                                  labelStyle: _inventoryInterStyle(
+                                    color: const Color(0xFF1D4ED8),
+                                    size: 12,
+                                    weight: FontWeight.w500,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                      ],
+                    )
+                  : const SizedBox.shrink(
+                      key: ValueKey('relink-section-hidden'),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final liveOutcomeCard = _CreateGroupEditorCard(
+      title: 'Live Outcome',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: hasBlockingReview
+                  ? const Color(0xFFFFF7ED)
+                  : const Color(0xFFECFDF3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasBlockingReview
+                    ? const Color(0xFFFED7AA)
+                    : const Color(0xFFBBF7D0),
               ),
             ),
-            const SizedBox(height: 8),
+            child: Text(
+              hasBlockingReview ? 'Review required' : 'Safe to create',
+              style: _inventoryInterStyle(
+                color: hasBlockingReview
+                    ? const Color(0xFFB45309)
+                    : const Color(0xFF047857),
+                size: 13,
+                weight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'What changed',
+            style: _inventoryInterStyle(
+              color: const Color(0xFF334155),
+              size: 12,
+              weight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _Badge(label: '+${activeInheritedProperties.length} inherited ready'),
+          const SizedBox(height: 6),
+          _Badge(label: '$overriddenCount overrides preserved'),
+          const SizedBox(height: 6),
+          _Badge(
+            label:
+                '${_unlinkedInheritedPropertyKeys.length} unlinked awaiting relink',
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Coverage breakdown',
+            style: _inventoryInterStyle(
+              color: const Color(0xFF334155),
+              size: 12,
+              weight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _Badge(label: 'All-item properties: $allCoverageCount'),
+          const SizedBox(height: 6),
+          _Badge(label: 'Partial properties: $partialCoverageCount'),
+          const SizedBox(height: 6),
+          _Badge(label: 'Conflicted properties: $conflictedCount'),
+          const SizedBox(height: 14),
+          Text(
+            'Unit strategy',
+            style: _inventoryInterStyle(
+              color: const Color(0xFF334155),
+              size: 12,
+              weight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (effectiveUnitGovernance.isEmpty)
+            Text(
+              'No units selected yet.',
+              style: _inventoryInterStyle(
+                color: const Color(0xFF94A3B8),
+                size: 12,
+                weight: FontWeight.w500,
+              ),
+            )
+          else
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: relinkableInheritedProperties
-                  .map(
-                    (property) => ActionChip(
-                      avatar: const Icon(
-                        Icons.link_rounded,
-                        size: 14,
-                        color: Color(0xFF2563EB),
-                      ),
-                      label: Text('Relink ${property.name}'),
-                      onPressed: () {
-                        setState(() {
-                          _unlinkedInheritedPropertyKeys.remove(
-                            _propertyKey(property.name),
-                          );
-                        });
-                      },
-                      backgroundColor: const Color(0xFFEFF6FF),
-                      side: const BorderSide(color: Color(0xFFBFDBFE)),
-                      labelStyle: _inventoryInterStyle(
-                        color: const Color(0xFF1D4ED8),
-                        size: 12,
-                        weight: FontWeight.w500,
-                      ),
-                    ),
-                  )
+              children: effectiveUnitGovernance
+                  .map((unitRow) {
+                    final card = selectedUnitCards
+                        .where((entry) => entry.unitId == unitRow.unitId)
+                        .firstOrNull;
+                    if (card == null) {
+                      return const SizedBox.shrink();
+                    }
+                    final stateText =
+                        unitRow.state == groupcfg.GroupUnitState.detached
+                        ? 'Detached'
+                        : (unitRow.isPrimary ? 'Primary' : 'Active');
+                    return _Badge(label: '${card.label} • $stateText');
+                  })
                   .toList(growable: false),
             ),
-          ],
         ],
       ),
     );
@@ -5510,85 +6883,120 @@ class _InventoryCreateGroupEditorState
               color: Colors.white,
               border: Border(bottom: BorderSide(color: Color(0xFFE5EAF1))),
             ),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: widget.onClose,
-                  borderRadius: BorderRadius.circular(999),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child: Icon(
-                      Icons.chevron_left_rounded,
-                      size: 22,
-                      color: Color(0xFF64748B),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compactHeader = constraints.maxWidth < 1100;
+                final titleCluster = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: widget.onClose,
+                      borderRadius: BorderRadius.circular(999),
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(
+                          Icons.chevron_left_rounded,
+                          size: 22,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  _isEditMode ? 'Edit Item Group' : 'Create Item Group',
-                  style: _inventoryInterStyle(
-                    color: const Color(0xFF1F2937),
-                    size: 18,
-                    weight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                OutlinedButton(
-                  onPressed: widget.onClose,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFD8E0EA)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    const SizedBox(width: 10),
+                    Text(
+                      _isEditMode ? 'Edit Item Group' : 'Create Item Group',
+                      style: _inventoryInterStyle(
+                        color: const Color(0xFF1F2937),
+                        size: 18,
+                        weight: FontWeight.w600,
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                    const SizedBox(width: 12),
+                    _Badge(label: _generatedGroupId),
+                  ],
+                );
+                final actionsCluster = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OutlinedButton(
+                      onPressed: widget.onClose,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFD8E0EA)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: _inventoryInterStyle(
+                          color: const Color(0xFF475569),
+                          size: 13,
+                          weight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    'Cancel',
-                    style: _inventoryInterStyle(
-                      color: const Color(0xFF475569),
-                      size: 13,
-                      weight: FontWeight.w500,
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      onPressed: inventory.isSaving || hasBlockingReview
+                          ? null
+                          : () => _submit(context),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2D8CFF),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                      ),
+                      icon: inventory.isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.inventory_2_outlined, size: 16),
+                      label: Text(
+                        _isEditMode ? 'Save Changes' : 'Create Group',
+                        style: _inventoryInterStyle(
+                          color: Colors.white,
+                          size: 13,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: inventory.isSaving ? null : () => _submit(context),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2D8CFF),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
-                    ),
-                  ),
-                  icon: inventory.isSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.inventory_2_outlined, size: 16),
-                  label: Text(
-                    _isEditMode ? 'Save Changes' : 'Create Group',
-                    style: _inventoryInterStyle(
-                      color: Colors.white,
-                      size: 13,
-                      weight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+                if (compactHeader) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: titleCluster),
+                          const SizedBox(width: 12),
+                          Flexible(child: actionsCluster),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    titleCluster,
+                    const Spacer(),
+                    actionsCluster,
+                  ],
+                );
+              },
             ),
           ),
           Expanded(
@@ -5607,17 +7015,99 @@ class _InventoryCreateGroupEditorState
                       const LinearProgressIndicator(minHeight: 2),
                       const SizedBox(height: 14),
                     ],
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: hasBlockingReview
+                            ? const Color(0xFFFFF7ED)
+                            : const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: hasBlockingReview
+                              ? const Color(0xFFFED7AA)
+                              : const Color(0xFFBBF7D0),
+                        ),
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _Badge(
+                            label: hasBlockingReview
+                                ? 'Needs review'
+                                : 'Resolved',
+                            tone: hasBlockingReview
+                                ? _BadgeTone.warning
+                                : _BadgeTone.success,
+                          ),
+                          _Badge(
+                            label: 'Selected items ${_selectedItemIds.length}',
+                            tone: _BadgeTone.info,
+                          ),
+                          _Badge(
+                            label:
+                                'Unit mismatch ${unitGroupMismatch ? 'Yes' : 'No'}',
+                            tone: unitGroupMismatch
+                                ? _BadgeTone.warning
+                                : _BadgeTone.success,
+                          ),
+                          _Badge(
+                            label: 'Conflicts $conflictedCount',
+                            tone: conflictedCount > 0
+                                ? _BadgeTone.warning
+                                : _BadgeTone.success,
+                          ),
+                          _Badge(
+                            label:
+                                'Inherited ${activeInheritedProperties.length}',
+                            tone: _BadgeTone.info,
+                          ),
+                          _Badge(
+                            label: 'Overridden $overriddenCount',
+                            tone: _BadgeTone.neutral,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (hasBlockingReview && blockingReviewReasons.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Before create: ${blockingReviewReasons.join(' • ')}',
+                        style: _inventoryInterStyle(
+                          color: const Color(0xFFB45309),
+                          size: 12,
+                          weight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
                     if (isCompactEditor) ...[
+                      sourceWorkbenchCard,
+                      const SizedBox(height: 18),
                       basicInformationCard,
                       const SizedBox(height: 18),
                       propertiesCard,
+                      const SizedBox(height: 18),
+                      liveOutcomeCard,
                     ] else
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(flex: 11, child: basicInformationCard),
+                          Expanded(flex: 9, child: sourceWorkbenchCard),
                           const SizedBox(width: 18),
-                          Expanded(flex: 10, child: propertiesCard),
+                          Expanded(
+                            flex: 10,
+                            child: Column(
+                              children: [
+                                basicInformationCard,
+                                const SizedBox(height: 18),
+                                propertiesCard,
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(flex: 6, child: liveOutcomeCard),
                         ],
                       ),
                   ],
@@ -5671,6 +7161,7 @@ class _InventoryCreateGroupEditorState
       };
       final loadedProperties = <_GroupPropertyDraft>[];
       final unlinkedKeys = <String>{};
+      final unitGovernanceByUnitId = <int, _UnitGovernanceDraft>{};
 
       for (final draft in configuration.propertyDrafts) {
         final state = switch (draft.state) {
@@ -5697,7 +7188,8 @@ class _InventoryCreateGroupEditorState
         }
         if (draft.sourceType ==
                 governance.GroupPropertySourceType.inheritedItem &&
-            state == _EditorPropertyState.active) {
+            state == _EditorPropertyState.active &&
+            draft.resolutionSource != 'resolved_by_user') {
           continue;
         }
         loadedProperties.add(
@@ -5717,12 +7209,27 @@ class _InventoryCreateGroupEditorState
             sourceItemNames: sourceItemNames,
             overrideLocked: draft.overrideLocked,
             hasTypeConflict: draft.hasTypeConflict,
+            coverageCount: draft.coverageCount,
+            selectedItemCountAtResolution: draft.selectedItemCountAtResolution,
+            resolutionSource: draft.resolutionSource,
           ),
+        );
+      }
+      for (final row in configuration.unitGovernance) {
+        if (row.unitId <= 0) {
+          continue;
+        }
+        unitGovernanceByUnitId[row.unitId] = _UnitGovernanceDraft(
+          unitId: row.unitId,
+          state: row.state,
+          isPrimary: row.isPrimary,
         );
       }
 
       setState(() {
         _inheritPropertiesFromItems = configuration.inheritanceEnabled;
+        _commonOnlyMode = configuration.uiPreferences.commonOnlyMode;
+        _showPartialMatches = configuration.uiPreferences.showPartialMatches;
         _selectedItemIds
           ..clear()
           ..addAll(configuration.selectedItemIds);
@@ -5732,6 +7239,9 @@ class _InventoryCreateGroupEditorState
         _properties
           ..clear()
           ..addAll(loadedProperties);
+        _unitGovernanceByUnitId
+          ..clear()
+          ..addAll(unitGovernanceByUnitId);
       });
     }
 
@@ -5781,6 +7291,10 @@ class _InventoryCreateGroupEditorState
           sourceItemIds: inherited?.sourceItemIds ?? const <int>[],
           sourceItemNames: inherited?.sourceItemNames ?? const <String>[],
           hasTypeConflict: false,
+          coverageCount: inherited?.coverageCount ?? 0,
+          selectedItemCountAtResolution:
+              inherited?.selectedItemCountAtResolution ?? 0,
+          resolutionSource: inherited == null ? null : 'manual_override',
         ),
       );
       _unlinkedInheritedPropertyKeys.remove(key);
@@ -5805,6 +7319,8 @@ class _InventoryCreateGroupEditorState
       context.read<ItemsProvider>().items,
       context.read<UnitsProvider>().activeUnits,
     );
+    _syncUnitGovernanceDrafts(selectedUnits);
+    final unitGovernanceRows = _effectiveUnitGovernance(selectedUnits);
     final allPropertyDrafts = _finalPropertyDrafts(
       context.read<ItemsProvider>().items,
     );
@@ -5851,6 +7367,11 @@ class _InventoryCreateGroupEditorState
           inheritanceEnabled: _inheritPropertiesFromItems,
           selectedItemIds: selectedItemIds,
           propertyDrafts: propertyDrafts,
+          unitGovernance: unitGovernanceRows,
+          uiPreferences: groupcfg.GroupUiPreferences(
+            commonOnlyMode: _commonOnlyMode,
+            showPartialMatches: _showPartialMatches,
+          ),
           notes: notes,
           numberOfChildren: _selectedItemIds.length,
         ),
@@ -5876,6 +7397,11 @@ class _InventoryCreateGroupEditorState
           inheritanceEnabled: _inheritPropertiesFromItems,
           selectedItemIds: selectedItemIds,
           propertyDrafts: propertyDrafts,
+          unitGovernance: unitGovernanceRows,
+          uiPreferences: groupcfg.GroupUiPreferences(
+            commonOnlyMode: _commonOnlyMode,
+            showPartialMatches: _showPartialMatches,
+          ),
         );
       }
     }
@@ -5909,6 +7435,10 @@ class _InventoryCreateGroupEditorState
           sourceLabel: inherited.sourceLabel == null
               ? 'Override'
               : 'Override of ${inherited.sourceLabel}',
+          coverageCount: inherited.coverageCount,
+          selectedItemCountAtResolution:
+              inherited.selectedItemCountAtResolution,
+          resolutionSource: 'manual_override',
         );
         continue;
       }
@@ -5919,6 +7449,9 @@ class _InventoryCreateGroupEditorState
           sourceItemIds: inherited.sourceItemIds,
           sourceItemNames: inherited.sourceItemNames,
           sourceLabel: inherited.sourceLabel,
+          coverageCount: inherited.coverageCount,
+          selectedItemCountAtResolution:
+              inherited.selectedItemCountAtResolution,
         );
         continue;
       }
@@ -5981,6 +7514,11 @@ class _InventoryCreateGroupEditorState
             sourceItemIds: sourceIds,
             sourceItemNames: sourceLabel,
             hasTypeConflict: hasTypeConflict,
+            coverageCount: sourceIds.length,
+            selectedItemCountAtResolution: _selectedItemIds.length,
+            resolutionSource: hasTypeConflict
+                ? 'conflict_default_text'
+                : 'inferred_from_items',
           );
         })
         .toList(growable: false);
@@ -6031,6 +7569,97 @@ class _InventoryCreateGroupEditorState
   }
 
   String _propertyKey(String value) => value.trim().toLowerCase();
+
+  (String, Color) _itemCompatibilityLabel({
+    required ItemDefinition item,
+    required List<ItemDefinition> selectedItems,
+    required List<UnitDefinition> units,
+  }) {
+    if (item.isArchived) {
+      return ('archived/legacy risk', const Color(0xFF9A3412));
+    }
+    if (selectedItems.isEmpty) {
+      return ('fully compatible', const Color(0xFF047857));
+    }
+    final selectedUnitIds = selectedItems.map((entry) => entry.unitId).toSet();
+    final unitById = {for (final unit in units) unit.id: unit};
+    final itemUnit = unitById[item.unitId];
+    final selectedUnitGroupIds = selectedUnitIds
+        .map((unitId) => unitById[unitId]?.unitGroupId)
+        .toSet();
+    final selectedExplicitUnits = selectedUnitIds;
+    final sharesExplicitUnit = selectedExplicitUnits.contains(item.unitId);
+    final sharesUnitGroup =
+        itemUnit?.unitGroupId != null &&
+        selectedUnitGroupIds.contains(itemUnit!.unitGroupId);
+    if (!sharesExplicitUnit && !sharesUnitGroup) {
+      return ('unit mismatch', const Color(0xFFB45309));
+    }
+    if (item.topLevelProperties.isEmpty) {
+      return ('schema mismatch', const Color(0xFFB91C1C));
+    }
+    return ('fully compatible', const Color(0xFF047857));
+  }
+
+  void _syncUnitGovernanceDrafts(List<_SelectedUnitCardData> cards) {
+    final validUnitIds = cards.map((entry) => entry.unitId).toSet();
+    _unitGovernanceByUnitId.removeWhere(
+      (unitId, _) => !validUnitIds.contains(unitId),
+    );
+    for (final card in cards) {
+      _unitGovernanceByUnitId.putIfAbsent(
+        card.unitId,
+        () => _UnitGovernanceDraft(unitId: card.unitId),
+      );
+    }
+    final activeRows = _unitGovernanceByUnitId.values
+        .where((row) => row.state == groupcfg.GroupUnitState.active)
+        .toList(growable: false);
+    if (activeRows.isNotEmpty && !activeRows.any((row) => row.isPrimary)) {
+      final first = activeRows.first;
+      _unitGovernanceByUnitId[first.unitId] = first.copyWith(isPrimary: true);
+    }
+  }
+
+  List<groupcfg.GroupUnitGovernance> _effectiveUnitGovernance(
+    List<_SelectedUnitCardData> cards,
+  ) {
+    final validUnitIds = cards.map((entry) => entry.unitId).toSet();
+    return _unitGovernanceByUnitId.values
+        .where((row) => validUnitIds.contains(row.unitId))
+        .map(
+          (row) => groupcfg.GroupUnitGovernance(
+            unitId: row.unitId,
+            state: row.state,
+            isPrimary: row.isPrimary,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  bool _hasUnitGroupMismatch(
+    List<_SelectedUnitCardData> cards,
+    List<UnitDefinition> units,
+    List<groupcfg.GroupUnitGovernance> governanceRows,
+  ) {
+    if (cards.length <= 1) {
+      return false;
+    }
+    final unitById = {for (final unit in units) unit.id: unit};
+    final activeUnitIds = governanceRows
+        .where((row) => row.state == groupcfg.GroupUnitState.active)
+        .map((row) => row.unitId)
+        .toSet();
+    final scoped = cards
+        .where((card) => activeUnitIds.contains(card.unitId))
+        .map((card) => unitById[card.unitId])
+        .whereType<UnitDefinition>()
+        .toList(growable: false);
+    final groupKeys = scoped
+        .map((unit) => unit.unitGroupId ?? -unit.id)
+        .toSet();
+    return groupKeys.length > 1;
+  }
 
   void _upsertPropertyDraft(_GroupPropertyDraft draft) {
     final key = _propertyKey(draft.name);
@@ -6086,6 +7715,9 @@ class _InventoryCreateGroupEditorState
           .toList(growable: false),
       overrideLocked: property.overrideLocked,
       hasTypeConflict: property.hasTypeConflict,
+      coverageCount: property.coverageCount,
+      selectedItemCountAtResolution: property.selectedItemCountAtResolution,
+      resolutionSource: property.resolutionSource,
     );
   }
 }
@@ -6103,6 +7735,9 @@ class _GroupPropertyDraft {
     this.sourceItemNames = const <String>[],
     this.overrideLocked = false,
     this.hasTypeConflict = false,
+    this.coverageCount = 0,
+    this.selectedItemCountAtResolution = 0,
+    this.resolutionSource,
   });
 
   final String name;
@@ -6116,6 +7751,9 @@ class _GroupPropertyDraft {
   final List<String> sourceItemNames;
   final bool overrideLocked;
   final bool hasTypeConflict;
+  final int coverageCount;
+  final int selectedItemCountAtResolution;
+  final String? resolutionSource;
 
   _GroupPropertyDraft copyWith({
     String? name,
@@ -6129,6 +7767,9 @@ class _GroupPropertyDraft {
     List<String>? sourceItemNames,
     bool? overrideLocked,
     bool? hasTypeConflict,
+    int? coverageCount,
+    int? selectedItemCountAtResolution,
+    String? resolutionSource,
   }) {
     return _GroupPropertyDraft(
       name: name ?? this.name,
@@ -6142,6 +7783,10 @@ class _GroupPropertyDraft {
       sourceItemNames: sourceItemNames ?? this.sourceItemNames,
       overrideLocked: overrideLocked ?? this.overrideLocked,
       hasTypeConflict: hasTypeConflict ?? this.hasTypeConflict,
+      coverageCount: coverageCount ?? this.coverageCount,
+      selectedItemCountAtResolution:
+          selectedItemCountAtResolution ?? this.selectedItemCountAtResolution,
+      resolutionSource: resolutionSource ?? this.resolutionSource,
     );
   }
 
@@ -6161,6 +7806,29 @@ class _SelectedUnitCardData {
   final int unitId;
   final String label;
   final List<String> linkedItemNames;
+}
+
+class _UnitGovernanceDraft {
+  const _UnitGovernanceDraft({
+    required this.unitId,
+    this.state = groupcfg.GroupUnitState.active,
+    this.isPrimary = false,
+  });
+
+  final int unitId;
+  final groupcfg.GroupUnitState state;
+  final bool isPrimary;
+
+  _UnitGovernanceDraft copyWith({
+    groupcfg.GroupUnitState? state,
+    bool? isPrimary,
+  }) {
+    return _UnitGovernanceDraft(
+      unitId: unitId,
+      state: state ?? this.state,
+      isPrimary: isPrimary ?? this.isPrimary,
+    );
+  }
 }
 
 class _CreateGroupEditorCard extends StatelessWidget {
@@ -6411,17 +8079,25 @@ class _EditorSelectableItemTile extends StatelessWidget {
   const _EditorSelectableItemTile({
     required this.item,
     required this.selected,
+    required this.compatibilityLabel,
+    required this.compatibilityTone,
+    required this.propertyContributionCount,
+    this.isDisabled = false,
     required this.onChanged,
   });
 
   final ItemDefinition item;
   final bool selected;
+  final String compatibilityLabel;
+  final Color compatibilityTone;
+  final int propertyContributionCount;
+  final bool isDisabled;
   final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => onChanged(!selected),
+      onTap: isDisabled ? null : () => onChanged(!selected),
       hoverColor: const Color(0xFFF8FBFF),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -6430,7 +8106,9 @@ class _EditorSelectableItemTile extends StatelessWidget {
           children: [
             Checkbox(
               value: selected,
-              onChanged: (checked) => onChanged(checked ?? false),
+              onChanged: isDisabled
+                  ? null
+                  : (checked) => onChanged(checked ?? false),
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.compact,
             ),
@@ -6442,7 +8120,9 @@ class _EditorSelectableItemTile extends StatelessWidget {
                   Text(
                     item.displayName,
                     style: _inventoryInterStyle(
-                      color: const Color(0xFF334155),
+                      color: isDisabled
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF334155),
                       size: 13,
                       weight: FontWeight.w600,
                     ),
@@ -6455,6 +8135,33 @@ class _EditorSelectableItemTile extends StatelessWidget {
                       size: 11,
                       weight: FontWeight.w400,
                     ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _Badge(label: 'Properties: $propertyContributionCount'),
+                      _Badge(label: 'Qty: ${item.quantity.toStringAsFixed(0)}'),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: compatibilityTone.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          compatibilityLabel,
+                          style: _inventoryInterStyle(
+                            color: compatibilityTone,
+                            size: 10,
+                            weight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -6484,6 +8191,20 @@ class _EditorPropertyListTile extends StatelessWidget {
   final VoidCallback? onConvertToManual;
   final VoidCallback? onToggleLockOverride;
   final ValueChanged<String>? onResolveInputType;
+
+  String _originPatternLabel(_GroupPropertyDraft property) {
+    if (property.selectedItemCountAtResolution <= 0 ||
+        property.coverageCount <= 0) {
+      return 'source unknown';
+    }
+    if (property.coverageCount >= property.selectedItemCountAtResolution) {
+      return 'all items';
+    }
+    if (property.coverageCount == 1) {
+      return 'single item';
+    }
+    return 'most items';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6585,6 +8306,18 @@ class _EditorPropertyListTile extends StatelessWidget {
                     weight: FontWeight.w400,
                   ),
                 ),
+                if (property.coverageCount > 0 &&
+                    property.selectedItemCountAtResolution > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Coverage ${property.coverageCount}/${property.selectedItemCountAtResolution} · ${_originPatternLabel(property)}',
+                    style: _inventoryInterStyle(
+                      color: const Color(0xFF64748B),
+                      size: 11,
+                      weight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 if (property.sourceLabel != null) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -6800,10 +8533,21 @@ class _EditorPropertyListTile extends StatelessWidget {
 }
 
 class _EditorUnitCard extends StatelessWidget {
-  const _EditorUnitCard({required this.unitCard, required this.onRemove});
+  const _EditorUnitCard({
+    required this.unitCard,
+    required this.state,
+    required this.isPrimary,
+    required this.onRemove,
+    required this.onToggleDetach,
+    required this.onSetPrimary,
+  });
 
   final _SelectedUnitCardData unitCard;
+  final groupcfg.GroupUnitState state;
+  final bool isPrimary;
   final VoidCallback onRemove;
+  final VoidCallback onToggleDetach;
+  final VoidCallback onSetPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -6838,6 +8582,31 @@ class _EditorUnitCard extends StatelessWidget {
                     size: 12,
                     weight: FontWeight.w400,
                   ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _Badge(
+                      label: state == groupcfg.GroupUnitState.detached
+                          ? 'Detached'
+                          : (isPrimary ? 'Primary' : 'Active'),
+                    ),
+                    ActionChip(
+                      label: Text(
+                        state == groupcfg.GroupUnitState.detached
+                            ? 'Attach'
+                            : 'Detach',
+                      ),
+                      onPressed: onToggleDetach,
+                    ),
+                    if (state != groupcfg.GroupUnitState.detached)
+                      ActionChip(
+                        label: const Text('Set primary'),
+                        onPressed: onSetPrimary,
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -7239,24 +9008,48 @@ class _QuickCreateUnitSheetState extends State<_QuickCreateUnitSheet> {
   }
 }
 
+enum _BadgeTone { brand, info, neutral, success, warning }
+
 class _Badge extends StatelessWidget {
-  const _Badge({required this.label});
+  const _Badge({
+    required this.label,
+    this.tone = _BadgeTone.brand,
+    this.color,
+    this.borderColor,
+    this.textColor,
+  });
 
   final String label;
+  final _BadgeTone tone;
+  final Color? color;
+  final Color? borderColor;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
+    var (backgroundColor, tColor) = switch (tone) {
+      _BadgeTone.brand => (const Color(0xFFEEEAFE), const Color(0xFF5B4FE6)),
+      _BadgeTone.info => (const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+      _BadgeTone.neutral => (const Color(0xFFF1F5F9), const Color(0xFF334155)),
+      _BadgeTone.success => (const Color(0xFFECFDF3), const Color(0xFF047857)),
+      _BadgeTone.warning => (const Color(0xFFFFF7ED), const Color(0xFFB45309)),
+    };
+    
+    backgroundColor = color ?? backgroundColor;
+    tColor = textColor ?? tColor;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFEEEAFE),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
+        border: borderColor != null ? Border.all(color: borderColor!) : null,
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: Color(0xFF5B4FE6),
+          color: tColor,
           fontWeight: FontWeight.w700,
         ),
       ),

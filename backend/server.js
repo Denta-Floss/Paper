@@ -1,13 +1,25 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const JWT_SECRET = resolveJwtSecret();
+const JWT_TTL_SECONDS = Number(process.env.PAPER_JWT_TTL_SECONDS || 60 * 60 * 12);
+const PASSWORD_ITERATIONS = 120000;
+const PASSWORD_KEY_LENGTH = 32;
+const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
 let dbReady = false;
 let dbInitError = null;
+
+ensureRuntimeConfig();
+ensureDatabaseDirectory();
+
 const db = new sqlite3.Database(DB_PATH, (error) => {
   if (error) {
     console.error('Failed to open SQLite database:', error);
@@ -25,7 +37,62 @@ process.on('unhandledRejection', (error) => {
   console.error('Unhandled rejection:', error);
 });
 
-app.use(cors());
+function resolveJwtSecret() {
+  const configured = String(process.env.PAPER_JWT_SECRET || '').trim();
+  if (configured) {
+    return configured;
+  }
+  return 'paper-local-development-secret';
+}
+
+function ensureRuntimeConfig() {
+  if (!IS_PRODUCTION) {
+    return;
+  }
+  const missing = [];
+  if (!String(process.env.PAPER_JWT_SECRET || '').trim()) {
+    missing.push('PAPER_JWT_SECRET');
+  }
+  if (!String(process.env.PAPER_SUPER_ADMIN_EMAIL || '').trim()) {
+    missing.push('PAPER_SUPER_ADMIN_EMAIL');
+  }
+  if (!String(process.env.PAPER_SUPER_ADMIN_PASSWORD || '').trim()) {
+    missing.push('PAPER_SUPER_ADMIN_PASSWORD');
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required production environment variable${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`,
+    );
+  }
+}
+
+function ensureDatabaseDirectory() {
+  const directory = path.dirname(DB_PATH);
+  fs.mkdirSync(directory, { recursive: true });
+}
+
+function buildCorsOptions() {
+  const rawOrigins = String(process.env.PAPER_CORS_ORIGIN || '').trim();
+  if (!rawOrigins) {
+    return {};
+  }
+  const allowedOrigins = new Set(
+    rawOrigins.split(',').map((origin) => origin.trim()).filter(Boolean),
+  );
+  return {
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin is not allowed by CORS.'));
+    },
+  };
+}
+
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(cors(buildCorsOptions()));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
@@ -33,7 +100,7 @@ app.get('/health', (_req, res) => {
     success: true,
     status: dbReady ? 'ok' : 'starting',
     port: PORT,
-    dbPath: DB_PATH,
+    dbPath: IS_PRODUCTION ? null : DB_PATH,
     dbReady,
     dbInitError: dbInitError?.message ?? null,
     timestamp: new Date().toISOString(),
@@ -96,6 +163,285 @@ function all(sql, params = []) {
       resolve(rows);
     });
   });
+}
+
+function base64UrlEncode(value) {
+  const buffer = Buffer.isBuffer(value) ? value : Buffer.from(String(value));
+  return buffer
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(value) {
+  const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  return Buffer.from(normalized + padding, 'base64').toString('utf8');
+}
+
+function signJwt(payload) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const body = {
+    ...payload,
+    iat: now,
+    exp: now + JWT_TTL_SECONDS,
+  };
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedBody = base64UrlEncode(JSON.stringify(body));
+  const signature = crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`${encodedHeader}.${encodedBody}`)
+    .digest();
+  return `${encodedHeader}.${encodedBody}.${base64UrlEncode(signature)}`;
+}
+
+function verifyJwt(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) {
+    return null;
+  }
+  const [encodedHeader, encodedBody, encodedSignature] = parts;
+  const expectedSignature = base64UrlEncode(
+    crypto
+      .createHmac('sha256', JWT_SECRET)
+      .update(`${encodedHeader}.${encodedBody}`)
+      .digest(),
+  );
+  const actual = Buffer.from(encodedSignature);
+  const expected = Buffer.from(expectedSignature);
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedBody));
+    if (payload.exp && Number(payload.exp) < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto
+    .pbkdf2Sync(String(password), salt, PASSWORD_ITERATIONS, PASSWORD_KEY_LENGTH, 'sha256')
+    .toString('hex');
+  return `pbkdf2$${PASSWORD_ITERATIONS}$${salt}$${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+  const parts = String(storedHash || '').split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2') {
+    return false;
+  }
+  const iterations = Number(parts[1]);
+  const salt = parts[2];
+  const expectedHex = parts[3];
+  const actualHex = crypto
+    .pbkdf2Sync(String(password), salt, iterations, PASSWORD_KEY_LENGTH, 'sha256')
+    .toString('hex');
+  const actual = Buffer.from(actualHex, 'hex');
+  const expected = Buffer.from(expectedHex, 'hex');
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function normalizeEmail(value = '') {
+  return String(value).trim().toLowerCase();
+}
+
+function safeUserDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    name: row.name || '',
+    email: row.email || '',
+    role: row.role || 'user',
+    isActive: Number(row.is_active || 0) === 1,
+    createdByUserId: row.created_by_user_id || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToDeleteRequestDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    entityLabel: row.entity_label || '',
+    reason: row.reason || '',
+    status: row.status,
+    requestedByUserId: row.requested_by_user_id,
+    requestedByName: row.requested_by_name || '',
+    reviewedByUserId: row.reviewed_by_user_id || null,
+    reviewedByName: row.reviewed_by_name || '',
+    reviewedAt: row.reviewed_at || null,
+    createdAt: row.created_at,
+  };
+}
+
+async function createUserAccount({
+  name,
+  email,
+  password,
+  role,
+  createdByUserId = null,
+}) {
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedName = String(name || '').trim();
+  const normalizedRole = String(role || '').trim();
+  if (!normalizedName) {
+    const error = new Error('name is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!normalizedEmail) {
+    const error = new Error('email is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!USER_ROLES.has(normalizedRole)) {
+    const error = new Error('role must be one of super_admin, admin, or user.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (String(password || '').length < 8) {
+    const error = new Error('password must be at least 8 characters.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const existing = await get('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+  if (existing) {
+    const error = new Error('A user with this email already exists.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const now = new Date().toISOString();
+  const result = await run(
+    `
+    INSERT INTO users (
+      name, email, password_hash, role, is_active, created_by_user_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+    `,
+    [
+      normalizedName,
+      normalizedEmail,
+      hashPassword(password),
+      normalizedRole,
+      createdByUserId,
+      now,
+      now,
+    ],
+  );
+  return get('SELECT * FROM users WHERE id = ?', [result.lastID]);
+}
+
+async function findActiveUserById(id) {
+  return get('SELECT * FROM users WHERE id = ? AND is_active = 1', [id]);
+}
+
+async function getDeleteRequestById(id) {
+  return get(
+    `
+    SELECT
+      dr.*,
+      requester.name AS requested_by_name,
+      reviewer.name AS reviewed_by_name
+    FROM delete_requests dr
+    LEFT JOIN users requester ON requester.id = dr.requested_by_user_id
+    LEFT JOIN users reviewer ON reviewer.id = dr.reviewed_by_user_id
+    WHERE dr.id = ?
+    `,
+    [id],
+  );
+}
+
+async function bootstrapSuperAdminIfNeeded() {
+  const countRow = await get('SELECT COUNT(*) AS count FROM users');
+  if (Number(countRow?.count || 0) > 0) {
+    return;
+  }
+  const email = process.env.PAPER_SUPER_ADMIN_EMAIL || 'super@paper.local';
+  const password = process.env.PAPER_SUPER_ADMIN_PASSWORD || 'Paper@12345';
+  const name = process.env.PAPER_SUPER_ADMIN_NAME || 'Super Admin';
+  await createUserAccount({
+    name,
+    email,
+    password,
+    role: 'super_admin',
+  });
+  if (!process.env.PAPER_SUPER_ADMIN_PASSWORD) {
+    console.warn(
+      'Bootstrapped default super admin: super@paper.local / Paper@12345. Set PAPER_SUPER_ADMIN_* before production use.',
+    );
+  }
+}
+
+function currentActor(req) {
+  return req.user?.name || 'Demo Admin';
+}
+
+async function requireAuth(req, res, next) {
+  const header = String(req.headers.authorization || '');
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    res.status(401).json({ success: false, error: 'Authentication required.' });
+    return;
+  }
+  const payload = verifyJwt(match[1]);
+  if (!payload?.sub) {
+    res.status(401).json({ success: false, error: 'Invalid or expired token.' });
+    return;
+  }
+  const user = await findActiveUserById(Number(payload.sub));
+  if (!user) {
+    res.status(401).json({ success: false, error: 'User is inactive or no longer exists.' });
+    return;
+  }
+  req.user = safeUserDto(user);
+  next();
+}
+
+function requireRoles(...roles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Authentication required.' });
+      return;
+    }
+    if (!roles.includes(req.user.role)) {
+      res.status(403).json({ success: false, error: 'You do not have permission for this action.' });
+      return;
+    }
+    next();
+  };
+}
+
+function requireApiWritePermission(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+  const allowedForAnyAuthenticatedUser =
+    req.path === '/me/password' ||
+    (req.path === '/delete-requests' && req.method === 'POST');
+  if (allowedForAnyAuthenticatedUser) {
+    next();
+    return;
+  }
+  if (req.user?.role === 'super_admin' || req.user?.role === 'admin') {
+    next();
+    return;
+  }
+  res.status(403).json({ success: false, error: 'Users can request deletion, but cannot modify records directly.' });
 }
 
 function closeDb() {
@@ -185,6 +531,17 @@ function rowToMaterialDto(row) {
     displayStock,
     createdBy: row.created_by || 'Demo Admin',
     workflowStatus: row.workflow_status || 'notStarted',
+    materialClass: row.material_class || 'raw_material',
+    inventoryState: row.inventory_state || 'available',
+    procurementState: row.procurement_state || 'not_ordered',
+    traceabilityMode: row.traceability_mode || 'bulk',
+    onHand: Number(row.on_hand_qty || 0),
+    reserved: Number(row.reserved_qty || 0),
+    availableToPromise: Number(row.available_to_promise_qty || 0),
+    incoming: Number(row.incoming_qty || 0),
+    linkedOrderCount: Number(row.linked_order_count || 0),
+    linkedPipelineCount: Number(row.linked_pipeline_count || 0),
+    pendingAlertCount: Number(row.pending_alert_count || 0),
     updatedAt: row.updated_at || row.created_at,
     lastScannedAt: row.last_scanned_at || null,
   };
@@ -591,6 +948,17 @@ async function initDb() {
       display_stock TEXT DEFAULT '',
       created_by TEXT DEFAULT '',
       workflow_status TEXT DEFAULT 'notStarted',
+      material_class TEXT DEFAULT 'raw_material',
+      inventory_state TEXT DEFAULT 'available',
+      procurement_state TEXT DEFAULT 'not_ordered',
+      traceability_mode TEXT DEFAULT 'bulk',
+      on_hand_qty REAL NOT NULL DEFAULT 0,
+      reserved_qty REAL NOT NULL DEFAULT 0,
+      available_to_promise_qty REAL NOT NULL DEFAULT 0,
+      incoming_qty REAL NOT NULL DEFAULT 0,
+      linked_order_count INTEGER NOT NULL DEFAULT 0,
+      linked_pipeline_count INTEGER NOT NULL DEFAULT 0,
+      pending_alert_count INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT,
       last_scanned_at TEXT
     )
@@ -612,6 +980,35 @@ async function initDb() {
       event_label TEXT NOT NULL,
       event_description TEXT DEFAULT '',
       actor TEXT DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by_user_id INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delete_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      entity_label TEXT DEFAULT '',
+      reason TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      reviewed_by_user_id INTEGER REFERENCES users(id),
+      reviewed_at TEXT,
       created_at TEXT NOT NULL
     )
   `);
@@ -641,9 +1038,95 @@ async function initDb() {
       state TEXT NOT NULL DEFAULT 'active',
       override_locked INTEGER NOT NULL DEFAULT 0,
       has_type_conflict INTEGER NOT NULL DEFAULT 0,
+      coverage_count INTEGER NOT NULL DEFAULT 0,
+      selected_item_count_at_resolution INTEGER NOT NULL DEFAULT 0,
+      resolution_source TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(material_id, property_key)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS material_group_units (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_id INTEGER NOT NULL REFERENCES materials(id),
+      unit_id INTEGER NOT NULL REFERENCES units(id),
+      state TEXT NOT NULL DEFAULT 'active',
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(material_id, unit_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS material_group_preferences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_id INTEGER NOT NULL REFERENCES materials(id),
+      common_only_mode INTEGER NOT NULL DEFAULT 1,
+      show_partial_matches INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(material_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_stock_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_barcode TEXT NOT NULL,
+      location_id TEXT NOT NULL DEFAULT 'MAIN',
+      lot_code TEXT NOT NULL DEFAULT '',
+      unit_id INTEGER,
+      on_hand_qty REAL NOT NULL DEFAULT 0,
+      reserved_qty REAL NOT NULL DEFAULT 0,
+      damaged_qty REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      UNIQUE(material_barcode, location_id, lot_code)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_movements (
+      id TEXT PRIMARY KEY,
+      material_barcode TEXT NOT NULL,
+      movement_type TEXT NOT NULL,
+      qty REAL NOT NULL,
+      from_location_id TEXT,
+      to_location_id TEXT,
+      reason_code TEXT,
+      reference_type TEXT,
+      reference_id TEXT,
+      actor TEXT DEFAULT '',
+      lot_code TEXT DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_barcode TEXT NOT NULL,
+      reference_type TEXT NOT NULL,
+      reference_id TEXT NOT NULL,
+      reserved_qty REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_barcode TEXT NOT NULL,
+      alert_type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'warning',
+      message TEXT NOT NULL DEFAULT '',
+      is_open INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
   `);
 
@@ -798,8 +1281,34 @@ async function initDb() {
   await ensureColumnExists('materials', 'display_stock', "TEXT DEFAULT ''");
   await ensureColumnExists('materials', 'created_by', "TEXT DEFAULT ''");
   await ensureColumnExists('materials', 'workflow_status', "TEXT DEFAULT 'notStarted'");
+  await ensureColumnExists('materials', 'material_class', "TEXT DEFAULT 'raw_material'");
+  await ensureColumnExists('materials', 'inventory_state', "TEXT DEFAULT 'available'");
+  await ensureColumnExists('materials', 'procurement_state', "TEXT DEFAULT 'not_ordered'");
+  await ensureColumnExists('materials', 'traceability_mode', "TEXT DEFAULT 'bulk'");
+  await ensureColumnExists('materials', 'on_hand_qty', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('materials', 'reserved_qty', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('materials', 'available_to_promise_qty', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('materials', 'incoming_qty', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('materials', 'linked_order_count', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('materials', 'linked_pipeline_count', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('materials', 'pending_alert_count', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('materials', 'updated_at', 'TEXT');
   await ensureColumnExists('materials', 'last_scanned_at', 'TEXT');
+  await ensureColumnExists(
+    'material_group_properties',
+    'coverage_count',
+    'INTEGER NOT NULL DEFAULT 0',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'selected_item_count_at_resolution',
+    'INTEGER NOT NULL DEFAULT 0',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'resolution_source',
+    'TEXT',
+  );
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
 
   await run(`
@@ -855,6 +1364,8 @@ async function initDb() {
   await seedOrdersIfEmpty();
   await seedTemplatesIfEmpty();
   await ensureDemoDataset();
+  await bootstrapSuperAdminIfNeeded();
+  dbReady = true;
 }
 
 async function ensureDemoDataset() {
@@ -865,8 +1376,33 @@ async function ensureDemoDataset() {
   await ensureDemoItemsPresent();
   await ensureDemoOrdersPresent();
   await ensureDemoMaterialsPresent();
+  await backfillInventoryLedgerForMaterials();
   await backfillMaterialUnitIds();
   await ensureDemoPipelineRunsPresent();
+}
+
+async function backfillInventoryLedgerForMaterials() {
+  const materials = await all('SELECT * FROM materials');
+  for (const material of materials) {
+    const positionCountRow = await get(
+      'SELECT COUNT(*) AS count FROM inventory_stock_positions WHERE material_barcode = ?',
+      [material.barcode],
+    );
+    const hasPosition = Number(positionCountRow?.count || 0) > 0;
+    if (!hasPosition) {
+      const inferredOnHand = Number(material.number_of_children || 0) > 0
+        ? Number(material.number_of_children || 0) * 100
+        : 100;
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: String(material.location || '').trim() || 'MAIN',
+        lotCode: material.barcode,
+        unitId: material.unit_id || null,
+        onHandDelta: inferredOnHand,
+      });
+    }
+    await recomputeMaterialInventorySummary(material.barcode);
+  }
 }
 
 async function ensureColumnExists(tableName, columnName, definition) {
@@ -1097,6 +1633,7 @@ async function seedTemplatesIfEmpty() {
 
 async function createParentWithChildren(payload) {
   const resolvedUnit = await resolveUnitPayload(payload);
+  const actor = String(payload?.actor || '').trim() || 'Demo Admin';
   const parentBarcode = generateParentBarcode();
   const childBarcodes = Array.from(
     { length: Number(payload.numberOfChildren || 0) },
@@ -1135,7 +1672,7 @@ async function createParentWithChildren(payload) {
         Number(payload.numberOfChildren || 0),
         JSON.stringify(childBarcodes),
         parentDisplayStock,
-        'Demo Admin',
+        actor,
         'inProgress',
         createdAt,
       ],
@@ -1168,7 +1705,7 @@ async function createParentWithChildren(payload) {
           parentBarcode,
           JSON.stringify([]),
           resolvedUnit.unit ? `100 ${resolvedUnit.unit}` : '100 Pieces',
-          'Demo Admin',
+          actor,
           'notStarted',
           createdAt,
         ],
@@ -1178,7 +1715,7 @@ async function createParentWithChildren(payload) {
         type: 'created',
         label: 'Item created',
         description: `Inventory item ${payload.name} - Child ${index + 1} was created.`,
-        actor: 'Demo Admin',
+        actor,
         createdAt,
       });
     }
@@ -1188,11 +1725,33 @@ async function createParentWithChildren(payload) {
       type: 'created',
       label: 'Group created',
       description: `Inventory group ${payload.name} was created.`,
-      actor: 'Demo Admin',
+      actor,
       createdAt,
     });
 
     await persistMaterialGroupGovernance(parentResult.lastID, payload, createdAt);
+    await upsertInventoryStockPosition({
+      materialBarcode: parentBarcode,
+      locationId: String(payload.location || '').trim() || 'MAIN',
+      lotCode: parentBarcode,
+      unitId: resolvedUnit.unitId,
+      onHandDelta: Number(payload.numberOfChildren || 0) * 100,
+      now: createdAt,
+    });
+    for (const childBarcode of childBarcodes) {
+      await upsertInventoryStockPosition({
+        materialBarcode: childBarcode,
+        locationId: String(payload.location || '').trim() || 'MAIN',
+        lotCode: childBarcode,
+        unitId: resolvedUnit.unitId,
+        onHandDelta: 100,
+        now: createdAt,
+      });
+    }
+    await recomputeMaterialInventorySummary(parentBarcode, createdAt);
+    for (const childBarcode of childBarcodes) {
+      await recomputeMaterialInventorySummary(childBarcode, createdAt);
+    }
 
     await run('COMMIT');
     const parentRow = await get('SELECT * FROM materials WHERE id = ?', [
@@ -3414,6 +3973,11 @@ function normalizeGroupPropertyDraft(rawDraft) {
   const overrideLocked = Boolean(rawDraft?.overrideLocked);
   const hasTypeConflict = Boolean(rawDraft?.hasTypeConflict);
   const mandatory = Boolean(rawDraft?.mandatory);
+  const coverageCount = Number(rawDraft?.coverageCount || 0);
+  const selectedItemCountAtResolution = Number(
+    rawDraft?.selectedItemCountAtResolution || 0,
+  );
+  const resolutionSource = String(rawDraft?.resolutionSource || '').trim() || null;
   const sources = Array.isArray(rawDraft?.sources) ? rawDraft.sources : [];
   const sourceItemIds = sources
     .map((source) => Number(source?.itemId))
@@ -3428,7 +3992,34 @@ function normalizeGroupPropertyDraft(rawDraft) {
     mandatory,
     overrideLocked,
     hasTypeConflict,
+    coverageCount: Number.isFinite(coverageCount) ? Math.max(0, Math.trunc(coverageCount)) : 0,
+    selectedItemCountAtResolution: Number.isFinite(selectedItemCountAtResolution)
+      ? Math.max(0, Math.trunc(selectedItemCountAtResolution))
+      : 0,
+    resolutionSource,
     sourceItemIds: [...new Set(sourceItemIds)],
+  };
+}
+
+function normalizeGroupUnitGovernance(rawUnit) {
+  const unitId = Number(rawUnit?.unitId);
+  if (!Number.isInteger(unitId) || unitId <= 0) {
+    return null;
+  }
+  const state = String(rawUnit?.state || 'active').trim().toLowerCase() === 'detached'
+    ? 'detached'
+    : 'active';
+  return {
+    unitId,
+    state,
+    isPrimary: Boolean(rawUnit?.isPrimary),
+  };
+}
+
+function normalizeGroupUiPreferences(rawPreferences) {
+  return {
+    commonOnlyMode: rawPreferences?.commonOnlyMode !== false,
+    showPartialMatches: rawPreferences?.showPartialMatches !== false,
   };
 }
 
@@ -3441,6 +4032,13 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
     )]
     : [];
   const draftsInput = Array.isArray(payload?.propertyDrafts) ? payload.propertyDrafts : [];
+  const unitGovernanceInput = Array.isArray(payload?.unitGovernance)
+    ? payload.unitGovernance
+    : [];
+  const unitGovernance = unitGovernanceInput
+    .map(normalizeGroupUnitGovernance)
+    .filter(Boolean);
+  const preferences = normalizeGroupUiPreferences(payload?.uiPreferences || {});
   const drafts = draftsInput
     .map(normalizeGroupPropertyDraft)
     .filter(Boolean);
@@ -3454,6 +4052,8 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
 
   await run('DELETE FROM material_group_item_links WHERE material_id = ?', [materialId]);
   await run('DELETE FROM material_group_properties WHERE material_id = ?', [materialId]);
+  await run('DELETE FROM material_group_units WHERE material_id = ?', [materialId]);
+  await run('DELETE FROM material_group_preferences WHERE material_id = ?', [materialId]);
 
   for (let index = 0; index < selectedItemIds.length; index += 1) {
     await run(
@@ -3471,8 +4071,9 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
       INSERT INTO material_group_properties (
         material_id, property_key, display_name, input_type, mandatory,
         source_type, source_item_ids_json, state, override_locked, has_type_conflict,
+        coverage_count, selected_item_count_at_resolution, resolution_source,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         materialId,
@@ -3485,11 +4086,47 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
         draft.state,
         draft.overrideLocked ? 1 : 0,
         draft.hasTypeConflict ? 1 : 0,
+        draft.coverageCount,
+        draft.selectedItemCountAtResolution,
+        draft.resolutionSource,
         now,
         now,
       ],
     );
   }
+
+  for (const unitRow of unitGovernance) {
+    await run(
+      `
+      INSERT INTO material_group_units (
+        material_id, unit_id, state, is_primary, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [
+        materialId,
+        unitRow.unitId,
+        unitRow.state,
+        unitRow.isPrimary ? 1 : 0,
+        now,
+        now,
+      ],
+    );
+  }
+
+  await run(
+    `
+    INSERT INTO material_group_preferences (
+      material_id, common_only_mode, show_partial_matches, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?)
+    `,
+    [
+      materialId,
+      preferences.commonOnlyMode ? 1 : 0,
+      preferences.showPartialMatches ? 1 : 0,
+      now,
+      now,
+    ],
+  );
 }
 
 async function getMaterialGroupGovernance(materialId) {
@@ -3510,6 +4147,24 @@ async function getMaterialGroupGovernance(materialId) {
     FROM material_group_properties
     WHERE material_id = ?
     ORDER BY id ASC
+    `,
+    [materialId],
+  );
+  const units = await all(
+    `
+    SELECT *
+    FROM material_group_units
+    WHERE material_id = ?
+    ORDER BY is_primary DESC, id ASC
+    `,
+    [materialId],
+  );
+  const preferencesRow = await get(
+    `
+    SELECT *
+    FROM material_group_preferences
+    WHERE material_id = ?
+    LIMIT 1
     `,
     [materialId],
   );
@@ -3538,11 +4193,23 @@ async function getMaterialGroupGovernance(materialId) {
       state: row.state || 'active',
       overrideLocked: Number(row.override_locked || 0) === 1,
       hasTypeConflict: Number(row.has_type_conflict || 0) === 1,
+      coverageCount: Number(row.coverage_count || 0),
+      selectedItemCountAtResolution: Number(row.selected_item_count_at_resolution || 0),
+      resolutionSource: row.resolution_source || null,
       sources,
     };
   });
+  const unitGovernance = units.map((row) => ({
+    unitId: Number(row.unit_id),
+    state: row.state === 'detached' ? 'detached' : 'active',
+    isPrimary: Number(row.is_primary || 0) === 1,
+  }));
+  const uiPreferences = {
+    commonOnlyMode: Number(preferencesRow?.common_only_mode ?? 1) === 1,
+    showPartialMatches: Number(preferencesRow?.show_partial_matches ?? 1) === 1,
+  };
 
-  return { selectedItemIds, selectedItems, propertyDrafts };
+  return { selectedItemIds, selectedItems, propertyDrafts, unitGovernance, uiPreferences };
 }
 
 async function incrementMaterialScanCount(barcode) {
@@ -3584,6 +4251,521 @@ async function getMaterialActivity(barcode) {
     `,
     [material.barcode],
   );
+}
+
+function normalizeMovementType(value = '') {
+  const allowed = new Set([
+    'receive',
+    'issue',
+    'transfer',
+    'adjust',
+    'reserve',
+    'release',
+    'consume',
+    'split',
+    'merge',
+  ]);
+  const normalized = String(value || '').trim().toLowerCase();
+  return allowed.has(normalized) ? normalized : 'adjust';
+}
+
+function normalizeMaterialClassFromType(type = '') {
+  const value = String(type || '').trim().toLowerCase();
+  if (value.includes('packaging')) {
+    return 'packaging';
+  }
+  if (value.includes('finished')) {
+    return 'finished_good';
+  }
+  if (value.includes('wip') || value.includes('semi')) {
+    return 'wip';
+  }
+  if (value.includes('chemical') || value.includes('consumable')) {
+    return 'consumable';
+  }
+  return 'raw_material';
+}
+
+async function upsertInventoryStockPosition({
+  materialBarcode,
+  locationId = 'MAIN',
+  lotCode = '',
+  unitId = null,
+  onHandDelta = 0,
+  reservedDelta = 0,
+  damagedDelta = 0,
+  now = new Date().toISOString(),
+}) {
+  const normalizedLocation = String(locationId || 'MAIN').trim() || 'MAIN';
+  const normalizedLot = String(lotCode || '').trim();
+  const existing = await get(
+    `
+    SELECT *
+    FROM inventory_stock_positions
+    WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+    LIMIT 1
+    `,
+    [materialBarcode, normalizedLocation, normalizedLot],
+  );
+
+  if (!existing) {
+    await run(
+      `
+      INSERT INTO inventory_stock_positions (
+        material_barcode, location_id, lot_code, unit_id,
+        on_hand_qty, reserved_qty, damaged_qty, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        materialBarcode,
+        normalizedLocation,
+        normalizedLot,
+        unitId,
+        Math.max(0, Number(onHandDelta || 0)),
+        Math.max(0, Number(reservedDelta || 0)),
+        Math.max(0, Number(damagedDelta || 0)),
+        now,
+      ],
+    );
+    return;
+  }
+
+  const nextOnHand = Math.max(0, Number(existing.on_hand_qty || 0) + Number(onHandDelta || 0));
+  const nextReserved = Math.max(0, Number(existing.reserved_qty || 0) + Number(reservedDelta || 0));
+  const nextDamaged = Math.max(0, Number(existing.damaged_qty || 0) + Number(damagedDelta || 0));
+  await run(
+    `
+    UPDATE inventory_stock_positions
+    SET unit_id = COALESCE(?, unit_id),
+        on_hand_qty = ?,
+        reserved_qty = ?,
+        damaged_qty = ?,
+        updated_at = ?
+    WHERE id = ?
+    `,
+    [unitId, nextOnHand, nextReserved, nextDamaged, now, existing.id],
+  );
+}
+
+async function recomputeMaterialInventorySummary(materialBarcode, now = new Date().toISOString()) {
+  const material = await getMaterialRowByBarcode(materialBarcode);
+  if (!material) {
+    return null;
+  }
+
+  const stockRows = await all(
+    'SELECT * FROM inventory_stock_positions WHERE material_barcode = ?',
+    [material.barcode],
+  );
+  const reservationRows = await all(
+    "SELECT * FROM inventory_reservations WHERE material_barcode = ? AND status = 'active'",
+    [material.barcode],
+  );
+  const openAlerts = await all(
+    'SELECT * FROM inventory_alerts WHERE material_barcode = ? AND is_open = 1',
+    [material.barcode],
+  );
+
+  const onHand = stockRows.reduce((sum, row) => sum + Number(row.on_hand_qty || 0), 0);
+  const reservedFromPositions = stockRows.reduce(
+    (sum, row) => sum + Number(row.reserved_qty || 0),
+    0,
+  );
+  const reservedFromReservations = reservationRows.reduce(
+    (sum, row) => sum + Number(row.reserved_qty || 0),
+    0,
+  );
+  const reserved = Math.max(reservedFromPositions, reservedFromReservations);
+  const availableToPromise = onHand - reserved;
+  const linkedOrderCount = material.linked_item_id
+    ? Number(
+        (
+          await get(
+            'SELECT COUNT(*) AS count FROM orders WHERE item_id = ?',
+            [material.linked_item_id],
+          )
+        )?.count || 0,
+      )
+    : 0;
+  const linkedPipelineCount = Number(
+    (
+      await get(
+        'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
+        [material.barcode],
+      )
+    )?.count || 0,
+  );
+  const pendingAlertCount = openAlerts.length;
+  const materialClass = normalizeMaterialClassFromType(material.type);
+  const inventoryState = pendingAlertCount > 0 ? 'reserved' : 'available';
+  const procurementState = onHand > 0 ? 'received_complete' : 'ordered';
+  const traceabilityMode = materialClass === 'raw_material' ? 'lot_tracked' : 'bulk';
+
+  await run(
+    `
+    UPDATE materials
+    SET on_hand_qty = ?,
+        reserved_qty = ?,
+        available_to_promise_qty = ?,
+        material_class = ?,
+        inventory_state = ?,
+        procurement_state = ?,
+        traceability_mode = ?,
+        linked_order_count = ?,
+        linked_pipeline_count = ?,
+        pending_alert_count = ?,
+        updated_at = ?
+    WHERE id = ?
+    `,
+    [
+      onHand,
+      reserved,
+      availableToPromise,
+      materialClass,
+      inventoryState,
+      procurementState,
+      traceabilityMode,
+      linkedOrderCount,
+      linkedPipelineCount,
+      pendingAlertCount,
+      now,
+      material.id,
+    ],
+  );
+
+  const lowStockThreshold = 100;
+  const hasLowStock = onHand > 0 && availableToPromise <= lowStockThreshold;
+  const existingLowStockAlert = openAlerts.find((alert) => alert.alert_type === 'low_stock');
+  if (hasLowStock && !existingLowStockAlert) {
+    await run(
+      `
+      INSERT INTO inventory_alerts (
+        material_barcode, alert_type, severity, message, is_open, created_at, updated_at
+      ) VALUES (?, 'low_stock', 'warning', ?, 1, ?, ?)
+      `,
+      [
+        material.barcode,
+        `Available stock is low (${availableToPromise.toFixed(2)}).`,
+        now,
+        now,
+      ],
+    );
+  } else if (!hasLowStock && existingLowStockAlert) {
+    await run(
+      'UPDATE inventory_alerts SET is_open = 0, updated_at = ? WHERE id = ?',
+      [now, existingLowStockAlert.id],
+    );
+  }
+
+  return getMaterialRowByBarcode(material.barcode);
+}
+
+async function getMaterialControlTowerDetail(barcode) {
+  const material = await getMaterialRowByBarcode(barcode);
+  if (!material) {
+    return null;
+  }
+  const refreshed = (await recomputeMaterialInventorySummary(material.barcode)) || material;
+  const stockRows = await all(
+    `
+    SELECT *
+    FROM inventory_stock_positions
+    WHERE material_barcode = ?
+    ORDER BY datetime(updated_at) DESC, id DESC
+    `,
+    [material.barcode],
+  );
+  const movementRows = await all(
+    `
+    SELECT *
+    FROM inventory_movements
+    WHERE material_barcode = ?
+    ORDER BY datetime(created_at) DESC
+    LIMIT 20
+    `,
+    [material.barcode],
+  );
+  const reservationRows = await all(
+    `
+    SELECT *
+    FROM inventory_reservations
+    WHERE material_barcode = ?
+    ORDER BY datetime(updated_at) DESC, id DESC
+    `,
+    [material.barcode],
+  );
+  const alertRows = await all(
+    `
+    SELECT *
+    FROM inventory_alerts
+    WHERE material_barcode = ?
+    ORDER BY is_open DESC, datetime(updated_at) DESC, id DESC
+    `,
+    [material.barcode],
+  );
+  const linkedOrderDemand = refreshed.linked_item_id
+    ? Number(
+        (
+          await get('SELECT COALESCE(SUM(quantity), 0) AS qty FROM orders WHERE item_id = ?', [
+            refreshed.linked_item_id,
+          ])
+        )?.qty || 0,
+      )
+    : 0;
+  const linkedPipelineDemand = Number(
+    (
+      await get(
+        'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
+        [material.barcode],
+      )
+    )?.count || 0,
+  );
+
+  return {
+    material: rowToMaterialDto(refreshed),
+    stockPositions: stockRows.map((row) => ({
+      locationId: row.location_id || 'MAIN',
+      locationName: row.location_id || 'Main Warehouse',
+      lotCode: row.lot_code || '',
+      unitId: row.unit_id || null,
+      onHandQty: Number(row.on_hand_qty || 0),
+      reservedQty: Number(row.reserved_qty || 0),
+      damagedQty: Number(row.damaged_qty || 0),
+      updatedAt: row.updated_at,
+    })),
+    movements: movementRows.map((row) => ({
+      id: String(row.id || ''),
+      materialBarcode: row.material_barcode || '',
+      movementType: row.movement_type || 'adjust',
+      qty: Number(row.qty || 0),
+      fromLocationId: row.from_location_id || null,
+      toLocationId: row.to_location_id || null,
+      reasonCode: row.reason_code || null,
+      referenceType: row.reference_type || null,
+      referenceId: row.reference_id || null,
+      actor: row.actor || '',
+      createdAt: row.created_at,
+    })),
+    reservations: reservationRows.map((row) => ({
+      referenceType: row.reference_type || '',
+      referenceId: row.reference_id || '',
+      reservedQty: Number(row.reserved_qty || 0),
+      status: row.status || 'active',
+    })),
+    alerts: alertRows.map((row) => ({
+      alertType: row.alert_type || '',
+      severity: row.severity || 'warning',
+      message: row.message || '',
+      isOpen: Number(row.is_open || 0) === 1,
+    })),
+    linkedOrderDemand,
+    linkedPipelineDemand,
+    pendingAlertsCount: Number(refreshed.pending_alert_count || 0),
+  };
+}
+
+async function getInventoryHealthSummary() {
+  const lowStockCount = Number(
+    (
+      await get(
+        'SELECT COUNT(*) AS count FROM materials WHERE on_hand_qty > 0 AND available_to_promise_qty <= 100',
+      )
+    )?.count || 0,
+  );
+  const reservedRiskCount = Number(
+    (
+      await get(
+        'SELECT COUNT(*) AS count FROM materials WHERE reserved_qty > on_hand_qty AND reserved_qty > 0',
+      )
+    )?.count || 0,
+  );
+  const incomingTodayCount = Number(
+    (
+      await get(
+        "SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'receive' AND datetime(created_at) >= datetime('now', '-1 day')",
+      )
+    )?.count || 0,
+  );
+  const qualityHoldCount = Number(
+    (
+      await get("SELECT COUNT(*) AS count FROM materials WHERE inventory_state = 'quality_hold'")
+    )?.count || 0,
+  );
+  const pendingReconciliationCount = Number(
+    (
+      await get('SELECT COUNT(*) AS count FROM inventory_alerts WHERE is_open = 1')
+    )?.count || 0,
+  );
+
+  return {
+    lowStockCount,
+    reservedRiskCount,
+    incomingTodayCount,
+    qualityHoldCount,
+    unitMismatchCount: pendingReconciliationCount,
+    pendingReconciliationCount,
+  };
+}
+
+async function applyInventoryMovement(payload) {
+  const barcode = normalizeBarcode(payload?.barcode || '');
+  const movementType = normalizeMovementType(payload?.movementType || 'adjust');
+  const qty = Number(payload?.qty || 0);
+  if (!barcode || !Number.isFinite(qty) || qty <= 0) {
+    const error = new Error('barcode, movementType, and qty (> 0) are required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const material = await getMaterialRowByBarcode(barcode);
+  if (!material) {
+    const error = new Error('Material not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const fromLocationId = String(payload?.fromLocationId || '').trim() || null;
+  const toLocationId = String(payload?.toLocationId || '').trim() || material.location || 'MAIN';
+  const lotCode = String(payload?.lotCode || '').trim() || barcode;
+  const actor = String(payload?.actor || '').trim() || 'Demo Admin';
+
+  await run('BEGIN TRANSACTION');
+  try {
+    if (movementType === 'receive') {
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: toLocationId,
+        lotCode,
+        unitId: material.unit_id || null,
+        onHandDelta: qty,
+        now,
+      });
+    } else if (movementType === 'transfer') {
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: fromLocationId || material.location || 'MAIN',
+        lotCode,
+        unitId: material.unit_id || null,
+        onHandDelta: -qty,
+        now,
+      });
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: toLocationId,
+        lotCode,
+        unitId: material.unit_id || null,
+        onHandDelta: qty,
+        now,
+      });
+    } else if (movementType === 'reserve') {
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: toLocationId,
+        lotCode,
+        unitId: material.unit_id || null,
+        reservedDelta: qty,
+        now,
+      });
+      await run(
+        `
+        INSERT INTO inventory_reservations (
+          material_barcode, reference_type, reference_id, reserved_qty, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'active', ?, ?)
+        `,
+        [
+          material.barcode,
+          String(payload?.referenceType || 'manual').trim() || 'manual',
+          String(payload?.referenceId || movementId).trim() || movementId,
+          qty,
+          now,
+          now,
+        ],
+      );
+    } else if (movementType === 'release') {
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: toLocationId,
+        lotCode,
+        unitId: material.unit_id || null,
+        reservedDelta: -qty,
+        now,
+      });
+      const activeReservation = await get(
+        `
+        SELECT *
+        FROM inventory_reservations
+        WHERE material_barcode = ? AND status = 'active'
+        ORDER BY datetime(updated_at) DESC, id DESC
+        LIMIT 1
+        `,
+        [material.barcode],
+      );
+      if (activeReservation) {
+        const nextQty = Math.max(0, Number(activeReservation.reserved_qty || 0) - qty);
+        await run(
+          `
+          UPDATE inventory_reservations
+          SET reserved_qty = ?, status = ?, updated_at = ?
+          WHERE id = ?
+          `,
+          [nextQty, nextQty <= 0 ? 'released' : 'active', now, activeReservation.id],
+        );
+      }
+    } else {
+      const onHandDelta = movementType === 'issue' || movementType === 'consume'
+        ? -qty
+        : qty;
+      await upsertInventoryStockPosition({
+        materialBarcode: material.barcode,
+        locationId: toLocationId,
+        lotCode,
+        unitId: material.unit_id || null,
+        onHandDelta,
+        now,
+      });
+    }
+
+    await run(
+      `
+      INSERT INTO inventory_movements (
+        id, material_barcode, movement_type, qty, from_location_id, to_location_id,
+        reason_code, reference_type, reference_id, actor, lot_code, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        movementId,
+        material.barcode,
+        movementType,
+        qty,
+        fromLocationId,
+        toLocationId,
+        String(payload?.reasonCode || '').trim() || null,
+        String(payload?.referenceType || '').trim() || null,
+        String(payload?.referenceId || '').trim() || null,
+        actor,
+        lotCode,
+        now,
+      ],
+    );
+
+    await recomputeMaterialInventorySummary(material.barcode, now);
+    await logMaterialActivity({
+      barcode: material.barcode,
+      type: movementType,
+      label: 'Inventory movement posted',
+      description: `${movementType} ${qty.toFixed(2)} ${material.unit || 'units'}.`,
+      actor,
+      createdAt: now,
+    });
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  return getMaterialControlTowerDetail(material.barcode);
 }
 
 async function updateMaterialGroupConfiguration(barcode, payload) {
@@ -3638,6 +4820,7 @@ async function createChildMaterial(parentBarcode, payload) {
   if (!parent || parent.kind !== 'parent') {
     throw new Error('Parent material not found.');
   }
+  const actor = String(payload?.actor || '').trim() || parent.created_by || 'Demo Admin';
 
   const nextIndex = Number(parent.number_of_children || 0) + 1;
   const childBarcode = generateChildBarcode(parent.barcode, nextIndex);
@@ -3671,7 +4854,7 @@ async function createChildMaterial(parentBarcode, payload) {
       createdAt,
       parent.barcode,
       childDisplayStock,
-      parent.created_by || 'Demo Admin',
+      actor,
       'notStarted',
       createdAt,
     ],
@@ -3689,9 +4872,20 @@ async function createChildMaterial(parentBarcode, payload) {
     type: 'created',
     label: 'Sub-group created',
     description: `Created under parent ${parent.name || parent.barcode}.`,
-    actor: parent.created_by || 'Demo Admin',
+    actor,
     createdAt,
   });
+
+  await upsertInventoryStockPosition({
+    materialBarcode: childBarcode,
+    locationId: String(parent.location || '').trim() || 'MAIN',
+    lotCode: childBarcode,
+    unitId: parent.unit_id || null,
+    onHandDelta: 100,
+    now: createdAt,
+  });
+  await recomputeMaterialInventorySummary(childBarcode, createdAt);
+  await recomputeMaterialInventorySummary(parent.barcode, createdAt);
 
   return getMaterialRowByBarcode(childBarcode);
 }
@@ -3704,6 +4898,7 @@ async function updateMaterialRecord(barcode, payload) {
 
   const resolvedUnit = await resolveUnitPayload(payload);
   const now = new Date().toISOString();
+  const actor = String(payload?.actor || '').trim() || existing.created_by || 'Demo Admin';
   const existingDisplayStock = String(existing.display_stock || '').trim();
   const nextDisplayStock = existingDisplayStock || (
     resolvedUnit.unit
@@ -3740,9 +4935,10 @@ async function updateMaterialRecord(barcode, payload) {
     type: 'updated',
     label: 'Record updated',
     description: 'Material details were edited.',
-    actor: existing.created_by || 'Demo Admin',
+    actor,
     createdAt: now,
   });
+  await recomputeMaterialInventorySummary(existing.barcode, now);
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -3778,6 +4974,12 @@ async function deleteMaterialRecord(barcode) {
   await run('DELETE FROM material_activity WHERE barcode = ?', [existing.barcode]);
   await run('DELETE FROM material_group_item_links WHERE material_id = ?', [existing.id]);
   await run('DELETE FROM material_group_properties WHERE material_id = ?', [existing.id]);
+  await run('DELETE FROM material_group_units WHERE material_id = ?', [existing.id]);
+  await run('DELETE FROM material_group_preferences WHERE material_id = ?', [existing.id]);
+  await run('DELETE FROM inventory_stock_positions WHERE material_barcode = ?', [existing.barcode]);
+  await run('DELETE FROM inventory_movements WHERE material_barcode = ?', [existing.barcode]);
+  await run('DELETE FROM inventory_reservations WHERE material_barcode = ?', [existing.barcode]);
+  await run('DELETE FROM inventory_alerts WHERE material_barcode = ?', [existing.barcode]);
   await run('DELETE FROM materials WHERE id = ?', [existing.id]);
 }
 
@@ -4289,6 +5491,263 @@ async function ensureDemoPipelineRunsPresent() {
   });
 }
 
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    const user = await get('SELECT * FROM users WHERE email = ?', [email]);
+    if (!user || Number(user.is_active || 0) !== 1 || !verifyPassword(password, user.password_hash)) {
+      res.status(401).json({ success: false, user: null, token: null, error: 'Invalid email or password.' });
+      return;
+    }
+    const safeUser = safeUserDto(user);
+    const token = signJwt({ sub: user.id, role: user.role });
+    res.json({ success: true, user: safeUser, token, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, user: null, token: null, error: error.message });
+  }
+});
+
+app.use('/api', requireAuth);
+app.use('/api', requireApiWritePermission);
+
+app.get('/api/auth/me', async (req, res) => {
+  res.json({ success: true, user: req.user, error: null });
+});
+
+app.patch('/api/me/password', async (req, res) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword || '');
+    const nextPassword = String(req.body?.newPassword || '');
+    const user = await get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+      res.status(401).json({ success: false, error: 'Current password is incorrect.' });
+      return;
+    }
+    if (nextPassword.length < 8) {
+      res.status(400).json({ success: false, error: 'New password must be at least 8 characters.' });
+      return;
+    }
+    await run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
+      hashPassword(nextPassword),
+      new Date().toISOString(),
+      req.user.id,
+    ]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/users', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const rows = await all('SELECT * FROM users ORDER BY role ASC, name ASC');
+    const users = rows
+      .filter((row) => req.user.role === 'super_admin' || row.role === 'user' || row.id === req.user.id)
+      .map(safeUserDto);
+    res.json({ success: true, users, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, users: [], error: error.message });
+  }
+});
+
+app.post('/api/admins', requireRoles('super_admin'), async (req, res) => {
+  try {
+    const user = await createUserAccount({
+      name: req.body?.name,
+      email: req.body?.email,
+      password: req.body?.password,
+      role: 'admin',
+      createdByUserId: req.user.id,
+    });
+    res.status(201).json({ success: true, user: safeUserDto(user), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
+  }
+});
+
+app.post('/api/users', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const user = await createUserAccount({
+      name: req.body?.name,
+      email: req.body?.email,
+      password: req.body?.password,
+      role: 'user',
+      createdByUserId: req.user.id,
+    });
+    res.status(201).json({ success: true, user: safeUserDto(user), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
+  }
+});
+
+app.patch('/api/users/:id/password', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, error: 'User not found.' });
+      return;
+    }
+    if (req.user.role === 'admin' && target.role !== 'user') {
+      res.status(403).json({ success: false, error: 'Admins can reset user passwords only.' });
+      return;
+    }
+    const newPassword = String(req.body?.newPassword || req.body?.password || '');
+    if (newPassword.length < 8) {
+      res.status(400).json({ success: false, error: 'New password must be at least 8 characters.' });
+      return;
+    }
+    await run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
+      hashPassword(newPassword),
+      new Date().toISOString(),
+      targetId,
+    ]);
+    res.json({ success: true, user: safeUserDto(await get('SELECT * FROM users WHERE id = ?', [targetId])), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.patch('/api/users/:id/status', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, user: null, error: 'User not found.' });
+      return;
+    }
+    if (targetId === req.user.id) {
+      res.status(400).json({ success: false, user: null, error: 'You cannot deactivate your own account.' });
+      return;
+    }
+    if (req.user.role === 'admin' && target.role !== 'user') {
+      res.status(403).json({ success: false, user: null, error: 'Admins can update user accounts only.' });
+      return;
+    }
+    await run('UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', [
+      req.body?.isActive === false ? 0 : 1,
+      new Date().toISOString(),
+      targetId,
+    ]);
+    res.json({ success: true, user: safeUserDto(await get('SELECT * FROM users WHERE id = ?', [targetId])), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, user: null, error: error.message });
+  }
+});
+
+app.post('/api/delete-requests', async (req, res) => {
+  try {
+    const entityType = String(req.body?.entityType || '').trim();
+    const entityId = String(req.body?.entityId || '').trim();
+    const entityLabel = String(req.body?.entityLabel || '').trim();
+    const reason = String(req.body?.reason || '').trim();
+    if (!entityType || !entityId) {
+      res.status(400).json({ success: false, request: null, error: 'entityType and entityId are required.' });
+      return;
+    }
+    if (entityType !== 'material') {
+      res.status(400).json({ success: false, request: null, error: 'Only material delete requests are supported in v1.' });
+      return;
+    }
+    const now = new Date().toISOString();
+    const result = await run(
+      `
+      INSERT INTO delete_requests (
+        entity_type, entity_id, entity_label, reason, status, requested_by_user_id, created_at
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+      `,
+      [entityType, entityId, entityLabel, reason, req.user.id, now],
+    );
+    const row = await getDeleteRequestById(result.lastID);
+    res.status(201).json({ success: true, request: rowToDeleteRequestDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, request: null, error: error.message });
+  }
+});
+
+app.get('/api/delete-requests', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const status = String(req.query.status || '').trim();
+    const params = [];
+    let where = '';
+    if (status) {
+      where = 'WHERE dr.status = ?';
+      params.push(status);
+    }
+    const rows = await all(
+      `
+      SELECT
+        dr.*,
+        requester.name AS requested_by_name,
+        reviewer.name AS reviewed_by_name
+      FROM delete_requests dr
+      LEFT JOIN users requester ON requester.id = dr.requested_by_user_id
+      LEFT JOIN users reviewer ON reviewer.id = dr.reviewed_by_user_id
+      ${where}
+      ORDER BY dr.created_at DESC
+      `,
+      params,
+    );
+    res.json({ success: true, requests: rows.map(rowToDeleteRequestDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, requests: [], error: error.message });
+  }
+});
+
+app.post('/api/delete-requests/:id/approve', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const request = await getDeleteRequestById(Number(req.params.id));
+    if (!request) {
+      res.status(404).json({ success: false, request: null, error: 'Delete request not found.' });
+      return;
+    }
+    if (request.status !== 'pending') {
+      res.status(409).json({ success: false, request: rowToDeleteRequestDto(request), error: 'Delete request has already been reviewed.' });
+      return;
+    }
+    if (request.entity_type !== 'material') {
+      res.status(400).json({ success: false, request: null, error: 'Unsupported delete request type.' });
+      return;
+    }
+    await deleteMaterialRecord(request.entity_id, currentActor(req));
+    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_at = ? WHERE id = ?', [
+      'approved',
+      req.user.id,
+      new Date().toISOString(),
+      request.id,
+    ]);
+    const updated = await getDeleteRequestById(request.id);
+    res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, request: null, error: error.message });
+  }
+});
+
+app.post('/api/delete-requests/:id/reject', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const request = await getDeleteRequestById(Number(req.params.id));
+    if (!request) {
+      res.status(404).json({ success: false, request: null, error: 'Delete request not found.' });
+      return;
+    }
+    if (request.status !== 'pending') {
+      res.status(409).json({ success: false, request: rowToDeleteRequestDto(request), error: 'Delete request has already been reviewed.' });
+      return;
+    }
+    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_at = ? WHERE id = ?', [
+      'rejected',
+      req.user.id,
+      new Date().toISOString(),
+      request.id,
+    ]);
+    const updated = await getDeleteRequestById(request.id);
+    res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, request: null, error: error.message });
+  }
+});
+
 app.get('/api/materials', async (req, res) => {
   try {
     const rows = await all(
@@ -4297,6 +5756,19 @@ app.get('/api/materials', async (req, res) => {
     res.json({ success: true, materials: rows.map(rowToMaterialDto) });
   } catch (error) {
     res.status(500).json({ success: false, materials: [], error: error.message });
+  }
+});
+
+app.get('/api/inventory/health', async (_req, res) => {
+  try {
+    const health = await getInventoryHealthSummary();
+    res.json({ success: true, health, error: null });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      health: null,
+      error: error.message,
+    });
   }
 });
 
@@ -4320,6 +5792,36 @@ app.get('/api/materials/:barcode', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, material: null, error: error.message });
+  }
+});
+
+app.get('/api/materials/:barcode/detail', async (req, res) => {
+  try {
+    const detail = await getMaterialControlTowerDetail(req.params.barcode);
+    if (!detail) {
+      res.status(404).json({
+        success: false,
+        material: null,
+        error: `No material found for barcode ${req.params.barcode}.`,
+      });
+      return;
+    }
+    const row = await getMaterialRowByBarcode(req.params.barcode);
+    const groupConfiguration = row
+      ? await getMaterialGroupGovernance(row.id)
+      : { selectedItemIds: [], selectedItems: [], propertyDrafts: [] };
+    res.json({
+      success: true,
+      ...detail,
+      groupConfiguration,
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      material: null,
+      error: error.message,
+    });
   }
 });
 
@@ -4675,7 +6177,7 @@ app.patch('/api/groups/:id/restore', async (req, res) => {
 
 app.post('/api/materials/parent', async (req, res) => {
   try {
-    const payload = req.body || {};
+    const payload = { ...(req.body || {}), actor: currentActor(req) };
     if (!payload.name || !payload.type || payload.numberOfChildren == null) {
       res.status(400).json({
         success: false,
@@ -4698,7 +6200,7 @@ app.post('/api/materials/parent', async (req, res) => {
 
 app.post('/api/materials/:barcode/child', async (req, res) => {
   try {
-    const payload = req.body || {};
+    const payload = { ...(req.body || {}), actor: currentActor(req) };
     if (!String(payload.name || '').trim()) {
       res.status(400).json({
         success: false,
@@ -4716,7 +6218,7 @@ app.post('/api/materials/:barcode/child', async (req, res) => {
 
 app.patch('/api/materials/:barcode', async (req, res) => {
   try {
-    const payload = req.body || {};
+    const payload = { ...(req.body || {}), actor: currentActor(req) };
     if (!payload.name || !payload.type) {
       res.status(400).json({
         success: false,
@@ -4851,6 +6353,26 @@ app.patch('/api/materials/:barcode/scan/reset', async (req, res) => {
   }
 });
 
+app.post('/api/inventory/movements', async (req, res) => {
+  try {
+    const detail = await applyInventoryMovement({
+      ...(req.body || {}),
+      actor: currentActor(req),
+    });
+    res.status(201).json({
+      success: true,
+      ...detail,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      material: null,
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/materials/:barcode/activity', async (req, res) => {
   try {
     const events = await getMaterialActivity(req.params.barcode);
@@ -4863,6 +6385,11 @@ app.get('/api/materials/:barcode/activity', async (req, res) => {
     res.status(500).json({ success: false, events: [], error: error.message });
   }
 });
+
+app.use('/templates', requireAuth);
+app.use('/templates', requireApiWritePermission);
+app.use('/runs', requireAuth);
+app.use('/runs', requireApiWritePermission);
 
 app.get('/templates', async (req, res) => {
   try {
@@ -5148,6 +6675,14 @@ app.post('/runs/:id/barcodes', async (req, res) => {
   }
 });
 
+app.use((error, _req, res, _next) => {
+  console.error('Request failed:', error);
+  res.status(error.statusCode || 500).json({
+    success: false,
+    error: IS_PRODUCTION ? 'Request failed.' : error.message,
+  });
+});
+
 async function resetAndSeedDemoData() {
   await initDb();
   await run('DELETE FROM run_barcode_inputs');
@@ -5162,6 +6697,12 @@ async function resetAndSeedDemoData() {
   await run('DELETE FROM clients');
   await run('DELETE FROM material_group_item_links');
   await run('DELETE FROM material_group_properties');
+  await run('DELETE FROM material_group_units');
+  await run('DELETE FROM material_group_preferences');
+  await run('DELETE FROM inventory_stock_positions');
+  await run('DELETE FROM inventory_movements');
+  await run('DELETE FROM inventory_reservations');
+  await run('DELETE FROM inventory_alerts');
   await run('DELETE FROM materials');
   await run('DELETE FROM groups');
   await run('DELETE FROM units');

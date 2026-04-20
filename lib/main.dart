@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/network/authenticated_http_client.dart';
 import 'app/shell/app_shell.dart';
 import 'app/shell/navigation_provider.dart';
+import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/groups/data/repositories/api_group_repository.dart';
 import 'features/groups/data/repositories/group_repository.dart';
 import 'features/groups/presentation/providers/groups_provider.dart';
@@ -82,26 +85,41 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => AuthProvider(
+            baseUrl: _apiBaseUrl,
+            demoMode: _isDemoMode,
+          )..initialize(),
+        ),
         Provider<InventoryRepository>(
-          create: (_) => inventoryRepository ?? _buildInventoryRepository(),
+          create: (context) =>
+              inventoryRepository ??
+              _buildInventoryRepository(context.read<AuthProvider>()),
         ),
         Provider<UnitRepository>(
-          create: (_) => unitRepository ?? _buildUnitRepository(),
+          create: (context) =>
+              unitRepository ?? _buildUnitRepository(context.read<AuthProvider>()),
         ),
         Provider<GroupRepository>(
-          create: (_) => groupRepository ?? _buildGroupRepository(),
+          create: (context) =>
+              groupRepository ?? _buildGroupRepository(context.read<AuthProvider>()),
         ),
         Provider<ClientRepository>(
-          create: (_) => clientRepository ?? _buildClientRepository(),
+          create: (context) =>
+              clientRepository ?? _buildClientRepository(context.read<AuthProvider>()),
         ),
         Provider<ItemRepository>(
-          create: (_) => itemRepository ?? _buildItemRepository(),
+          create: (context) =>
+              itemRepository ?? _buildItemRepository(context.read<AuthProvider>()),
         ),
         Provider<OrderRepository>(
-          create: (_) => orderRepository ?? _buildOrderRepository(),
+          create: (context) =>
+              orderRepository ?? _buildOrderRepository(context.read<AuthProvider>()),
         ),
         Provider<PipelineRunRepository>(
-          create: (_) => pipelineRunRepository ?? _buildPipelineRunRepository(),
+          create: (context) =>
+              pipelineRunRepository ??
+              _buildPipelineRunRepository(context.read<AuthProvider>()),
         ),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
@@ -162,62 +180,87 @@ class MyApp extends StatelessWidget {
             displayColor: const Color(0xFF3C3C3C),
           ),
         ),
-        home: const AppShell(),
+        home: const _AuthGate(),
       ),
     );
   }
 
-  InventoryRepository _buildInventoryRepository() {
+  AuthenticatedHttpClient _authClient(AuthProvider auth) {
+    return AuthenticatedHttpClient(tokenResolver: () => auth.token);
+  }
+
+  InventoryRepository _buildInventoryRepository(AuthProvider auth) {
     return ApiInventoryRepository(
+      client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,
     );
   }
 
-  UnitRepository _buildUnitRepository() {
+  UnitRepository _buildUnitRepository(AuthProvider auth) {
     return ApiUnitRepository(
+      client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,
     );
   }
 
-  GroupRepository _buildGroupRepository() {
+  GroupRepository _buildGroupRepository(AuthProvider auth) {
     return ApiGroupRepository(
+      client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,
     );
   }
 
-  ClientRepository _buildClientRepository() {
+  ClientRepository _buildClientRepository(AuthProvider auth) {
     return ApiClientRepository(
+      client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,
     );
   }
 
-  ItemRepository _buildItemRepository() {
+  ItemRepository _buildItemRepository(AuthProvider auth) {
     return ApiItemRepository(
+      client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,
     );
   }
 
-  OrderRepository _buildOrderRepository() {
+  OrderRepository _buildOrderRepository(AuthProvider auth) {
     return ApiOrderRepository(
+      client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,
     );
   }
 
-  PipelineRunRepository _buildPipelineRunRepository() {
+  PipelineRunRepository _buildPipelineRunRepository(AuthProvider auth) {
     if (_isDemoMode) {
       final injectedInventoryRepository = inventoryRepository;
       final resolvedInventoryRepository =
-          injectedInventoryRepository ?? _buildInventoryRepository();
+          injectedInventoryRepository ?? _buildInventoryRepository(auth);
       return MockPipelineRunRepository(
         inventoryRepository: resolvedInventoryRepository,
       );
     }
-    return ApiPipelineRunRepository(baseUrl: _apiBaseUrl);
+    return ApiPipelineRunRepository(
+      baseUrl: _apiBaseUrl,
+      client: _authClient(auth),
+    );
+  }
+}
+
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final authenticated = context.select<AuthProvider, bool>(
+      (auth) => auth.isAuthenticated,
+    );
+    return authenticated ? const AppShell() : const LoginScreen();
   }
 }

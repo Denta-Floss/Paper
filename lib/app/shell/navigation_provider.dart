@@ -12,6 +12,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_items',
   'configurator_groups',
   'configurator_units',
+  'user_management',
 ];
 
 const Set<String> kConfiguratorNavigationKeys = <String>{
