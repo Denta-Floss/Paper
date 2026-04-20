@@ -19,6 +19,8 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   List<AuthUser> _users = const [];
   List<DeleteRequest> _deleteRequests = const [];
+  List<AuthSession> _mySessions = const [];
+  List<AuthEvent> _authEvents = const [];
 
   AuthUser? get user => _user;
   String? get token => _token;
@@ -26,6 +28,8 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   List<AuthUser> get users => _users;
   List<DeleteRequest> get deleteRequests => _deleteRequests;
+  List<AuthSession> get mySessions => _mySessions;
+  List<AuthEvent> get authEvents => _authEvents;
   bool get isAuthenticated => _user != null || _demoMode;
   bool get isAdmin => _demoMode || (_user?.isAdmin ?? false);
   bool get isSuperAdmin => _user?.isSuperAdmin ?? _demoMode;
@@ -69,7 +73,18 @@ class AuthProvider extends ChangeNotifier {
     _api.token = null;
     _users = const [];
     _deleteRequests = const [];
+    _mySessions = const [];
+    _authEvents = const [];
     notifyListeners();
+  }
+
+  Future<void> logoutRemote() async {
+    if (_token != null && _token!.isNotEmpty) {
+      try {
+        await _api.logout();
+      } catch (_) {}
+    }
+    logout();
   }
 
   Future<void> loadManagementData() async {
@@ -82,6 +97,8 @@ class AuthProvider extends ChangeNotifier {
     try {
       _users = await _api.getUsers();
       _deleteRequests = await _api.getDeleteRequests();
+      _authEvents = await _api.getAuthEvents();
+      _mySessions = await _api.getMySessions();
     } catch (error) {
       _errorMessage = _friendly(
         error,
@@ -209,6 +226,33 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = _friendly(
         error,
         fallback: 'Failed to review delete request.',
+      );
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<List<AuthSession>> getUserSessions(int userId) async {
+    try {
+      return await _api.getUserSessions(userId);
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to load sessions.');
+      notifyListeners();
+      return const [];
+    }
+  }
+
+  Future<bool> revokeAllUserSessions(int userId) async {
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.revokeAllUserSessions(userId);
+      await loadManagementData();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to revoke user sessions.',
       );
       notifyListeners();
       return false;

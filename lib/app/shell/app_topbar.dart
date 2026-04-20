@@ -152,7 +152,7 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
           ShellTopStripAction(
             label: 'Sign out',
             icon: Icons.logout,
-            onPressed: () => context.read<AuthProvider>().logout(),
+            onPressed: () => context.read<AuthProvider>().logoutRemote(),
           ),
         ],
       );

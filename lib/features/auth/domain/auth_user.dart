@@ -64,3 +64,83 @@ class DeleteRequest {
     );
   }
 }
+
+class AuthSession {
+  const AuthSession({
+    required this.id,
+    required this.userId,
+    required this.createdAt,
+    required this.lastUsedAt,
+    required this.expiresAt,
+    required this.revokedAt,
+    required this.revokedReason,
+    required this.ipAddress,
+    required this.userAgent,
+  });
+
+  final String id;
+  final int userId;
+  final DateTime createdAt;
+  final DateTime lastUsedAt;
+  final DateTime expiresAt;
+  final DateTime? revokedAt;
+  final String revokedReason;
+  final String ipAddress;
+  final String userAgent;
+
+  bool get isActive => revokedAt == null && expiresAt.isAfter(DateTime.now());
+
+  factory AuthSession.fromJson(Map<String, dynamic> json) {
+    return AuthSession(
+      id: json['id'] as String? ?? '',
+      userId: json['userId'] as int? ?? 0,
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+      lastUsedAt:
+          DateTime.tryParse(json['lastUsedAt'] as String? ?? '') ??
+          DateTime.now(),
+      expiresAt:
+          DateTime.tryParse(json['expiresAt'] as String? ?? '') ??
+          DateTime.now(),
+      revokedAt: DateTime.tryParse(json['revokedAt'] as String? ?? ''),
+      revokedReason: json['revokedReason'] as String? ?? '',
+      ipAddress: json['ipAddress'] as String? ?? '',
+      userAgent: json['userAgent'] as String? ?? '',
+    );
+  }
+}
+
+class AuthEvent {
+  const AuthEvent({
+    required this.id,
+    required this.eventType,
+    required this.actorUserName,
+    required this.targetUserName,
+    required this.ipAddress,
+    required this.userAgent,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String eventType;
+  final String actorUserName;
+  final String targetUserName;
+  final String ipAddress;
+  final String userAgent;
+  final DateTime createdAt;
+
+  factory AuthEvent.fromJson(Map<String, dynamic> json) {
+    return AuthEvent(
+      id: json['id'] as int? ?? 0,
+      eventType: json['eventType'] as String? ?? '',
+      actorUserName: json['actorUserName'] as String? ?? '',
+      targetUserName: json['targetUserName'] as String? ?? '',
+      ipAddress: json['ipAddress'] as String? ?? '',
+      userAgent: json['userAgent'] as String? ?? '',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+}

@@ -128,6 +128,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isRequestDelete = context.select<AuthProvider, bool>(
+      (auth) => auth.isRegularUser,
+    );
     return Consumer3<InventoryProvider, GroupsProvider, ItemsProvider>(
       builder: (context, inventory, groups, items, _) {
         if (inventory.isLoading && inventory.materials.isEmpty) {
@@ -286,9 +289,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         _InventoryBulkActionBar(
                           selectedCount: selectedRecords.length,
                           isBusy: _isBulkRunning,
-                          isRequestDelete: context.select<AuthProvider, bool>(
-                            (auth) => auth.isRegularUser,
-                          ),
+                          isRequestDelete: isRequestDelete,
                           progressLabel: _bulkProgressLabel,
                           onClearSelection: () {
                             setState(_selectedBarcodes.clear);
@@ -322,6 +323,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           itemsProvider: items,
                           selectedBarcodes: _selectedBarcodes,
                           expandedParents: _expandedParents,
+                          isRequestDelete: isRequestDelete,
                           onToggleSelection: (barcode) {
                             setState(() {
                               if (_selectedBarcodes.contains(barcode)) {
@@ -2612,6 +2614,7 @@ class _InventoryTable extends StatefulWidget {
     required this.itemsProvider,
     required this.selectedBarcodes,
     required this.expandedParents,
+    required this.isRequestDelete,
     required this.onToggleSelection,
     required this.onToggleExpanded,
     required this.onOpenDetails,
@@ -2629,6 +2632,7 @@ class _InventoryTable extends StatefulWidget {
   final ItemsProvider itemsProvider;
   final Set<String> selectedBarcodes;
   final Set<String> expandedParents;
+  final bool isRequestDelete;
   final ValueChanged<String> onToggleSelection;
   final ValueChanged<String> onToggleExpanded;
   final ValueChanged<MaterialRecord> onOpenDetails;
@@ -2832,9 +2836,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                             record.barcode,
                           ),
                           isStriped: index.isOdd,
-                          isRequestDelete: context.select<AuthProvider, bool>(
-                            (auth) => auth.isRegularUser,
-                          ),
+                          isRequestDelete: widget.isRequestDelete,
                           onTap: () => widget.onOpenDetails(record),
                           onAddSubGroup: () => widget.onAddSubGroup(record),
                           onEdit: () => widget.onEdit(record),
@@ -5746,6 +5748,7 @@ class _InventoryCreateGroupEditorState
   final _locationController = TextEditingController(text: 'Main Warehouse');
   final _propertyNameController = TextEditingController();
   final _itemSearchController = TextEditingController();
+  final _itemListScrollController = ScrollController();
 
   String? _selectedUnitGroup;
   bool _enableVariants = false;
@@ -5796,6 +5799,7 @@ class _InventoryCreateGroupEditorState
     _locationController.dispose();
     _propertyNameController.dispose();
     _itemSearchController.dispose();
+    _itemListScrollController.dispose();
     super.dispose();
   }
 
@@ -6122,8 +6126,10 @@ class _InventoryCreateGroupEditorState
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Scrollbar(
+              controller: _itemListScrollController,
               thumbVisibility: true,
               child: ListView.separated(
+                controller: _itemListScrollController,
                 padding: EdgeInsets.zero,
                 itemCount: filteredItems.length,
                 separatorBuilder: (_, _) =>

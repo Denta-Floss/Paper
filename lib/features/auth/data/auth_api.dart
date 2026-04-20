@@ -213,6 +213,107 @@ class AuthApi {
     }
   }
 
+  Future<void> logout() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/auth/logout'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(payload['error'] as String? ?? 'Failed to logout.');
+    }
+  }
+
+  Future<List<AuthSession>> getMySessions() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/auth/sessions'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load sessions.',
+      );
+    }
+    return (payload['sessions'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(AuthSession.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> revokeMySession(String sessionId) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/auth/sessions/$sessionId'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to revoke session.',
+      );
+    }
+  }
+
+  Future<List<AuthSession>> getUserSessions(int userId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/users/$userId/sessions'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load user sessions.',
+      );
+    }
+    return (payload['sessions'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(AuthSession.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> revokeAllUserSessions(int userId) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/users/$userId/sessions/revoke'),
+      headers: _jsonHeaders,
+      body: jsonEncode(const {}),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to revoke user sessions.',
+      );
+    }
+  }
+
+  Future<List<AuthEvent>> getAuthEvents({int limit = 100}) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/auth/events?limit=$limit'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load auth events.',
+      );
+    }
+    return (payload['events'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(AuthEvent.fromJson)
+        .toList(growable: false);
+  }
+
   Map<String, dynamic> _decode(String body) {
     final trimmed = body.trimLeft();
     if (trimmed.startsWith('<')) {
