@@ -89,8 +89,39 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       .toList(growable: false),
                 ),
         ),
+        const SizedBox(height: 20),
+        _Section(
+          title: 'Security Activity',
+          child: auth.authEvents.isEmpty
+              ? const _EmptyBlock('No security events yet.')
+              : Column(
+                  children: auth.authEvents
+                      .map((event) => ListTile(
+                            dense: true,
+                            title: Text(event.eventType.replaceAll('_', ' ')),
+                            subtitle: Text(
+                              '${event.actorUserName.ifEmpty('System')} -> ${event.targetUserName.ifEmpty('-')}',
+                            ),
+                            trailing: Text(
+                              _timeLabel(event.createdAt),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ))
+                      .toList(growable: false),
+                ),
+        ),
       ],
     );
+  }
+
+  String _timeLabel(DateTime value) {
+    final local = value.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hh:$mm';
   }
 
   Future<void> _openCreateUserDialog(
@@ -202,6 +233,10 @@ class _UserRow extends StatelessWidget {
             child: const Text('Reset password'),
           ),
           OutlinedButton(
+            onPressed: canManage ? () => _openSessions(context, user) : null,
+            child: const Text('Sessions'),
+          ),
+          OutlinedButton(
             onPressed: canManage
                 ? () => auth.setUserActive(
                     userId: user.id,
@@ -257,6 +292,62 @@ class _UserRow extends StatelessWidget {
       ),
     );
     controller.dispose();
+  }
+
+  Future<void> _openSessions(BuildContext context, AuthUser user) async {
+    final sessions = await context.read<AuthProvider>().getUserSessions(user.id);
+    if (!context.mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Sessions for ${user.name}'),
+        content: SizedBox(
+          width: 560,
+          child: sessions.isEmpty
+              ? const Text('No sessions found.')
+              : ListView(
+                  shrinkWrap: true,
+                  children: sessions
+                      .map(
+                        (session) => ListTile(
+                          dense: true,
+                          title: Text(session.isActive ? 'Active' : 'Revoked'),
+                          subtitle: Text(
+                            '${session.ipAddress.ifEmpty('Unknown IP')} • ${session.userAgent.ifEmpty('Unknown agent')}',
+                          ),
+                          trailing: Text(
+                            session.createdAt.toLocal().toString().split('.').first,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton.tonal(
+            onPressed: () async {
+              final ok = await context.read<AuthProvider>().revokeAllUserSessions(
+                    user.id,
+                  );
+              if (ok && dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+              }
+            },
+            child: const Text('Revoke all'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
