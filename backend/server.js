@@ -1415,10 +1415,121 @@ function rowToOrderDto(row) {
     variationPathLabel: row.variation_path_label || '',
     variationPathNodeIds: parseJson(row.variation_path_node_ids_json, []),
     quantity: Number(row.quantity || 0),
-    status: row.status || 'notStarted',
+    status: row.status || 'draft',
     createdAt: row.created_at,
     startDate: row.start_date,
     endDate: row.end_date,
+    previousStatus: row.previous_status || null,
+    holdReason: row.hold_reason || null,
+    cancelReason: row.cancel_reason || null,
+    confirmedAt: row.confirmed_at || null,
+    allocatedAt: row.allocated_at || null,
+    productionStartedAt: row.production_started_at || null,
+    completedAt: row.completed_at || null,
+    dispatchedAt: row.dispatched_at || null,
+    closedAt: row.closed_at || null,
+    updatedBy: row.updated_by || null,
+  };
+}
+
+function rowToOrderStatusHistoryDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    orderId: Number(row.order_id || 0),
+    fromStatus: row.from_status || null,
+    toStatus: row.to_status || '',
+    reason: row.reason || null,
+    changedByUserId: row.changed_by_user_id || null,
+    changedByName: row.changed_by_name || row.changed_by || 'System',
+    changedByRole: row.changed_by_role || null,
+    source: row.source || 'api',
+    changedAt: row.changed_at || null,
+  };
+}
+
+function rowToOrderActivityDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    orderId: Number(row.order_id || 0),
+    eventType: row.event_type || '',
+    title: row.title || '',
+    description: row.description || '',
+    actorUserId: row.actor_user_id || null,
+    actorName: row.actor_name || 'System',
+    actorRole: row.actor_role || null,
+    oldValue: row.old_value || null,
+    newValue: row.new_value || null,
+    metadata: parseJson(row.metadata_json, {}),
+    source: row.source || 'api',
+    createdAt: row.created_at || null,
+  };
+}
+
+function rowToOrderMaterialRequirementDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id || 0),
+    orderId: Number(row.order_id || 0),
+    itemId: Number(row.item_id || 0),
+    materialBarcode: row.material_barcode || '',
+    materialName: row.material_name || '',
+    requiredQty: Number(row.required_qty || 0),
+    allocatedQty: Number(row.allocated_qty || 0),
+    consumedQty: Number(row.consumed_qty || 0),
+    availableQty: Number(row.available_qty || 0),
+    shortageQty: Number(row.shortage_qty || 0),
+    unitId: row.unit_id || null,
+    unitSymbol: row.unit_symbol || '',
+    status: row.status || 'pending',
+    updatedAt: row.updated_at || row.created_at || null,
+  };
+}
+
+function rowToOrderProcurementSuggestionDto(row) {
+  if (!row) {
+    return null;
+  }
+  const shortageQty = Number(row.shortage_qty || row.shortageQty || 0);
+  return {
+    orderId: Number(row.order_id || row.orderId || 0),
+    orderNo: row.order_no || row.orderNo || '',
+    materialBarcode: row.material_barcode || row.materialBarcode || '',
+    materialName: row.material_name || row.materialName || '',
+    supplier: row.supplier || '',
+    unitSymbol: row.unit_symbol || row.unitSymbol || '',
+    requiredQty: Number(row.required_qty || row.requiredQty || 0),
+    allocatedQty: Number(row.allocated_qty || row.allocatedQty || 0),
+    consumedQty: Number(row.consumed_qty || row.consumedQty || 0),
+    availableQty: Number(row.available_qty || row.availableQty || 0),
+    shortageQty,
+    suggestedQty: shortageQty,
+    procurementState: row.procurement_state || row.procurementState || 'not_ordered',
+  };
+}
+
+function rowToItemBomLineDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id || 0),
+    itemId: Number(row.item_id || 0),
+    materialBarcode: row.material_barcode || '',
+    materialName: row.material_name || '',
+    quantityPerUnit: Number(row.quantity_per_unit || 0),
+    wastagePercent: Number(row.wastage_percent || 0),
+    unitId: row.unit_id || null,
+    unitSymbol: row.unit_symbol || '',
+    sortOrder: Number(row.sort_order || 0),
+    updatedAt: row.updated_at || row.created_at || null,
   };
 }
 
@@ -2073,10 +2184,107 @@ async function initDb() {
       variation_path_label TEXT DEFAULT '',
       variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
       quantity INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'notStarted',
+      status TEXT NOT NULL DEFAULT 'draft',
       created_at TEXT NOT NULL,
       start_date TEXT,
-      end_date TEXT
+      end_date TEXT,
+      previous_status TEXT,
+      hold_reason TEXT,
+      cancel_reason TEXT,
+      confirmed_at TEXT,
+      allocated_at TEXT,
+      production_started_at TEXT,
+      completed_at TEXT,
+      dispatched_at TEXT,
+      closed_at TEXT,
+      updated_by TEXT DEFAULT 'system'
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_status_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      from_status TEXT,
+      to_status TEXT NOT NULL,
+      reason TEXT,
+      changed_by TEXT DEFAULT 'system',
+      changed_by_user_id INTEGER REFERENCES users(id),
+      changed_by_name TEXT DEFAULT '',
+      changed_by_role TEXT DEFAULT '',
+      source TEXT DEFAULT 'api',
+      changed_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      actor_user_id INTEGER REFERENCES users(id),
+      actor_name TEXT DEFAULT '',
+      actor_role TEXT DEFAULT '',
+      old_value TEXT,
+      new_value TEXT,
+      metadata_json TEXT DEFAULT '{}',
+      source TEXT DEFAULT 'api',
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_bom_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      material_name TEXT DEFAULT '',
+      quantity_per_unit REAL NOT NULL DEFAULT 1,
+      wastage_percent REAL NOT NULL DEFAULT 0,
+      unit_id INTEGER REFERENCES units(id),
+      unit_symbol TEXT DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_id, material_barcode)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_material_requirements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      material_name TEXT DEFAULT '',
+      required_qty REAL NOT NULL DEFAULT 0,
+      allocated_qty REAL NOT NULL DEFAULT 0,
+      consumed_qty REAL NOT NULL DEFAULT 0,
+      available_qty REAL NOT NULL DEFAULT 0,
+      shortage_qty REAL NOT NULL DEFAULT 0,
+      unit_id INTEGER REFERENCES units(id),
+      unit_symbol TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(order_id, material_barcode)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_material_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      requirement_id INTEGER NOT NULL REFERENCES order_material_requirements(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      allocated_qty REAL NOT NULL DEFAULT 0,
+      consumed_qty REAL NOT NULL DEFAULT 0,
+      reservation_id INTEGER REFERENCES inventory_reservations(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
   `);
 
@@ -2129,6 +2337,49 @@ async function initDb() {
   await ensureColumnExists('items', 'quantity', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
+  await ensureColumnExists('orders', 'previous_status', 'TEXT');
+  await ensureColumnExists('orders', 'hold_reason', 'TEXT');
+  await ensureColumnExists('orders', 'cancel_reason', 'TEXT');
+  await ensureColumnExists('orders', 'confirmed_at', 'TEXT');
+  await ensureColumnExists('orders', 'allocated_at', 'TEXT');
+  await ensureColumnExists('orders', 'production_started_at', 'TEXT');
+  await ensureColumnExists('orders', 'completed_at', 'TEXT');
+  await ensureColumnExists('orders', 'dispatched_at', 'TEXT');
+  await ensureColumnExists('orders', 'closed_at', 'TEXT');
+  await ensureColumnExists('orders', 'updated_by', "TEXT DEFAULT 'system'");
+  await ensureColumnExists('order_status_history', 'changed_by_user_id', 'INTEGER');
+  await ensureColumnExists('order_status_history', 'changed_by_name', "TEXT DEFAULT ''");
+  await ensureColumnExists('order_status_history', 'changed_by_role', "TEXT DEFAULT ''");
+  await ensureColumnExists('order_status_history', 'source', "TEXT DEFAULT 'api'");
+  await ensureColumnExists('order_activity_log', 'old_value', 'TEXT');
+  await ensureColumnExists('order_activity_log', 'new_value', 'TEXT');
+  await ensureColumnExists('order_activity_log', 'metadata_json', "TEXT DEFAULT '{}'");
+  await ensureColumnExists('order_activity_log', 'source', "TEXT DEFAULT 'api'");
+  await run(`
+    UPDATE order_status_history
+    SET changed_by_name = COALESCE(changed_by_name, changed_by, '')
+    WHERE changed_by_name IS NULL OR TRIM(changed_by_name) = ''
+  `);
+  await run(`
+    UPDATE order_status_history
+    SET changed_by = COALESCE(changed_by, changed_by_name, 'system')
+    WHERE changed_by IS NULL OR TRIM(changed_by) = ''
+  `);
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id, changed_at DESC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id ON order_activity_log(order_id, created_at DESC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_bom_lines_item_id ON item_bom_lines(item_id, sort_order ASC, id ASC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_order_material_requirements_order_id ON order_material_requirements(order_id, id ASC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_order_material_allocations_order_id ON order_material_allocations(order_id, id ASC)',
+  );
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -2184,6 +2435,7 @@ async function initDb() {
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
   await ensureColumnExists('delete_requests', 'reviewed_note', "TEXT DEFAULT ''");
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
+  await migrateLegacyOrderStatuses();
   await seedRolePermissions();
   await seedPermissionTemplates();
 
@@ -2287,6 +2539,28 @@ async function ensureColumnExists(tableName, columnName, definition) {
   if (!hasColumn) {
     await run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
   }
+}
+
+async function migrateLegacyOrderStatuses() {
+  await run(
+    `
+    UPDATE orders
+    SET status = CASE status
+      WHEN 'notStarted' THEN 'draft'
+      WHEN 'inProgress' THEN 'inProduction'
+      WHEN 'delayed' THEN 'onHold'
+      WHEN 'completed' THEN 'completed'
+      ELSE status
+    END
+    `,
+  );
+  await run(
+    `
+    UPDATE orders
+    SET hold_reason = COALESCE(hold_reason, 'Migrated from delayed status')
+    WHERE status = 'onHold' AND (hold_reason IS NULL OR TRIM(hold_reason) = '')
+    `,
+  );
 }
 
 async function seedMaterialsIfEmpty() {
@@ -3049,8 +3323,1077 @@ async function getOrderRowById(id) {
   return get('SELECT * FROM orders WHERE id = ?', [id]);
 }
 
+const ORDER_STATUS = Object.freeze({
+  draft: 'draft',
+  confirmed: 'confirmed',
+  allocated: 'allocated',
+  inProduction: 'inProduction',
+  completed: 'completed',
+  dispatched: 'dispatched',
+  closed: 'closed',
+  onHold: 'onHold',
+  cancelled: 'cancelled',
+});
+
+const ACTIVE_ORDER_STATUSES = new Set(Object.values(ORDER_STATUS));
+
+const ORDER_TRANSITIONS = Object.freeze({
+  [ORDER_STATUS.draft]: new Set([ORDER_STATUS.confirmed, ORDER_STATUS.cancelled]),
+  [ORDER_STATUS.confirmed]: new Set([
+    ORDER_STATUS.allocated,
+    ORDER_STATUS.onHold,
+    ORDER_STATUS.cancelled,
+    ORDER_STATUS.draft,
+  ]),
+  [ORDER_STATUS.allocated]: new Set([
+    ORDER_STATUS.inProduction,
+    ORDER_STATUS.onHold,
+    ORDER_STATUS.confirmed,
+  ]),
+  [ORDER_STATUS.inProduction]: new Set([
+    ORDER_STATUS.completed,
+    ORDER_STATUS.onHold,
+  ]),
+  [ORDER_STATUS.completed]: new Set([
+    ORDER_STATUS.dispatched,
+    ORDER_STATUS.onHold,
+  ]),
+  [ORDER_STATUS.dispatched]: new Set([ORDER_STATUS.closed]),
+  [ORDER_STATUS.onHold]: new Set([ORDER_STATUS.cancelled]),
+  [ORDER_STATUS.cancelled]: new Set(),
+  [ORDER_STATUS.closed]: new Set(),
+});
+
+const ORDER_TRANSITION_ACTIONS = Object.freeze({
+  confirm: {
+    label: 'Confirm',
+    toStatus: ORDER_STATUS.confirmed,
+    needsReason: false,
+  },
+  allocate: {
+    label: 'Allocate',
+    toStatus: ORDER_STATUS.allocated,
+    needsReason: false,
+  },
+  'start-production': {
+    label: 'Start Production',
+    toStatus: ORDER_STATUS.inProduction,
+    needsReason: false,
+  },
+  complete: {
+    label: 'Mark Completed',
+    toStatus: ORDER_STATUS.completed,
+    needsReason: false,
+  },
+  dispatch: {
+    label: 'Dispatch',
+    toStatus: ORDER_STATUS.dispatched,
+    needsReason: false,
+  },
+  close: {
+    label: 'Close Order',
+    toStatus: ORDER_STATUS.closed,
+    needsReason: false,
+  },
+  hold: {
+    label: 'Hold',
+    toStatus: ORDER_STATUS.onHold,
+    needsReason: true,
+  },
+  resume: {
+    label: 'Resume',
+    toStatus: ORDER_STATUS.onHold,
+    needsReason: false,
+  },
+  cancel: {
+    label: 'Cancel',
+    toStatus: ORDER_STATUS.cancelled,
+    needsReason: true,
+  },
+  'revert-to-draft': {
+    label: 'Revert to Draft',
+    toStatus: ORDER_STATUS.draft,
+    needsReason: false,
+  },
+});
+
+function normalizeOrderStatus(status) {
+  if (status === 'notStarted') {
+    return ORDER_STATUS.draft;
+  }
+  if (status === 'inProgress') {
+    return ORDER_STATUS.inProduction;
+  }
+  if (status === 'delayed') {
+    return ORDER_STATUS.onHold;
+  }
+  if (ACTIVE_ORDER_STATUSES.has(status)) {
+    return status;
+  }
+  return ORDER_STATUS.draft;
+}
+
+function requiresReasonForTransition(targetStatus) {
+  return targetStatus === ORDER_STATUS.onHold || targetStatus === ORDER_STATUS.cancelled;
+}
+
+function assertValidOrderTransition({ fromStatus, toStatus }) {
+  if (fromStatus === ORDER_STATUS.onHold) {
+    return;
+  }
+  const allowed = ORDER_TRANSITIONS[fromStatus] || new Set();
+  if (!allowed.has(toStatus)) {
+    const error = new Error(`Transition from ${fromStatus} to ${toStatus} is not allowed.`);
+    error.statusCode = 409;
+    throw error;
+  }
+}
+
 async function getOrders() {
   return all('SELECT * FROM orders ORDER BY datetime(created_at) DESC, id DESC');
+}
+
+function normalizeOrderActor(actor, fallback = 'system') {
+  if (!actor || typeof actor !== 'object') {
+    return {
+      userId: null,
+      name: fallback,
+      role: fallback === 'system' ? 'system' : null,
+    };
+  }
+  const userId = Number(actor.userId || actor.id || 0);
+  const name = String(actor.name || actor.email || fallback || 'system').trim() || 'system';
+  const role = String(actor.role || '').trim() || (name.toLowerCase() === 'system' ? 'system' : null);
+  return {
+    userId: Number.isInteger(userId) && userId > 0 ? userId : null,
+    name,
+    role,
+  };
+}
+
+async function insertOrderStatusHistory({
+  orderId,
+  fromStatus,
+  toStatus,
+  reason = null,
+  actor = null,
+  source = 'api',
+}) {
+  const normalizedActor = normalizeOrderActor(actor, 'system');
+  await run(
+    `
+    INSERT INTO order_status_history (
+      order_id, from_status, to_status, reason, changed_by, changed_by_user_id,
+      changed_by_name, changed_by_role, source, changed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      orderId,
+      fromStatus || null,
+      toStatus,
+      reason || null,
+      normalizedActor.name,
+      normalizedActor.userId,
+      normalizedActor.name,
+      normalizedActor.role,
+      String(source || 'api'),
+      new Date().toISOString(),
+    ],
+  );
+}
+
+async function logOrderActivity({
+  orderId,
+  eventType,
+  title,
+  description = '',
+  actor = null,
+  oldValue = null,
+  newValue = null,
+  metadata = null,
+  source = 'api',
+  createdAt = null,
+}) {
+  const normalizedActor = normalizeOrderActor(actor, 'System');
+  await run(
+    `
+    INSERT INTO order_activity_log (
+      order_id, event_type, title, description, actor_user_id, actor_name, actor_role,
+      old_value, new_value, metadata_json, source, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      orderId,
+      String(eventType || '').trim(),
+      String(title || '').trim(),
+      String(description || '').trim(),
+      normalizedActor.userId,
+      normalizedActor.name,
+      normalizedActor.role,
+      oldValue == null ? null : String(oldValue),
+      newValue == null ? null : String(newValue),
+      JSON.stringify(metadata || {}),
+      String(source || 'api'),
+      createdAt || new Date().toISOString(),
+    ],
+  );
+}
+
+async function getOrderStatusHistory(orderId) {
+  return all(
+    `
+    SELECT *
+    FROM order_status_history
+    WHERE order_id = ?
+    ORDER BY datetime(changed_at) DESC, id DESC
+    `,
+    [orderId],
+  );
+}
+
+async function getOrderActivity(orderId) {
+  return all(
+    `
+    SELECT *
+    FROM order_activity_log
+    WHERE order_id = ?
+    ORDER BY datetime(created_at) DESC, id DESC
+    `,
+    [orderId],
+  );
+}
+
+function normalizeBomStatus({ requiredQty, allocatedQty, consumedQty, shortageQty }) {
+  const coveredQty = Math.max(0, Number(allocatedQty || 0) + Number(consumedQty || 0));
+  if (requiredQty <= 0) {
+    return 'pending';
+  }
+  if (shortageQty <= 0 && coveredQty >= requiredQty) {
+    if (Number(consumedQty || 0) >= requiredQty) {
+      return 'consumed';
+    }
+    return 'allocated';
+  }
+  if (coveredQty > 0 && shortageQty > 0) {
+    return 'partial';
+  }
+  if (shortageQty >= requiredQty) {
+    return 'short';
+  }
+  return 'pending';
+}
+
+function calculateRequirementSummary(requirements) {
+  const normalized = Array.isArray(requirements) ? requirements : [];
+  const totals = normalized.reduce(
+    (acc, row) => {
+      acc.requiredQty += Number(row.required_qty || row.requiredQty || 0);
+      acc.allocatedQty += Number(row.allocated_qty || row.allocatedQty || 0);
+      acc.consumedQty += Number(row.consumed_qty || row.consumedQty || 0);
+      acc.availableQty += Number(row.available_qty || row.availableQty || 0);
+      acc.shortageQty += Number(row.shortage_qty || row.shortageQty || 0);
+      return acc;
+    },
+    {
+      requiredQty: 0,
+      allocatedQty: 0,
+      consumedQty: 0,
+      availableQty: 0,
+      shortageQty: 0,
+    },
+  );
+  const materialCount = normalized.length;
+  const shortageCount = normalized.filter(
+    (row) => Number(row.shortage_qty || row.shortageQty || 0) > 0,
+  ).length;
+  let readiness = 'ready';
+  const coveredQty = totals.allocatedQty + totals.consumedQty;
+  if (materialCount === 0) {
+    readiness = 'no_bom';
+  } else if (shortageCount > 0 && coveredQty <= 0) {
+    readiness = 'blocked';
+  } else if (shortageCount > 0) {
+    readiness = 'partial';
+  }
+  return {
+    ...totals,
+    materialCount,
+    shortageCount,
+    readiness,
+  };
+}
+
+async function getItemBomLines(itemId) {
+  const normalizedItemId = Number(itemId);
+  if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
+    return [];
+  }
+  const explicitLines = await all(
+    `
+    SELECT *
+    FROM item_bom_lines
+    WHERE item_id = ?
+    ORDER BY sort_order ASC, id ASC
+    `,
+    [normalizedItemId],
+  );
+  if (explicitLines.length > 0) {
+    return explicitLines;
+  }
+  const fallbackRows = await all(
+    `
+    SELECT
+      linked_item_id AS item_id,
+      barcode AS material_barcode,
+      name AS material_name,
+      unit_id,
+      unit AS unit_symbol
+    FROM materials
+    WHERE linked_item_id = ?
+    ORDER BY LOWER(name) ASC
+    `,
+    [normalizedItemId],
+  );
+  return fallbackRows.map((row, index) => ({
+    id: null,
+    item_id: row.item_id,
+    material_barcode: row.material_barcode,
+    material_name: row.material_name,
+    quantity_per_unit: 1,
+    wastage_percent: 0,
+    unit_id: row.unit_id || null,
+    unit_symbol: row.unit_symbol || '',
+    sort_order: index,
+    created_at: null,
+    updated_at: null,
+  }));
+}
+
+async function replaceItemBomLines({
+  itemId,
+  lines,
+}) {
+  const normalizedItemId = Number(itemId);
+  if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
+    const error = new Error('Valid item id is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const item = await getItemRowById(normalizedItemId);
+  if (!item || Number(item.is_archived || 0) === 1) {
+    const error = new Error('Item not found or archived.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const rawLines = Array.isArray(lines) ? lines : [];
+  const normalizedLines = [];
+
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const rawLine = rawLines[index] || {};
+    const materialBarcode = String(rawLine.materialBarcode || '').trim();
+    const quantityPerUnit = Number(rawLine.quantityPerUnit || 0);
+    const wastagePercent = Number(rawLine.wastagePercent || 0);
+    if (!materialBarcode) {
+      continue;
+    }
+    if (!Number.isFinite(quantityPerUnit) || quantityPerUnit <= 0) {
+      const error = new Error('quantityPerUnit must be greater than 0.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const material = await getMaterialRowByBarcode(materialBarcode);
+    if (!material) {
+      const error = new Error(`Material ${materialBarcode} was not found.`);
+      error.statusCode = 404;
+      throw error;
+    }
+    normalizedLines.push({
+      materialBarcode,
+      materialName: String(material.name || '').trim(),
+      quantityPerUnit,
+      wastagePercent: Number.isFinite(wastagePercent) ? Math.max(0, wastagePercent) : 0,
+      unitId: material.unit_id || null,
+      unitSymbol: String(material.unit || '').trim(),
+      sortOrder: index,
+    });
+  }
+
+  await run('BEGIN TRANSACTION');
+  try {
+    await run('DELETE FROM item_bom_lines WHERE item_id = ?', [normalizedItemId]);
+    const now = new Date().toISOString();
+    for (const line of normalizedLines) {
+      await run(
+        `
+        INSERT INTO item_bom_lines (
+          item_id, material_barcode, material_name, quantity_per_unit, wastage_percent,
+          unit_id, unit_symbol, sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          normalizedItemId,
+          line.materialBarcode,
+          line.materialName,
+          line.quantityPerUnit,
+          line.wastagePercent,
+          line.unitId,
+          line.unitSymbol,
+          line.sortOrder,
+          now,
+          now,
+        ],
+      );
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  return getItemBomLines(normalizedItemId);
+}
+
+async function getOrderMaterialRequirements(orderId) {
+  return all(
+    `
+    SELECT *
+    FROM order_material_requirements
+    WHERE order_id = ?
+    ORDER BY id ASC
+    `,
+    [orderId],
+  );
+}
+
+async function getOrderProcurementSuggestions(orderId) {
+  return all(
+    `
+    SELECT
+      req.order_id,
+      ord.order_no,
+      req.material_barcode,
+      req.material_name,
+      mat.supplier,
+      req.unit_symbol,
+      req.required_qty,
+      req.allocated_qty,
+      req.consumed_qty,
+      req.available_qty,
+      req.shortage_qty,
+      mat.procurement_state
+    FROM order_material_requirements req
+    INNER JOIN orders ord ON ord.id = req.order_id
+    LEFT JOIN materials mat ON mat.barcode = req.material_barcode
+    WHERE req.order_id = ?
+      AND req.shortage_qty > 0
+    ORDER BY req.shortage_qty DESC, req.material_name ASC
+    `,
+    [orderId],
+  );
+}
+
+async function getAllOrderProcurementSuggestions() {
+  return all(
+    `
+    SELECT
+      req.order_id,
+      ord.order_no,
+      req.material_barcode,
+      req.material_name,
+      mat.supplier,
+      req.unit_symbol,
+      req.required_qty,
+      req.allocated_qty,
+      req.consumed_qty,
+      req.available_qty,
+      req.shortage_qty,
+      mat.procurement_state
+    FROM order_material_requirements req
+    INNER JOIN orders ord ON ord.id = req.order_id
+    LEFT JOIN materials mat ON mat.barcode = req.material_barcode
+    WHERE req.shortage_qty > 0
+    ORDER BY req.order_id DESC, req.shortage_qty DESC, req.material_name ASC
+    `,
+  );
+}
+
+async function syncOrderMaterialRequirements({
+  orderId,
+  now = new Date().toISOString(),
+  actor = null,
+  source = 'api',
+  logActivity = false,
+}) {
+  const normalizedOrderId = Number(orderId);
+  const order = await getOrderRowById(normalizedOrderId);
+  if (!order) {
+    const error = new Error('Order not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const bomLines = await getItemBomLines(order.item_id);
+  const aggregatedBomByBarcode = new Map();
+  for (const line of bomLines) {
+    const barcode = String(line.material_barcode || '').trim();
+    if (!barcode) {
+      continue;
+    }
+    const requiredQtyBase = Number(order.quantity || 0) * Number(line.quantity_per_unit || 0);
+    const wastageMultiplier = 1 + Math.max(0, Number(line.wastage_percent || 0)) / 100;
+    const requiredQty = Math.max(0, requiredQtyBase * wastageMultiplier);
+    if (!aggregatedBomByBarcode.has(barcode)) {
+      aggregatedBomByBarcode.set(barcode, {
+        barcode,
+        materialName: String(line.material_name || '').trim(),
+        unitId: line.unit_id || null,
+        unitSymbol: String(line.unit_symbol || '').trim(),
+        requiredQty: 0,
+      });
+    }
+    const entry = aggregatedBomByBarcode.get(barcode);
+    entry.requiredQty += requiredQty;
+  }
+  const existingRows = await getOrderMaterialRequirements(normalizedOrderId);
+  const existingByBarcode = new Map(
+    existingRows.map((row) => [String(row.material_barcode || '').trim(), row]),
+  );
+  const allocationRows = await all(
+    `
+    SELECT
+      material_barcode,
+      SUM(CASE WHEN status = 'active' THEN allocated_qty ELSE 0 END) AS allocated_qty,
+      SUM(consumed_qty) AS consumed_qty
+    FROM order_material_allocations
+    WHERE order_id = ? AND status IN ('active', 'consumed')
+    GROUP BY material_barcode
+    `,
+    [normalizedOrderId],
+  );
+  const allocationByBarcode = new Map(
+    allocationRows.map((row) => [
+      String(row.material_barcode || '').trim(),
+      {
+        allocatedQty: Math.max(0, Number(row.allocated_qty || 0)),
+        consumedQty: Math.max(0, Number(row.consumed_qty || 0)),
+      },
+    ]),
+  );
+  const activeBarcodes = new Set();
+
+  for (const line of aggregatedBomByBarcode.values()) {
+    const barcode = line.barcode;
+    activeBarcodes.add(barcode);
+    await recomputeMaterialInventorySummary(barcode, now);
+    const material = await getMaterialRowByBarcode(barcode);
+    const requiredQty = Math.max(0, Number(line.requiredQty || 0));
+    const availableQty = Math.max(
+      0,
+      Number(material?.available_to_promise_qty ?? Number(material?.on_hand_qty || 0) - Number(material?.reserved_qty || 0)),
+    );
+    const allocationSummary = allocationByBarcode.get(barcode) || {
+      allocatedQty: 0,
+      consumedQty: 0,
+    };
+    const allocatedQty = Math.min(requiredQty, allocationSummary.allocatedQty);
+    const consumedQty = Math.min(requiredQty, allocationSummary.consumedQty);
+    const coveredQty = Math.min(requiredQty, allocatedQty + consumedQty);
+    const shortageQty = Math.max(0, requiredQty - coveredQty);
+    const status = normalizeBomStatus({
+      requiredQty,
+      allocatedQty,
+      consumedQty,
+      shortageQty,
+    });
+    const materialName = String(material?.name || line.materialName || '').trim();
+    const unitId = material?.unit_id || line.unitId || null;
+    const unitSymbol = String(material?.unit || line.unitSymbol || '').trim();
+
+    await run(
+      `
+      INSERT INTO order_material_requirements (
+        order_id, item_id, material_barcode, material_name, required_qty, allocated_qty,
+        consumed_qty, available_qty, shortage_qty, unit_id, unit_symbol, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(order_id, material_barcode) DO UPDATE SET
+        item_id = excluded.item_id,
+        material_name = excluded.material_name,
+        required_qty = excluded.required_qty,
+        allocated_qty = excluded.allocated_qty,
+        consumed_qty = excluded.consumed_qty,
+        available_qty = excluded.available_qty,
+        shortage_qty = excluded.shortage_qty,
+        unit_id = excluded.unit_id,
+        unit_symbol = excluded.unit_symbol,
+        status = excluded.status,
+        updated_at = excluded.updated_at
+      `,
+      [
+        normalizedOrderId,
+        Number(order.item_id),
+        barcode,
+        materialName,
+        requiredQty,
+        allocatedQty,
+        consumedQty,
+        availableQty,
+        shortageQty,
+        unitId,
+        unitSymbol,
+        status,
+        now,
+        now,
+      ],
+    );
+  }
+
+  const staleRows = existingRows.filter(
+    (row) => !activeBarcodes.has(String(row.material_barcode || '').trim()),
+  );
+  for (const stale of staleRows) {
+    const allocatedQty = Math.max(0, Number(stale.allocated_qty || 0));
+    const consumedQty = Math.max(0, Number(stale.consumed_qty || 0));
+    if (allocatedQty <= 0 && consumedQty <= 0) {
+      await run('DELETE FROM order_material_requirements WHERE id = ?', [stale.id]);
+      continue;
+    }
+    await run(
+      `
+      UPDATE order_material_requirements
+      SET required_qty = 0,
+          available_qty = 0,
+          shortage_qty = 0,
+          status = 'orphaned',
+          updated_at = ?
+      WHERE id = ?
+      `,
+      [now, stale.id],
+    );
+  }
+
+  const refreshedRows = await getOrderMaterialRequirements(normalizedOrderId);
+  if (logActivity) {
+    const summary = calculateRequirementSummary(refreshedRows);
+    await logOrderActivity({
+      orderId: normalizedOrderId,
+      eventType: 'requirements_refreshed',
+      title: 'Material requirements refreshed',
+      description: `Calculated ${summary.materialCount} material line(s) with ${summary.shortageCount} shortage line(s).`,
+      actor,
+      metadata: summary,
+      source,
+      createdAt: now,
+    });
+  }
+  return refreshedRows;
+}
+
+async function allocateOrderMaterials({
+  orderId,
+  actor = null,
+  source = 'api',
+}) {
+  const normalizedOrderId = Number(orderId);
+  const now = new Date().toISOString();
+  const requirements = await syncOrderMaterialRequirements({
+    orderId: normalizedOrderId,
+    now,
+    actor,
+    source,
+  });
+  const actionableRows = requirements.filter((row) => Number(row.shortage_qty || 0) > 0);
+  let allocatedLineCount = 0;
+
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const row of actionableRows) {
+      const barcode = String(row.material_barcode || '').trim();
+      if (!barcode) {
+        continue;
+      }
+      await recomputeMaterialInventorySummary(barcode, now);
+      const material = await getMaterialRowByBarcode(barcode);
+      const availableQty = Math.max(
+        0,
+        Number(material?.available_to_promise_qty ?? Number(material?.on_hand_qty || 0) - Number(material?.reserved_qty || 0)),
+      );
+      const shortageQty = Math.max(0, Number(row.shortage_qty || 0));
+      const allocateQty = Math.min(shortageQty, availableQty);
+      if (allocateQty <= 0) {
+        continue;
+      }
+
+      await upsertInventoryStockPosition({
+        materialBarcode: barcode,
+        locationId: material?.location || 'MAIN',
+        lotCode: '',
+        unitId: material?.unit_id || row.unit_id || null,
+        reservedDelta: allocateQty,
+        now,
+      });
+      const reservationResult = await run(
+        `
+        INSERT INTO inventory_reservations (
+          material_barcode, reference_type, reference_id, reserved_qty, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'active', ?, ?)
+        `,
+        [
+          barcode,
+          'order_requirement',
+          `order:${normalizedOrderId}:material:${barcode}`,
+          allocateQty,
+          now,
+          now,
+        ],
+      );
+      await run(
+        `
+        INSERT INTO order_material_allocations (
+          order_id, requirement_id, material_barcode, allocated_qty, consumed_qty, reservation_id,
+          status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?)
+        `,
+        [
+          normalizedOrderId,
+          row.id,
+          barcode,
+          allocateQty,
+          reservationResult.lastID || null,
+          now,
+          now,
+        ],
+      );
+      await run(
+        `
+        INSERT INTO inventory_movements (
+          id, material_barcode, movement_type, qty, from_location_id, to_location_id,
+          reason_code, reference_type, reference_id, actor, lot_code, created_at
+        ) VALUES (?, ?, 'reserve', ?, NULL, ?, 'order_allocate', 'order', ?, ?, '', ?)
+        `,
+        [
+          crypto.randomUUID(),
+          barcode,
+          allocateQty,
+          material?.location || 'MAIN',
+          String(normalizedOrderId),
+          normalizeOrderActor(actor, 'system').name,
+          now,
+        ],
+      );
+      allocatedLineCount += 1;
+      await recomputeMaterialInventorySummary(barcode, now);
+    }
+
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  const refreshedRows = await syncOrderMaterialRequirements({
+    orderId: normalizedOrderId,
+    now,
+    actor,
+    source,
+  });
+  await logOrderActivity({
+    orderId: normalizedOrderId,
+    eventType: 'inventory_allocated',
+    title: 'Inventory allocated',
+    description: allocatedLineCount > 0
+      ? `Reserved materials for ${allocatedLineCount} requirement line(s).`
+      : 'No free stock was available to reserve.',
+    actor,
+    metadata: calculateRequirementSummary(refreshedRows),
+    source,
+    createdAt: now,
+  });
+  return refreshedRows;
+}
+
+async function assertOrderTransitionPreconditions({
+  orderId,
+  currentStatus,
+  targetStatus,
+  actor = null,
+  source = 'api',
+}) {
+  if (targetStatus !== ORDER_STATUS.allocated && targetStatus !== ORDER_STATUS.inProduction) {
+    return;
+  }
+  const requirements = await syncOrderMaterialRequirements({
+    orderId,
+    actor,
+    source,
+  });
+  if (requirements.length === 0 && targetStatus === ORDER_STATUS.allocated) {
+    const error = new Error('Cannot allocate order without BOM-linked material requirements.');
+    error.statusCode = 409;
+    throw error;
+  }
+  if (targetStatus === ORDER_STATUS.inProduction) {
+    if (currentStatus !== ORDER_STATUS.allocated) {
+      const error = new Error('Only allocated orders can start production.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const hasShortage = requirements.some((row) => Number(row.shortage_qty || 0) > 0);
+    if (hasShortage) {
+      const error = new Error('Cannot start production while material shortages remain.');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+}
+
+async function releaseOrderMaterials({
+  orderId,
+  actor = null,
+  source = 'api',
+}) {
+  const normalizedOrderId = Number(orderId);
+  const now = new Date().toISOString();
+  const reservations = await all(
+    `
+    SELECT *
+    FROM inventory_reservations
+    WHERE reference_type = 'order_requirement'
+      AND reference_id LIKE ?
+      AND status = 'active'
+      AND reserved_qty > 0
+    ORDER BY id ASC
+    `,
+    [`order:${normalizedOrderId}:%`],
+  );
+
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const reservation of reservations) {
+      const barcode = String(reservation.material_barcode || '').trim();
+      const qty = Math.max(0, Number(reservation.reserved_qty || 0));
+      if (!barcode || qty <= 0) {
+        continue;
+      }
+      const material = await getMaterialRowByBarcode(barcode);
+      await upsertInventoryStockPosition({
+        materialBarcode: barcode,
+        locationId: material?.location || 'MAIN',
+        lotCode: '',
+        unitId: material?.unit_id || null,
+        reservedDelta: -qty,
+        now,
+      });
+      await run(
+        `
+        UPDATE inventory_reservations
+        SET reserved_qty = 0,
+            status = 'released',
+            updated_at = ?
+        WHERE id = ?
+        `,
+        [now, reservation.id],
+      );
+      await run(
+        `
+        UPDATE order_material_allocations
+        SET status = 'released',
+            updated_at = ?
+        WHERE order_id = ?
+          AND (reservation_id = ? OR material_barcode = ?)
+          AND status = 'active'
+        `,
+        [now, normalizedOrderId, reservation.id, barcode],
+      );
+      await run(
+        `
+        INSERT INTO inventory_movements (
+          id, material_barcode, movement_type, qty, from_location_id, to_location_id,
+          reason_code, reference_type, reference_id, actor, lot_code, created_at
+        ) VALUES (?, ?, 'release', ?, ?, NULL, 'order_release', 'order', ?, ?, '', ?)
+        `,
+        [
+          crypto.randomUUID(),
+          barcode,
+          qty,
+          material?.location || 'MAIN',
+          String(normalizedOrderId),
+          normalizeOrderActor(actor, 'system').name,
+          now,
+        ],
+      );
+      await recomputeMaterialInventorySummary(barcode, now);
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  const refreshedRows = await syncOrderMaterialRequirements({
+    orderId: normalizedOrderId,
+    now,
+    actor,
+    source,
+  });
+  await logOrderActivity({
+    orderId: normalizedOrderId,
+    eventType: 'inventory_released',
+    title: 'Inventory released',
+    description: reservations.length > 0
+      ? `Released ${reservations.length} reservation(s) linked to this order.`
+      : 'No active reservations were found for this order.',
+    actor,
+    metadata: calculateRequirementSummary(refreshedRows),
+    source,
+    createdAt: now,
+  });
+  return refreshedRows;
+}
+
+async function consumeOrderMaterials({
+  orderId,
+  actor = null,
+  source = 'api',
+}) {
+  const normalizedOrderId = Number(orderId);
+  const now = new Date().toISOString();
+  const allocations = await all(
+    `
+    SELECT *
+    FROM order_material_allocations
+    WHERE order_id = ?
+      AND status = 'active'
+      AND allocated_qty > 0
+    ORDER BY id ASC
+    `,
+    [normalizedOrderId],
+  );
+
+  let consumedLineCount = 0;
+  let consumedTotalQty = 0;
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const allocation of allocations) {
+      const barcode = String(allocation.material_barcode || '').trim();
+      const qty = Math.max(0, Number(allocation.allocated_qty || 0));
+      if (!barcode || qty <= 0) {
+        continue;
+      }
+      const material = await getMaterialRowByBarcode(barcode);
+      await upsertInventoryStockPosition({
+        materialBarcode: barcode,
+        locationId: material?.location || 'MAIN',
+        lotCode: '',
+        unitId: material?.unit_id || null,
+        onHandDelta: -qty,
+        reservedDelta: -qty,
+        now,
+      });
+      await run(
+        `
+        UPDATE order_material_allocations
+        SET allocated_qty = 0,
+            consumed_qty = consumed_qty + ?,
+            status = 'consumed',
+            updated_at = ?
+        WHERE id = ?
+        `,
+        [qty, now, allocation.id],
+      );
+      if (allocation.reservation_id) {
+        await run(
+          `
+          UPDATE inventory_reservations
+          SET reserved_qty = 0,
+              status = 'consumed',
+              updated_at = ?
+          WHERE id = ?
+          `,
+          [now, allocation.reservation_id],
+        );
+      }
+      await run(
+        `
+        INSERT INTO inventory_movements (
+          id, material_barcode, movement_type, qty, from_location_id, to_location_id,
+          reason_code, reference_type, reference_id, actor, lot_code, created_at
+        ) VALUES (?, ?, 'consume', ?, ?, NULL, 'order_consume', 'order', ?, ?, '', ?)
+        `,
+        [
+          crypto.randomUUID(),
+          barcode,
+          qty,
+          material?.location || 'MAIN',
+          String(normalizedOrderId),
+          normalizeOrderActor(actor, 'system').name,
+          now,
+        ],
+      );
+      consumedLineCount += 1;
+      consumedTotalQty += qty;
+      await recomputeMaterialInventorySummary(barcode, now);
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  const refreshedRows = await syncOrderMaterialRequirements({
+    orderId: normalizedOrderId,
+    now,
+    actor,
+    source,
+  });
+  await logOrderActivity({
+    orderId: normalizedOrderId,
+    eventType: 'materials_consumed',
+    title: 'Materials consumed',
+    description: consumedLineCount > 0
+      ? `Consumed ${consumedTotalQty} unit(s) across ${consumedLineCount} material line(s).`
+      : 'No active allocated materials were available to consume.',
+    actor,
+    metadata: calculateRequirementSummary(refreshedRows),
+    source,
+    createdAt: now,
+  });
+  return refreshedRows;
+}
+
+async function refreshOrderProcurementSuggestions({
+  orderId,
+  actor = null,
+  source = 'api',
+}) {
+  const normalizedOrderId = Number(orderId);
+  const now = new Date().toISOString();
+  await syncOrderMaterialRequirements({
+    orderId: normalizedOrderId,
+    now,
+    actor,
+    source,
+  });
+  const suggestions = await getOrderProcurementSuggestions(normalizedOrderId);
+  const totalSuggestedQty = suggestions.reduce(
+    (sum, row) => sum + Math.max(0, Number(row.shortage_qty || 0)),
+    0,
+  );
+  await logOrderActivity({
+    orderId: normalizedOrderId,
+    eventType: 'procurement_suggestions_refreshed',
+    title: 'Procurement suggestions refreshed',
+    description: `Found ${suggestions.length} shortage suggestion(s) totaling ${totalSuggestedQty}.`,
+    actor,
+    metadata: {
+      suggestionCount: suggestions.length,
+      totalSuggestedQty,
+    },
+    source,
+    createdAt: now,
+  });
+  return suggestions;
 }
 
 async function saveOrder({
@@ -3065,9 +4408,11 @@ async function saveOrder({
   variationPathLabel = '',
   variationPathNodeIds = [],
   quantity,
-  status = 'notStarted',
+  status = 'draft',
   startDate = null,
   endDate = null,
+  actor = null,
+  source = 'api',
 }) {
   const trimmedOrderNo = String(orderNo || '').trim();
   const normalizedClientId = Number(clientId);
@@ -3079,8 +4424,8 @@ async function saveOrder({
   const trimmedClientCode = String(clientCode || '').trim();
   const trimmedItemName = String(itemName || '').trim();
   const trimmedVariationPathLabel = String(variationPathLabel || '').trim();
-  const allowedStatuses = new Set(['notStarted', 'inProgress', 'completed', 'delayed']);
-  const normalizedStatus = allowedStatuses.has(status) ? status : 'notStarted';
+  const normalizedStatus = normalizeOrderStatus(status);
+  const normalizedActor = normalizeOrderActor(actor, 'system');
 
   if (!trimmedOrderNo) {
     const error = new Error('Order number is required.');
@@ -3112,6 +4457,7 @@ async function saveOrder({
   );
 
   if (existing) {
+    const mergedQuantity = Number(existing.quantity || 0) + Math.round(normalizedQuantity);
     await run(
       `
       UPDATE orders
@@ -3120,7 +4466,8 @@ async function saveOrder({
           client_code = ?,
           item_name = ?,
           variation_path_label = ?,
-          variation_path_node_ids_json = ?
+          variation_path_node_ids_json = ?,
+          updated_by = ?
       WHERE id = ?
       `,
       [
@@ -3130,47 +4477,123 @@ async function saveOrder({
         trimmedItemName,
         trimmedVariationPathLabel,
         JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
+        normalizedActor.name,
         existing.id,
       ],
     );
+    await logOrderActivity({
+      orderId: existing.id,
+      eventType: 'field_updated',
+      title: 'Quantity updated',
+      description: `Quantity changed from ${Number(existing.quantity || 0)} to ${mergedQuantity}.`,
+      actor: normalizedActor,
+      oldValue: String(Number(existing.quantity || 0)),
+      newValue: String(mergedQuantity),
+      metadata: {
+        field: 'quantity',
+        reason: 'duplicate_order_merge',
+      },
+      source,
+      createdAt: now,
+    });
+    await syncOrderMaterialRequirements({
+      orderId: existing.id,
+      now,
+      actor: normalizedActor,
+      source,
+    });
     return getOrderRowById(existing.id);
   }
 
-  const result = await run(
-    `
-    INSERT INTO orders (
-      order_no, client_id, client_name, po_number, client_code, item_id, item_name,
-      variation_leaf_node_id, variation_path_label, variation_path_node_ids_json,
-      quantity, status, created_at, start_date, end_date
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      trimmedOrderNo,
-      normalizedClientId,
-      trimmedClientName,
-      trimmedPoNumber,
-      trimmedClientCode,
-      normalizedItemId,
-      trimmedItemName,
-      normalizedLeafId,
-      trimmedVariationPathLabel,
-      JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
-      Math.round(normalizedQuantity),
-      normalizedStatus,
-      now,
-      startDate || null,
-      endDate || null,
-    ],
-  );
-  return getOrderRowById(result.lastID);
+  await run('BEGIN TRANSACTION');
+  try {
+    const result = await run(
+      `
+      INSERT INTO orders (
+        order_no, client_id, client_name, po_number, client_code, item_id, item_name,
+        variation_leaf_node_id, variation_path_label, variation_path_node_ids_json,
+        quantity, status, created_at, start_date, end_date, updated_by
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        trimmedOrderNo,
+        normalizedClientId,
+        trimmedClientName,
+        trimmedPoNumber,
+        trimmedClientCode,
+        normalizedItemId,
+        trimmedItemName,
+        normalizedLeafId,
+        trimmedVariationPathLabel,
+        JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
+        Math.round(normalizedQuantity),
+        normalizedStatus,
+        now,
+        startDate || null,
+        endDate || null,
+        normalizedActor.name,
+      ],
+    );
+    if (result.lastID) {
+      await insertOrderStatusHistory({
+        orderId: result.lastID,
+        fromStatus: null,
+        toStatus: normalizedStatus,
+        actor: normalizedActor,
+        reason: 'Order created',
+        source,
+      });
+      await logOrderActivity({
+        orderId: result.lastID,
+        eventType: 'order_created',
+        title: 'Order created',
+        description: `Order created with status ${normalizedStatus}.`,
+        actor: normalizedActor,
+        metadata: {
+          orderNo: trimmedOrderNo,
+          clientId: normalizedClientId,
+          clientName: trimmedClientName,
+          poNumber: trimmedPoNumber,
+          clientCode: trimmedClientCode,
+          itemId: normalizedItemId,
+          itemName: trimmedItemName,
+          variationLeafNodeId: normalizedLeafId,
+          variationPathLabel: trimmedVariationPathLabel,
+          variationPathNodeIds: Array.isArray(variationPathNodeIds)
+            ? variationPathNodeIds
+            : [],
+          quantity: Math.round(normalizedQuantity),
+          status: normalizedStatus,
+          startDate: startDate || null,
+          endDate: endDate || null,
+        },
+        source,
+        createdAt: now,
+      });
+      await syncOrderMaterialRequirements({
+        orderId: result.lastID,
+        now,
+        actor: normalizedActor,
+        source,
+      });
+    }
+    await run('COMMIT');
+    return getOrderRowById(result.lastID);
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
 }
 
 async function updateOrderLifecycle({
   id,
-  status = 'notStarted',
+  toStatus = 'draft',
+  reason = '',
   startDate = null,
   endDate = null,
+  actor = null,
+  source = 'api',
 }) {
   const existing = await getOrderRowById(id);
   if (!existing) {
@@ -3178,13 +4601,251 @@ async function updateOrderLifecycle({
     error.statusCode = 404;
     throw error;
   }
-  const allowedStatuses = new Set(['notStarted', 'inProgress', 'completed', 'delayed']);
-  const normalizedStatus = allowedStatuses.has(status) ? status : 'notStarted';
-  await run(
-    'UPDATE orders SET status = ?, start_date = ?, end_date = ? WHERE id = ?',
-    [normalizedStatus, startDate || null, endDate || null, id],
-  );
-  return getOrderRowById(id);
+
+  const currentStatus = normalizeOrderStatus(existing.status);
+  let targetStatus = normalizeOrderStatus(toStatus);
+  if (currentStatus === ORDER_STATUS.onHold && targetStatus === ORDER_STATUS.onHold) {
+    targetStatus = normalizeOrderStatus(existing.previous_status || ORDER_STATUS.confirmed);
+  }
+
+  assertValidOrderTransition({
+    fromStatus: currentStatus,
+    toStatus: targetStatus,
+  });
+
+  const trimmedReason = String(reason || '').trim();
+  const normalizedActor = normalizeOrderActor(actor, 'system');
+  if (requiresReasonForTransition(targetStatus) && !trimmedReason) {
+    const error = new Error('Reason is required for this transition.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await assertOrderTransitionPreconditions({
+    orderId: id,
+    currentStatus,
+    targetStatus,
+    actor: normalizedActor,
+    source,
+  });
+
+  const nextPreviousStatus = targetStatus === ORDER_STATUS.onHold
+    ? currentStatus
+    : currentStatus === ORDER_STATUS.onHold
+      ? null
+      : existing.previous_status || null;
+  const holdReason = targetStatus === ORDER_STATUS.onHold ? trimmedReason : null;
+  const cancelReason = targetStatus === ORDER_STATUS.cancelled
+    ? trimmedReason
+    : existing.cancel_reason || null;
+  const now = new Date().toISOString();
+  const timestampByStatus = {
+    confirmed_at:
+      targetStatus === ORDER_STATUS.confirmed
+        ? now
+        : existing.confirmed_at || null,
+    allocated_at:
+      targetStatus === ORDER_STATUS.allocated
+        ? now
+        : existing.allocated_at || null,
+    production_started_at:
+      targetStatus === ORDER_STATUS.inProduction
+        ? now
+        : existing.production_started_at || null,
+    completed_at:
+      targetStatus === ORDER_STATUS.completed
+        ? now
+        : existing.completed_at || null,
+    dispatched_at:
+      targetStatus === ORDER_STATUS.dispatched
+        ? now
+        : existing.dispatched_at || null,
+    closed_at:
+      targetStatus === ORDER_STATUS.closed
+        ? now
+        : existing.closed_at || null,
+  };
+
+  await run('BEGIN TRANSACTION');
+  try {
+    await run(
+      `
+      UPDATE orders
+      SET status = ?,
+          previous_status = ?,
+          hold_reason = ?,
+          cancel_reason = ?,
+          start_date = ?,
+          end_date = ?,
+          confirmed_at = ?,
+          allocated_at = ?,
+          production_started_at = ?,
+          completed_at = ?,
+          dispatched_at = ?,
+          closed_at = ?,
+          updated_by = ?
+      WHERE id = ?
+      `,
+      [
+        targetStatus,
+        nextPreviousStatus,
+        holdReason,
+        cancelReason,
+        startDate || existing.start_date || null,
+        endDate || existing.end_date || null,
+        timestampByStatus.confirmed_at,
+        timestampByStatus.allocated_at,
+        timestampByStatus.production_started_at,
+        timestampByStatus.completed_at,
+        timestampByStatus.dispatched_at,
+        timestampByStatus.closed_at,
+        normalizedActor.name,
+        id,
+      ],
+    );
+    await insertOrderStatusHistory({
+      orderId: id,
+      fromStatus: currentStatus,
+      toStatus: targetStatus,
+      reason: trimmedReason || null,
+      actor: normalizedActor,
+      source,
+    });
+    await logOrderActivity({
+      orderId: id,
+      eventType: 'status_changed',
+      title: 'Status changed',
+      description: `Status changed from ${currentStatus} to ${targetStatus}.`,
+      actor: normalizedActor,
+      oldValue: currentStatus,
+      newValue: targetStatus,
+      metadata: {
+        reason: trimmedReason || null,
+        startDate: startDate || existing.start_date || null,
+        endDate: endDate || existing.end_date || null,
+      },
+      source,
+      createdAt: now,
+    });
+    if (targetStatus === ORDER_STATUS.onHold && trimmedReason) {
+      await logOrderActivity({
+        orderId: id,
+        eventType: 'hold_applied',
+        title: 'Order put on hold',
+        description: trimmedReason,
+        actor: normalizedActor,
+        metadata: { reason: trimmedReason },
+        source,
+        createdAt: now,
+      });
+    }
+    if (targetStatus === ORDER_STATUS.cancelled && trimmedReason) {
+      await logOrderActivity({
+        orderId: id,
+        eventType: 'cancelled',
+        title: 'Order cancelled',
+        description: trimmedReason,
+        actor: normalizedActor,
+        metadata: { reason: trimmedReason },
+        source,
+        createdAt: now,
+      });
+    }
+    await syncOrderMaterialRequirements({
+      orderId: id,
+      now,
+      actor: normalizedActor,
+      source,
+    });
+    await run('COMMIT');
+    return getOrderRowById(id);
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+function resolveTransitionTarget(action) {
+  return ORDER_TRANSITION_ACTIONS[action]?.toStatus || null;
+}
+
+async function transitionOrderByAction({
+  id,
+  action,
+  reason = '',
+  startDate = null,
+  endDate = null,
+  actor = null,
+  source = 'api',
+}) {
+  const toStatus = resolveTransitionTarget(action);
+  if (!toStatus) {
+    const error = new Error('Unknown order transition action.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return updateOrderLifecycle({
+    id,
+    toStatus,
+    reason,
+    startDate,
+    endDate,
+    actor,
+    source,
+  });
+}
+
+function getOrderTransitionOptions(orderRow) {
+  const currentStatus = normalizeOrderStatus(orderRow?.status);
+  const previousStatus = normalizeOrderStatus(orderRow?.previous_status || ORDER_STATUS.confirmed);
+  if (currentStatus === ORDER_STATUS.cancelled || currentStatus === ORDER_STATUS.closed) {
+    return [];
+  }
+  if (currentStatus === ORDER_STATUS.draft) {
+    return [{ action: 'confirm' }, { action: 'cancel' }];
+  }
+  if (currentStatus === ORDER_STATUS.confirmed) {
+    return [
+      { action: 'allocate' },
+      { action: 'hold' },
+      { action: 'cancel' },
+      { action: 'revert-to-draft' },
+    ];
+  }
+  if (currentStatus === ORDER_STATUS.allocated) {
+    return [{ action: 'start-production' }, { action: 'hold' }, { action: 'revert-to-draft' }];
+  }
+  if (currentStatus === ORDER_STATUS.inProduction) {
+    return [{ action: 'complete' }, { action: 'hold' }];
+  }
+  if (currentStatus === ORDER_STATUS.completed) {
+    return [{ action: 'dispatch' }, { action: 'hold' }];
+  }
+  if (currentStatus === ORDER_STATUS.dispatched) {
+    return [{ action: 'close' }];
+  }
+  if (currentStatus === ORDER_STATUS.onHold) {
+    const resumeToStatus = previousStatus === ORDER_STATUS.closed || previousStatus === ORDER_STATUS.cancelled
+      ? ORDER_STATUS.confirmed
+      : previousStatus;
+    return [{ action: 'resume', resumeToStatus }, { action: 'cancel' }];
+  }
+  return [];
+}
+
+function rowToOrderTransitionOptionDto(option) {
+  const action = option?.action || '';
+  const transition = ORDER_TRANSITION_ACTIONS[action];
+  if (!transition) {
+    return null;
+  }
+  const resumeToStatus = option?.resumeToStatus || null;
+  return {
+    action,
+    label: resumeToStatus ? `${transition.label} to ${resumeToStatus}` : transition.label,
+    toStatus: resumeToStatus || transition.toStatus,
+    transitionStatus: transition.toStatus,
+    needsReason: transition.needsReason,
+  };
 }
 
 async function findGroupDuplicate({ name, parentGroupId = null, excludeId = null }) {
@@ -7563,9 +9224,281 @@ app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
   }
 });
 
+app.get('/api/orders/procurement-suggestions', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orders = await getOrders();
+    for (const order of orders) {
+      await syncOrderMaterialRequirements({
+        orderId: Number(order.id),
+        source: 'ui',
+      });
+    }
+    const rows = await getAllOrderProcurementSuggestions();
+    res.json({
+      success: true,
+      suggestions: rows.map(rowToOrderProcurementSuggestionDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      suggestions: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/material-requirements', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        requirements: [],
+        summary: null,
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const rows = await syncOrderMaterialRequirements({
+      orderId,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      requirements: rows.map(rowToOrderMaterialRequirementDto),
+      summary: calculateRequirementSummary(rows),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requirements: [],
+      summary: null,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/procurement-suggestions', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        suggestions: [],
+        error: 'Order not found.',
+      });
+      return;
+    }
+    await syncOrderMaterialRequirements({
+      orderId,
+      source: 'ui',
+    });
+    const rows = await getOrderProcurementSuggestions(orderId);
+    res.json({
+      success: true,
+      suggestions: rows.map(rowToOrderProcurementSuggestionDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      suggestions: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/procurement-suggestions/refresh', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        suggestions: [],
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const rows = await refreshOrderProcurementSuggestions({
+      orderId,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      suggestions: rows.map(rowToOrderProcurementSuggestionDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      suggestions: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/check-availability', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        requirements: [],
+        summary: null,
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const rows = await syncOrderMaterialRequirements({
+      orderId,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+      logActivity: true,
+    });
+    res.json({
+      success: true,
+      requirements: rows.map(rowToOrderMaterialRequirementDto),
+      summary: calculateRequirementSummary(rows),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requirements: [],
+      summary: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/allocate-materials', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        requirements: [],
+        summary: null,
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const rows = await allocateOrderMaterials({
+      orderId,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      requirements: rows.map(rowToOrderMaterialRequirementDto),
+      summary: calculateRequirementSummary(rows),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requirements: [],
+      summary: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/release-materials', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        requirements: [],
+        summary: null,
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const rows = await releaseOrderMaterials({
+      orderId,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      requirements: rows.map(rowToOrderMaterialRequirementDto),
+      summary: calculateRequirementSummary(rows),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requirements: [],
+      summary: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/consume-materials', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        requirements: [],
+        summary: null,
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const rows = await consumeOrderMaterials({
+      orderId,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      requirements: rows.map(rowToOrderMaterialRequirementDto),
+      summary: calculateRequirementSummary(rows),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requirements: [],
+      summary: null,
+      error: error.message,
+    });
+  }
+});
+
 app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
   try {
-    const order = await saveOrder(req.body || {});
+    const order = await saveOrder({
+      ...(req.body || {}),
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
     res.status(201).json({ success: true, order: rowToOrderDto(order), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -7576,11 +9509,167 @@ app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
   }
 });
 
-app.patch('/api/orders/:id/lifecycle', requirePermission('config.write'), async (req, res) => {
+async function handleOrderTransitionRequest(req, res) {
   try {
+    const { toStatus, reason, startDate, endDate } = req.body || {};
+    if (!toStatus) {
+      res.status(400).json({
+        success: false,
+        order: null,
+        error: 'toStatus is required.',
+      });
+      return;
+    }
     const order = await updateOrderLifecycle({
-      ...(req.body || {}),
       id: Number(req.params.id),
+      toStatus,
+      reason,
+      startDate,
+      endDate,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({ success: true, order: rowToOrderDto(order), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      order: null,
+      error: error.message,
+    });
+  }
+}
+
+app.post('/api/orders/:id/transition', requirePermission('config.write'), handleOrderTransitionRequest);
+app.patch('/api/orders/:id/transition', requirePermission('config.write'), handleOrderTransitionRequest);
+
+app.get('/api/orders/:id/transition-options', requirePermission('config.read'), async (req, res) => {
+  try {
+    const order = await getOrderRowById(Number(req.params.id));
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        options: [],
+        error: 'Order not found.',
+      });
+      return;
+    }
+    const options = getOrderTransitionOptions(order)
+      .map((entry) => rowToOrderTransitionOptionDto(entry))
+      .filter(Boolean);
+    res.json({
+      success: true,
+      options,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      options: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/status-history', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const rows = await getOrderStatusHistory(orderId);
+    res.json({
+      success: true,
+      history: rows.map(rowToOrderStatusHistoryDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      history: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/activity', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const rows = await getOrderActivity(orderId);
+    res.json({
+      success: true,
+      events: rows.map(rowToOrderActivityDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      events: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/notes', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const note = String(req.body?.note || '').trim();
+    if (!note) {
+      res.status(400).json({
+        success: false,
+        event: null,
+        error: 'note is required.',
+      });
+      return;
+    }
+    const order = await getOrderRowById(orderId);
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        event: null,
+        error: 'Order not found.',
+      });
+      return;
+    }
+    await logOrderActivity({
+      orderId,
+      eventType: 'note_added',
+      title: 'Note added',
+      description: note,
+      actor: req.user
+          ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+          : null,
+      metadata: { note },
+      source: 'ui',
+    });
+    const rows = await getOrderActivity(orderId);
+    const event = rows.length > 0 ? rowToOrderActivityDto(rows[0]) : null;
+    res.status(201).json({ success: true, event, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      event: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/:action', requirePermission('config.write'), async (req, res, next) => {
+  const action = String(req.params.action || '').trim();
+  const allowedActions = new Set(Object.keys(ORDER_TRANSITION_ACTIONS));
+  if (!allowedActions.has(action)) {
+    next();
+    return;
+  }
+  try {
+    const order = await transitionOrderByAction({
+      id: Number(req.params.id),
+      action,
+      reason: req.body?.reason,
+      startDate: req.body?.startDate,
+      endDate: req.body?.endDate,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
     });
     res.json({ success: true, order: rowToOrderDto(order), error: null });
   } catch (error) {
@@ -7731,6 +9820,60 @@ app.patch('/api/items/:id/restore', requirePermission('config.write'), async (re
     res.json({ success: true, item: await rowToItemDto(updated), error: null });
   } catch (error) {
     res.status(500).json({ success: false, item: null, error: error.message });
+  }
+});
+
+app.get('/api/items/:id/bom', requirePermission('config.read'), async (req, res) => {
+  try {
+    const itemId = Number(req.params.id);
+    const item = await getItemRowById(itemId);
+    if (!item) {
+      res.status(404).json({ success: false, lines: [], error: 'Item not found.' });
+      return;
+    }
+    const lines = await getItemBomLines(itemId);
+    res.json({
+      success: true,
+      lines: lines.map(rowToItemBomLineDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      lines: [],
+      error: error.message,
+    });
+  }
+});
+
+app.put('/api/items/:id/bom', requirePermission('config.write'), async (req, res) => {
+  try {
+    const itemId = Number(req.params.id);
+    const lines = await replaceItemBomLines({
+      itemId,
+      lines: req.body?.lines,
+    });
+    const orderRows = await all('SELECT id FROM orders WHERE item_id = ?', [itemId]);
+    for (const row of orderRows) {
+      await syncOrderMaterialRequirements({
+        orderId: Number(row.id),
+        actor: req.user
+          ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+          : null,
+        source: 'ui',
+      });
+    }
+    res.json({
+      success: true,
+      lines: lines.map(rowToItemBomLineDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      lines: [],
+      error: error.message,
+    });
   }
 });
 
@@ -8346,6 +10489,11 @@ async function resetAndSeedDemoData() {
   await run('DELETE FROM pipeline_runs');
   await run('DELETE FROM pipeline_templates');
   await run('DELETE FROM orders');
+  await run('DELETE FROM order_status_history');
+  await run('DELETE FROM order_activity_log');
+  await run('DELETE FROM order_material_allocations');
+  await run('DELETE FROM order_material_requirements');
+  await run('DELETE FROM item_bom_lines');
   await run('DELETE FROM item_variation_values');
   await run('DELETE FROM item_variations');
   await run('DELETE FROM item_variation_dimensions');
@@ -8420,6 +10568,21 @@ module.exports = {
   ensureDemoDataset,
   resetAndSeedDemoData,
   updateOrderLifecycle,
+  transitionOrderByAction,
+  getOrderTransitionOptions,
+  getItemBomLines,
+  replaceItemBomLines,
+  getOrderMaterialRequirements,
+  getOrderProcurementSuggestions,
+  getAllOrderProcurementSuggestions,
+  refreshOrderProcurementSuggestions,
+  syncOrderMaterialRequirements,
+  allocateOrderMaterials,
+  releaseOrderMaterials,
+  consumeOrderMaterials,
+  calculateRequirementSummary,
+  getOrderStatusHistory,
+  getOrderActivity,
   getOrders,
   getUnitsWithUsage,
   getGroupsWithUsage,
@@ -8431,5 +10594,11 @@ module.exports = {
   updateMaterialGroupConfiguration,
   rowToClientDto,
   rowToOrderDto,
+  rowToOrderMaterialRequirementDto,
+  rowToOrderProcurementSuggestionDto,
+  rowToItemBomLineDto,
+  rowToOrderStatusHistoryDto,
+  rowToOrderActivityDto,
+  rowToOrderTransitionOptionDto,
   rowToItemDto,
 };

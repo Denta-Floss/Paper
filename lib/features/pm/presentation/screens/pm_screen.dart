@@ -2056,11 +2056,16 @@ class _PMPropertyPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF5B21B6),
-              fontWeight: FontWeight.w700,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF5B21B6),
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -2409,19 +2414,23 @@ class PMFigmaSegmentedControl extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
           children: [
-            _PMFigmaSegmentChip(
-              label: 'Group',
-              isSelected: value == 'group',
-              onTap: () => onChanged('group'),
-              variant: variant,
+            Expanded(
+              child: _PMFigmaSegmentChip(
+                label: 'Group',
+                isSelected: value == 'group',
+                onTap: () => onChanged('group'),
+                variant: variant,
+              ),
             ),
-            _PMFigmaSegmentChip(
-              label: 'Item',
-              isSelected: value == 'item',
-              onTap: () => onChanged('item'),
-              variant: variant,
+            Expanded(
+              child: _PMFigmaSegmentChip(
+                label: 'Item',
+                isSelected: value == 'item',
+                onTap: () => onChanged('item'),
+                variant: variant,
+              ),
             ),
           ],
         ),
@@ -2456,33 +2465,33 @@ class _PMFigmaSegmentChip extends StatelessWidget {
         ? Colors.white
         : const Color(0xFF1100FF);
 
-    return Padding(
-      padding: EdgeInsets.only(right: label == 'Item' ? 0 : 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(isSelected ? 20 : 22),
-          onTap: onTap,
-          child: Ink(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? (usesGradient ? null : Colors.white)
-                  : const Color(0xFFF5F7F9),
-              gradient: isSelected && usesGradient ? gradient : null,
-              borderRadius: BorderRadius.circular(isSelected ? 20 : 22),
-              boxShadow: isSelected
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x33000000),
-                        blurRadius: 2,
-                        offset: Offset(0, 1),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Center(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(isSelected ? 20 : 22),
+        onTap: onTap,
+        child: Ink(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (usesGradient ? null : Colors.white)
+                : const Color(0xFFF5F7F9),
+            gradient: isSelected && usesGradient ? gradient : null,
+            borderRadius: BorderRadius.circular(isSelected ? 20 : 22),
+            boxShadow: isSelected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
               child: Text(
                 label,
                 style: TextStyle(

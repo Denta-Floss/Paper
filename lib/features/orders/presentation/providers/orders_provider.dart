@@ -83,6 +83,149 @@ class OrdersProvider extends ChangeNotifier {
     return _save(() => _repository.updateOrderLifecycle(input));
   }
 
+  Future<OrderEntry?> transitionOrderByAction({
+    required int orderId,
+    required String action,
+    String? reason,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    return _save(
+      () => _repository.transitionOrderByAction(
+        orderId: orderId,
+        action: action,
+        reason: reason,
+        startDate: startDate,
+        endDate: endDate,
+      ),
+    );
+  }
+
+  Future<List<OrderActivityEntry>> getOrderActivity(int orderId) async {
+    try {
+      return await _repository.getOrderActivity(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <OrderActivityEntry>[];
+    }
+  }
+
+  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId) async {
+    try {
+      return await _repository.getOrderStatusHistory(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <OrderStatusHistoryEntry>[];
+    }
+  }
+
+  Future<List<OrderTransitionOption>> getOrderTransitionOptions(int orderId) async {
+    try {
+      return await _repository.getOrderTransitionOptions(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <OrderTransitionOption>[];
+    }
+  }
+
+  Future<OrderActivityEntry?> addOrderNote(AddOrderNoteInput input) async {
+    try {
+      final event = await _repository.addOrderNote(input);
+      return event;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<OrderMaterialSnapshot?> getOrderMaterialRequirements(int orderId) async {
+    try {
+      return await _repository.getOrderMaterialRequirements(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<OrderMaterialSnapshot?> checkOrderMaterialAvailability(int orderId) async {
+    try {
+      return await _repository.checkOrderMaterialAvailability(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<OrderMaterialSnapshot?> allocateOrderMaterials(int orderId) async {
+    try {
+      return await _repository.allocateOrderMaterials(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<OrderMaterialSnapshot?> releaseOrderMaterials(int orderId) async {
+    try {
+      return await _repository.releaseOrderMaterials(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<OrderMaterialSnapshot?> consumeOrderMaterials(int orderId) async {
+    try {
+      return await _repository.consumeOrderMaterials(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<List<OrderProcurementSuggestionEntry>> getOrderProcurementSuggestions(
+    int orderId,
+  ) async {
+    try {
+      return await _repository.getOrderProcurementSuggestions(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <OrderProcurementSuggestionEntry>[];
+    }
+  }
+
+  Future<List<OrderProcurementSuggestionEntry>> refreshOrderProcurementSuggestions(
+    int orderId,
+  ) async {
+    try {
+      return await _repository.refreshOrderProcurementSuggestions(orderId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <OrderProcurementSuggestionEntry>[];
+    }
+  }
+
+  Future<List<OrderProcurementSuggestionEntry>> getAllProcurementSuggestions() async {
+    try {
+      return await _repository.getAllProcurementSuggestions();
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <OrderProcurementSuggestionEntry>[];
+    }
+  }
+
   Future<OrderEntry?> _save(Future<OrderEntry> Function() action) async {
     _isSaving = true;
     _errorMessage = null;

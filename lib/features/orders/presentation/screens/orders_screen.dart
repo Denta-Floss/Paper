@@ -570,7 +570,7 @@ class _FilterChipButton<T> extends StatelessWidget {
           ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
           children: [
             if (isFirst) ...[
               const Icon(
@@ -580,22 +580,31 @@ class _FilterChipButton<T> extends StatelessWidget {
               ),
               const SizedBox(width: 7),
             ],
-            Text(
-              '$label: ',
-              style: const TextStyle(
-                color: Color(0xFF5F6775),
-                fontFamily: 'Segoe UI',
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+            Flexible(
+              fit: FlexFit.loose,
+              child: Text(
+                '$label: ',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF5F6775),
+                  fontFamily: 'Segoe UI',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            Text(
-              valueLabel,
-              style: const TextStyle(
-                color: Color(0xFF1C2632),
-                fontFamily: 'Segoe UI',
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
+            Flexible(
+              child: Text(
+                valueLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF1C2632),
+                  fontFamily: 'Segoe UI',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
             const SizedBox(width: 2),
@@ -657,7 +666,7 @@ class _OrdersSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const cardWidth = 338.0;
+    const cardWidth = 220.0;
     return SizedBox(
       height: 66,
       child: SingleChildScrollView(
@@ -677,20 +686,30 @@ class _OrdersSummaryRow extends StatelessWidget {
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
-                label: 'Not Started',
-                value: summary.notStarted,
-                isActive: activeStatus == OrderStatus.notStarted,
-                onTap: () => onStatusSelected(OrderStatus.notStarted),
+                label: 'Draft',
+                value: summary.draft,
+                isActive: activeStatus == OrderStatus.draft,
+                onTap: () => onStatusSelected(OrderStatus.draft),
               ),
             ),
             const SizedBox(width: 12),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
-                label: 'In Progress',
-                value: summary.inProgress,
-                isActive: activeStatus == OrderStatus.inProgress,
-                onTap: () => onStatusSelected(OrderStatus.inProgress),
+                label: 'Confirmed',
+                value: summary.confirmed,
+                isActive: activeStatus == OrderStatus.confirmed,
+                onTap: () => onStatusSelected(OrderStatus.confirmed),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: cardWidth,
+              child: _SummaryCard(
+                label: 'In Production',
+                value: summary.inProduction,
+                isActive: activeStatus == OrderStatus.inProduction,
+                onTap: () => onStatusSelected(OrderStatus.inProduction),
               ),
             ),
             const SizedBox(width: 12),
@@ -707,10 +726,10 @@ class _OrdersSummaryRow extends StatelessWidget {
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
-                label: 'Delayed',
-                value: summary.delayed,
-                isActive: activeStatus == OrderStatus.delayed,
-                onTap: () => onStatusSelected(OrderStatus.delayed),
+                label: 'On Hold',
+                value: summary.onHold,
+                isActive: activeStatus == OrderStatus.onHold,
+                onTap: () => onStatusSelected(OrderStatus.onHold),
               ),
             ),
           ],
@@ -1056,12 +1075,22 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = switch (status) {
-      OrderStatus.notStarted => (
+      OrderStatus.draft => (
         bg: const Color(0xFFFDF5F0),
         border: const Color(0xFFF8DBB9),
         text: const Color(0xFF824C00),
       ),
-      OrderStatus.inProgress => (
+      OrderStatus.confirmed => (
+        bg: const Color(0xFFF0F4FF),
+        border: const Color(0xFFC8D4FF),
+        text: const Color(0xFF2F4FB8),
+      ),
+      OrderStatus.allocated => (
+        bg: const Color(0xFFF0FBFF),
+        border: const Color(0xFFBFE9F8),
+        text: const Color(0xFF0B6B8B),
+      ),
+      OrderStatus.inProduction => (
         bg: const Color(0xFFF0F6FD),
         border: const Color(0xFFB9CFF8),
         text: const Color(0xFF003BFB),
@@ -1071,10 +1100,25 @@ class _StatusPill extends StatelessWidget {
         border: const Color(0xFFB5E5C0),
         text: const Color(0xFF007D30),
       ),
-      OrderStatus.delayed => (
+      OrderStatus.dispatched => (
+        bg: const Color(0xFFF4F6FF),
+        border: const Color(0xFFD4DAFF),
+        text: const Color(0xFF4B50B9),
+      ),
+      OrderStatus.closed => (
+        bg: const Color(0xFFF4F4F5),
+        border: const Color(0xFFD4D4D8),
+        text: const Color(0xFF3F3F46),
+      ),
+      OrderStatus.onHold => (
         bg: const Color(0xFFFDF0F0),
         border: const Color(0xFFFF8C8C),
         text: const Color(0xFFDC0000),
+      ),
+      OrderStatus.cancelled => (
+        bg: const Color(0xFFFEF2F2),
+        border: const Color(0xFFFECACA),
+        text: const Color(0xFFB91C1C),
       ),
     };
 
@@ -1189,7 +1233,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   int? _selectedClientId;
   int? _selectedItemId;
   final Map<String, int> _selectionState = <String, int>{};
-  OrderStatus _selectedStatus = OrderStatus.notStarted;
   DateTime? _startDate;
   DateTime? _endDate;
   late List<_CompletionShortcutPreset> _completionShortcuts;
@@ -1215,14 +1258,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _startDateController = TextEditingController();
     _endDateController = TextEditingController();
     _completionShortcuts = const <_CompletionShortcutPreset>[
-      _CompletionShortcutPreset(
-        amount: 3,
-        unit: _CompletionShortcutUnit.days,
-      ),
-      _CompletionShortcutPreset(
-        amount: 3,
-        unit: _CompletionShortcutUnit.weeks,
-      ),
+      _CompletionShortcutPreset(amount: 3, unit: _CompletionShortcutUnit.days),
+      _CompletionShortcutPreset(amount: 3, unit: _CompletionShortcutUnit.weeks),
     ];
   }
 
@@ -1454,36 +1491,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               width: fieldWidth,
                               child: _OrderEditorField(
                                 label: 'Status',
-                                child: SearchableSelectField<OrderStatus>(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-status-field',
-                                  ),
-                                  tapTargetKey: const ValueKey<String>(
-                                    'orders-editor-status-field',
-                                  ),
-                                  value: _selectedStatus,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Select',
-                                  ),
-                                  dialogTitle: 'Status',
-                                  searchHintText: 'Search status',
-                                  options: OrderStatus.values
-                                      .map(
-                                        (status) =>
-                                            SearchableSelectOption<OrderStatus>(
-                                              value: status,
-                                              label: status.label,
-                                            ),
-                                      )
-                                      .toList(growable: false),
-                                  onChanged: (value) {
-                                    if (value == null) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _selectedStatus = value;
-                                    });
-                                  },
+                                child: TextFormField(
+                                  initialValue: OrderStatus.draft.label,
+                                  readOnly: true,
+                                  decoration: _inputDecoration(),
                                 ),
                               ),
                             ),
@@ -1529,8 +1540,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                       onSelected: (value) {
                                         setState(() {
                                           _endDate = value;
-                                          _endDateController.text =
-                                              _formatDate(value);
+                                          _endDateController.text = _formatDate(
+                                            value,
+                                          );
                                         });
                                       },
                                     ),
@@ -1549,8 +1561,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                           key: ValueKey<String>(
                                             'orders-editor-shortcut-$index',
                                           ),
-                                          label: _completionShortcuts[index]
-                                              .label,
+                                          label:
+                                              _completionShortcuts[index].label,
                                           onTap: () => _applyCompletionShortcut(
                                             _completionShortcuts[index],
                                           ),
@@ -1644,7 +1656,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         variationPathLabel: selectedLeaf.displayName,
         variationPathNodeIds: _selectedPathNodeIds(selectedLeaf),
         quantity: int.parse(_quantityController.text.trim()),
-        status: _selectedStatus,
+        status: OrderStatus.draft,
         startDate: _startDate,
         endDate: _endDate,
       ),
@@ -2018,10 +2030,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final updatedShortcuts = await showDialog<List<_CompletionShortcutPreset>>(
       context: context,
       builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 32,
-        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: _CompletionShortcutEditorDialog(
@@ -2051,7 +2060,8 @@ class _OrderLifecycleEditorSheet extends StatefulWidget {
 
 class _OrderLifecycleEditorSheetState
     extends State<_OrderLifecycleEditorSheet> {
-  late OrderStatus _status;
+  late OrderEntry _currentOrder;
+  late Future<List<OrderTransitionOption>> _transitionOptionsFuture;
   late final TextEditingController _startDateController;
   late final TextEditingController _endDateController;
   DateTime? _startDate;
@@ -2060,9 +2070,12 @@ class _OrderLifecycleEditorSheetState
   @override
   void initState() {
     super.initState();
-    _status = widget.order.status;
-    _startDate = widget.order.startDate;
-    _endDate = widget.order.endDate;
+    _currentOrder = widget.order;
+    _transitionOptionsFuture = context
+        .read<OrdersProvider>()
+        .getOrderTransitionOptions(widget.order.id);
+    _startDate = _currentOrder.startDate;
+    _endDate = _currentOrder.endDate;
     _startDateController = TextEditingController(
       text: _startDate == null ? '' : _formatDate(_startDate!),
     );
@@ -2103,37 +2116,53 @@ class _OrderLifecycleEditorSheetState
               context,
             ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF6B7280)),
           ),
-          const SizedBox(height: 20),
-          SearchableSelectField<OrderStatus>(
-            key: const ValueKey<String>('orders-lifecycle-status-field'),
-            tapTargetKey: const ValueKey<String>(
-              'orders-lifecycle-status-field',
-            ),
-            value: _status,
-            decoration: const InputDecoration(
-              labelText: 'Status',
-              filled: true,
-              fillColor: Color(0xFFF9FAFB),
-            ),
-            dialogTitle: 'Status',
-            searchHintText: 'Search status',
-            options: OrderStatus.values
-                .map(
-                  (status) => SearchableSelectOption<OrderStatus>(
-                    value: status,
-                    label: status.label,
-                  ),
-                )
-                .toList(growable: false),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  _status = value;
-                });
-              }
-            },
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Text(
+                'Current Status',
+                style: TextStyle(
+                  color: Color(0xFF4B5563),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 10),
+              _StatusPill(status: _currentOrder.status),
+            ],
           ),
           const SizedBox(height: 16),
+          const Text(
+            'Allowed Actions',
+            style: TextStyle(
+              color: Color(0xFF4B5563),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<List<OrderTransitionOption>>(
+            future: _transitionOptionsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _buildTransitionActions(
+                  context,
+                  snapshot.data ?? const <OrderTransitionOption>[],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
@@ -2142,7 +2171,7 @@ class _OrderLifecycleEditorSheetState
                   controller: _startDateController,
                   onTap: () => _pickDate(
                     context,
-                    initial: _startDate ?? widget.order.createdAt,
+                    initial: _startDate ?? _currentOrder.createdAt,
                     onSelected: (value) {
                       setState(() {
                         _startDate = value;
@@ -2159,7 +2188,7 @@ class _OrderLifecycleEditorSheetState
                   controller: _endDateController,
                   onTap: () => _pickDate(
                     context,
-                    initial: _endDate ?? _startDate ?? widget.order.createdAt,
+                    initial: _endDate ?? _startDate ?? _currentOrder.createdAt,
                     onSelected: (value) {
                       setState(() {
                         _endDate = value;
@@ -2182,38 +2211,9 @@ class _OrderLifecycleEditorSheetState
               ),
               const SizedBox(width: 12),
               AppButton(
-                label: 'Save',
+                label: 'Close',
                 onPressed: () async {
-                  final result = await context
-                      .read<OrdersProvider>()
-                      .updateOrderLifecycle(
-                        UpdateOrderLifecycleInput(
-                          id: widget.order.id,
-                          status: _status,
-                          startDate: _startDate,
-                          endDate: _endDate,
-                        ),
-                      );
-                  if (!context.mounted) {
-                    return;
-                  }
-
-                  if (result != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Order updated successfully.'),
-                      ),
-                    );
-                    Navigator.of(context).pop();
-                    return;
-                  }
-
-                  final message =
-                      context.read<OrdersProvider>().errorMessage ??
-                      'Unable to update order. Please try again.';
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(message)));
+                  Navigator.of(context).pop();
                 },
               ),
             ],
@@ -2221,6 +2221,120 @@ class _OrderLifecycleEditorSheetState
         ],
       ),
     );
+  }
+
+  List<Widget> _buildTransitionActions(
+    BuildContext context,
+    List<OrderTransitionOption> actions,
+  ) {
+    if (actions.isEmpty) {
+      return const <Widget>[
+        Text(
+          'No actions available for this state.',
+          style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+        ),
+      ];
+    }
+
+    return actions
+        .map((action) {
+          return OutlinedButton(
+            onPressed: () => _performTransition(
+              context,
+              action: action.action,
+              toStatus: action.toStatus,
+              needsReason: action.needsReason,
+            ),
+            child: Text(action.label),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> _performTransition(
+    BuildContext context, {
+    required String action,
+    required OrderStatus toStatus,
+    required bool needsReason,
+  }) async {
+    String? reason;
+    if (needsReason) {
+      reason = await _promptReason(context, toStatus);
+      if (reason == null) {
+        return;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    final result = await this.context.read<OrdersProvider>().transitionOrderByAction(
+          orderId: _currentOrder.id,
+          action: action,
+          reason: reason,
+          startDate: _startDate,
+          endDate: _endDate,
+        );
+    if (!context.mounted) {
+      return;
+    }
+    if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Order moved to ${toStatus.label}.')),
+      );
+      setState(() {
+        _currentOrder = result;
+        _transitionOptionsFuture = this
+            .context
+            .read<OrdersProvider>()
+            .getOrderTransitionOptions(_currentOrder.id);
+      });
+      await context.read<OrdersProvider>().refresh();
+      return;
+    }
+    final message =
+        context.read<OrdersProvider>().errorMessage ??
+        'Unable to update order. Please try again.';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<String?> _promptReason(
+    BuildContext context,
+    OrderStatus toStatus,
+  ) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${toStatus.label} Reason'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Enter reason'),
+          minLines: 2,
+          maxLines: 4,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isEmpty) {
+                return;
+              }
+              Navigator.of(context).pop(text);
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value;
   }
 
   Future<void> _pickDate(
@@ -2246,164 +2360,792 @@ class _OrderLifecycleEditorSheetState
   }
 }
 
-class _OrderDetailsSheet extends StatelessWidget {
+class _OrderDetailsSheet extends StatefulWidget {
   const _OrderDetailsSheet({required this.order, required this.onEdit});
 
   final OrderEntry order;
   final VoidCallback onEdit;
 
   @override
+  State<_OrderDetailsSheet> createState() => _OrderDetailsSheetState();
+}
+
+class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
+  late Future<List<OrderActivityEntry>> _activityFuture;
+  late Future<List<OrderStatusHistoryEntry>> _historyFuture;
+  late Future<OrderMaterialSnapshot?> _materialsFuture;
+  late Future<List<OrderProcurementSuggestionEntry>> _procurementFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadTrails();
+  }
+
+  void _reloadTrails() {
+    final provider = context.read<OrdersProvider>();
+    _activityFuture = provider.getOrderActivity(widget.order.id);
+    _historyFuture = provider.getOrderStatusHistory(widget.order.id);
+    _materialsFuture = provider.getOrderMaterialRequirements(widget.order.id);
+    _procurementFuture = provider.getOrderProcurementSuggestions(widget.order.id);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final detailRows = <({String label, String value})>[
-      (label: 'Order Code', value: order.orderNo),
-      (label: 'Purchase order no.', value: _emptyFallback(order.poNumber)),
-      (label: 'Item', value: order.itemName),
+      (label: 'Order Code', value: widget.order.orderNo),
+      (
+        label: 'Purchase order no.',
+        value: _emptyFallback(widget.order.poNumber),
+      ),
+      (label: 'Item', value: widget.order.itemName),
       (label: 'Purchase order item Code', value: '—'),
-      (label: 'Quantity / Unit', value: '${order.quantity} Pieces'),
-      (label: 'Start Date', value: _formatDate(order.startDate)),
-      (label: 'Estimated completion date', value: _formatDate(order.endDate)),
+      (label: 'Quantity / Unit', value: '${widget.order.quantity} Pieces'),
+      (label: 'Start Date', value: _formatDate(widget.order.startDate)),
+      (
+        label: 'Estimated completion date',
+        value: _formatDate(widget.order.endDate),
+      ),
     ];
 
     return Material(
       color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            bottomLeft: Radius.circular(16),
+      child: DefaultTabController(
+        length: 4,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.max,
-          children: [
-            Container(
-              height: 60,
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFBFBFB),
-                borderRadius: BorderRadius.only(topLeft: Radius.circular(16)),
-              ),
-              alignment: Alignment.centerLeft,
-              child: const Text(
-                'Order Details',
-                style: TextStyle(
-                  color: Color(0xFF3F3F3F),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Container(
+                height: 60,
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFBFBFB),
+                  borderRadius: BorderRadius.only(topLeft: Radius.circular(16)),
+                ),
+                alignment: Alignment.centerLeft,
+                child: const Text(
+                  'Order Details',
+                  style: TextStyle(
+                    color: Color(0xFF3F3F3F),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: Align(
-                alignment: Alignment.topLeft,
+              Container(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                child: const TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: Color(0xFF3F3F3F),
+                  unselectedLabelColor: Color(0xFF8A8A8A),
+                  indicatorColor: Color(0xFF6049E3),
+                  dividerColor: Color(0xFFEDEDED),
+                  tabs: [
+                    Tab(text: 'Details'),
+                    Tab(text: 'Materials'),
+                    Tab(text: 'Timeline'),
+                    Tab(text: 'Audit'),
+                  ],
+                ),
+              ),
+              Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                  child: TabBarView(
                     children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.only(bottom: 24),
-                        decoration: const BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: Color(0xFFEDEDED)),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.only(bottom: 24),
+                            decoration: const BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(color: Color(0xFFEDEDED)),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: detailRows
+                                  .map(
+                                    (entry) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 18),
+                                      child: SizedBox(
+                                        width: 360,
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            SizedBox(
+                                              width: 220,
+                                              child: Text(
+                                                entry.label,
+                                                style: const TextStyle(
+                                                  color: Color(0xFF888888),
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                entry.value,
+                                                style: const TextStyle(
+                                                  color: Color(0xFF282828),
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: detailRows
-                              .map(
-                                (entry) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 18),
-                                  child: SizedBox(
-                                    width: 360,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        SizedBox(
-                                          width: 220,
-                                          child: Text(
-                                            entry.label,
-                                            style: const TextStyle(
-                                              color: Color(0xFF888888),
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            entry.value,
-                                            style: const TextStyle(
-                                              color: Color(0xFF282828),
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: 360,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                const SizedBox(
+                                  width: 220,
+                                  child: Text(
+                                    'Status',
+                                    style: TextStyle(
+                                      color: Color(0xFF888888),
+                                      fontSize: 14,
                                     ),
                                   ),
                                 ),
-                              )
-                              .toList(growable: false),
-                        ),
+                                Flexible(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: _StatusPill(status: widget.order.status),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: 360,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(
-                              width: 220,
+                      FutureBuilder<OrderMaterialSnapshot?>(
+                        future: _materialsFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          final data = snapshot.data;
+                          final requirements = data?.requirements ?? const <OrderMaterialRequirementEntry>[];
+                          final summary = data?.summary;
+                          if (summary == null || requirements.isEmpty) {
+                            return const Center(
                               child: Text(
-                                'Status',
+                                'No material requirements linked yet.',
                                 style: TextStyle(
-                                  color: Color(0xFF888888),
-                                  fontSize: 14,
+                                  color: Color(0xFF7A7A7A),
+                                  fontSize: 13,
                                 ),
                               ),
-                            ),
-                            Flexible(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: _StatusPill(status: order.status),
+                            );
+                          }
+                          final tableHeight = requirements.length <= 2
+                              ? (requirements.length * 68.0) + 24.0
+                              : 240.0;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _MaterialSummaryChip(
+                                    label: 'Required',
+                                    value: _formatQty(summary.requiredQty),
+                                  ),
+                                  _MaterialSummaryChip(
+                                    label: 'Allocated',
+                                    value: _formatQty(summary.allocatedQty),
+                                  ),
+                                  _MaterialSummaryChip(
+                                    label: 'Shortage',
+                                    value: _formatQty(summary.shortageQty),
+                                    danger: summary.shortageQty > 0,
+                                  ),
+                                  _MaterialSummaryChip(
+                                    label: 'Readiness',
+                                    value: summary.readiness,
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    OutlinedButton(
+                                      onPressed: _checkAvailability,
+                                      child: const Text('Check'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: _allocateMaterials,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(0xFF6049E3),
+                                      ),
+                                      child: const Text('Allocate'),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: _releaseMaterials,
+                                      child: const Text('Release'),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: _consumeMaterials,
+                                      child: const Text('Consume'),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: _refreshProcurementSuggestions,
+                                      child: const Text('Refresh Suggestions'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                height: tableHeight,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFAFAFC),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFFE7E7ED)),
+                                  ),
+                                  child: ListView.separated(
+                                    itemCount: requirements.length,
+                                    separatorBuilder: (_, _) => const Divider(
+                                      height: 1,
+                                      color: Color(0xFFE7E7ED),
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final requirement = requirements[index];
+                                      return Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          10,
+                                          12,
+                                          10,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 4,
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    requirement.materialName,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF313131),
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    requirement.materialBarcode,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF8A8A8A),
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            _MaterialCell(
+                                              label: 'Req',
+                                              value: _formatQty(
+                                                requirement.requiredQty,
+                                              ),
+                                            ),
+                                            _MaterialCell(
+                                              label: 'Alloc',
+                                              value: _formatQty(
+                                                requirement.allocatedQty,
+                                              ),
+                                            ),
+                                            _MaterialCell(
+                                              label: 'Avail',
+                                              value: _formatQty(
+                                                requirement.availableQty,
+                                              ),
+                                            ),
+                                            _MaterialCell(
+                                              label: 'Short',
+                                              value: _formatQty(
+                                                requirement.shortageQty,
+                                              ),
+                                              danger: requirement.shortageQty > 0,
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              FutureBuilder<List<OrderProcurementSuggestionEntry>>(
+                                future: _procurementFuture,
+                                builder: (context, procurementSnapshot) {
+                                  if (procurementSnapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const SizedBox(
+                                      height: 44,
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  final suggestions =
+                                      procurementSnapshot.data ??
+                                      const <OrderProcurementSuggestionEntry>[];
+                                  if (suggestions.isEmpty) {
+                                    return const SizedBox(
+                                      height: 28,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          'No procurement suggestions. Shortages are clear.',
+                                          style: TextStyle(
+                                            color: Color(0xFF7A7A7A),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFFBF3),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: const Color(0xFFF2D9A8),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Procurement Suggestions',
+                                          style: TextStyle(
+                                            color: Color(0xFF8A5A00),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        ...suggestions.take(3).map((suggestion) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(bottom: 6),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '${suggestion.materialName} • ${_emptyFallback(suggestion.supplier)}',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF5D3A00),
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  '${_formatQty(suggestion.suggestedQty)} ${suggestion.unitSymbol}',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF7A5A28),
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  _procurementStateLabel(
+                                                    suggestion.procurementState,
+                                                  ),
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF9A6F22),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      FutureBuilder<List<OrderActivityEntry>>(
+                        future: _activityFuture,
+                        builder: (context, snapshot) {
+                          final entries = snapshot.data ?? const <OrderActivityEntry>[];
+                          return Column(
+                            children: [
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: OutlinedButton(
+                                  onPressed: _addNote,
+                                  child: const Text('Add Note'),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                child: snapshot.connectionState == ConnectionState.waiting
+                                    ? const Center(child: CircularProgressIndicator())
+                                    : entries.isEmpty
+                                    ? const Center(
+                                        child: Text(
+                                          'No activity yet.',
+                                          style: TextStyle(
+                                            color: Color(0xFF7A7A7A),
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: entries.length,
+                                        separatorBuilder: (_, _) =>
+                                            const SizedBox(height: 10),
+                                        itemBuilder: (context, index) {
+                                          final entry = entries[index];
+                                          return Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFAFAFC),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: const Color(0xFFE7E7ED),
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  entry.title,
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF313131),
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                if (entry.description.trim().isNotEmpty) ...[
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    entry.description,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF616161),
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ],
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  '${entry.actorName}${entry.actorRole == null ? '' : ' • ${entry.actorRole}'} • ${_formatDateTime(entry.createdAt)}',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF8A8A8A),
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      FutureBuilder<List<OrderStatusHistoryEntry>>(
+                        future: _historyFuture,
+                        builder: (context, snapshot) {
+                          final entries =
+                              snapshot.data ?? const <OrderStatusHistoryEntry>[];
+                          return snapshot.connectionState == ConnectionState.waiting
+                              ? const Center(child: CircularProgressIndicator())
+                              : entries.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No status audit entries yet.',
+                                    style: TextStyle(
+                                      color: Color(0xFF7A7A7A),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  itemCount: entries.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final entry = entries[index];
+                                    final fromLabel = entry.fromStatus?.label ?? '—';
+                                    final toLabel = entry.toStatus.label;
+                                    return Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFAFAFC),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: const Color(0xFFE7E7ED),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '$fromLabel -> $toLabel',
+                                            style: const TextStyle(
+                                              color: Color(0xFF313131),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${entry.changedByName}${entry.changedByRole == null ? '' : ' • ${entry.changedByRole}'} • ${_formatDateTime(entry.changedAt)}',
+                                            style: const TextStyle(
+                                              color: Color(0xFF7A7A7A),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          if ((entry.reason ?? '').trim().isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Reason: ${entry.reason}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF616161),
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                        },
                       ),
                     ],
                   ),
                 ),
               ),
-            ),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFEDEDED))),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFEDEDED))),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    AppButton(
+                      label: 'Cancel',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 10),
+                    _OrderDetailActionButton(
+                      label: 'Edit',
+                      onPressed: widget.onEdit,
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  AppButton(
-                    label: 'Cancel',
-                    variant: AppButtonVariant.secondary,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 10),
-                  _OrderDetailActionButton(label: 'Edit', onPressed: onEdit),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _addNote() async {
+    final controller = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add note'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 3,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Write a note for this order timeline',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isEmpty) {
+                return;
+              }
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || note == null) {
+      return;
+    }
+    final result = await context.read<OrdersProvider>().addOrderNote(
+      AddOrderNoteInput(orderId: widget.order.id, note: note),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result == null) {
+      final message =
+          context.read<OrdersProvider>().errorMessage ??
+          'Unable to add note. Please try again.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    setState(_reloadTrails);
+  }
+
+  Future<void> _checkAvailability() async {
+    final result = await context.read<OrdersProvider>().checkOrderMaterialAvailability(
+      widget.order.id,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result == null) {
+      _showErrorToast();
+      return;
+    }
+    setState(_reloadTrails);
+  }
+
+  Future<void> _allocateMaterials() async {
+    final result = await context.read<OrdersProvider>().allocateOrderMaterials(
+      widget.order.id,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result == null) {
+      _showErrorToast();
+      return;
+    }
+    setState(_reloadTrails);
+  }
+
+  Future<void> _releaseMaterials() async {
+    final result = await context.read<OrdersProvider>().releaseOrderMaterials(
+      widget.order.id,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result == null) {
+      _showErrorToast();
+      return;
+    }
+    setState(_reloadTrails);
+  }
+
+  Future<void> _consumeMaterials() async {
+    final result = await context.read<OrdersProvider>().consumeOrderMaterials(
+      widget.order.id,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result == null) {
+      _showErrorToast();
+      return;
+    }
+    setState(_reloadTrails);
+  }
+
+  Future<void> _refreshProcurementSuggestions() async {
+    final provider = context.read<OrdersProvider>();
+    await provider.checkOrderMaterialAvailability(
+      widget.order.id,
+    );
+    final suggestions = await provider.refreshOrderProcurementSuggestions(
+      widget.order.id,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (suggestions.isEmpty) {
+      final message = provider.errorMessage;
+      if (message != null && message.isNotEmpty) {
+        _showErrorToast();
+      }
+    }
+    setState(_reloadTrails);
+  }
+
+  void _showErrorToast() {
+    final message =
+        context.read<OrdersProvider>().errorMessage ??
+        'Unable to update material state. Please try again.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _formatDateTime(DateTime value) {
+    final day = value.day.toString().padLeft(2, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$day-$month-${value.year} $hour:$minute';
   }
 
   static String _emptyFallback(String value) {
@@ -2417,6 +3159,124 @@ class _OrderDetailsSheet extends StatelessWidget {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
     return '$day-$month-${value.year}';
+  }
+
+  String _formatQty(double value) {
+    if ((value - value.roundToDouble()).abs() < 0.001) {
+      return value.round().toString();
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _procurementStateLabel(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'ordered':
+        return 'Ordered';
+      case 'received_partial':
+        return 'Partial Received';
+      case 'received_complete':
+        return 'Received';
+      case 'not_ordered':
+      default:
+        return 'Not Ordered';
+    }
+  }
+}
+
+class _MaterialSummaryChip extends StatelessWidget {
+  const _MaterialSummaryChip({
+    required this.label,
+    required this.value,
+    this.danger = false,
+  });
+
+  final String label;
+  final String value;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 128),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: danger ? const Color(0xFFFFF1F1) : const Color(0xFFF6F7FB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: danger ? const Color(0xFFF3B4B4) : const Color(0xFFE0E3EC),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF6A6A6A),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: danger ? const Color(0xFFB42318) : const Color(0xFF2F2F2F),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MaterialCell extends StatelessWidget {
+  const _MaterialCell({
+    required this.label,
+    required this.value,
+    this.danger = false,
+  });
+
+  final String label;
+  final String value;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 80,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF8A8A8A),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: danger ? const Color(0xFFB42318) : const Color(0xFF2F2F2F),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -2783,10 +3643,10 @@ class _CompletionShortcutEditorDialogState
             children: [
               Text(
                 index == 0
-                  ? 'Primary Button'
-                  : index == 1
-                  ? 'Secondary Button'
-                  : 'Extra Button',
+                    ? 'Primary Button'
+                    : index == 1
+                    ? 'Secondary Button'
+                    : 'Extra Button',
                 style: const TextStyle(
                   color: Color(0xFF2F3441),
                   fontSize: 13,
@@ -2795,10 +3655,7 @@ class _CompletionShortcutEditorDialogState
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF2EEFF),
                   borderRadius: BorderRadius.circular(999),
@@ -2847,7 +3704,11 @@ class _CompletionShortcutEditorDialogState
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     labelText: 'Days',
-                    hintText: index == 0 ? '3' : index == 1 ? '3' : '7',
+                    hintText: index == 0
+                        ? '3'
+                        : index == 1
+                        ? '3'
+                        : '7',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
@@ -2871,50 +3732,52 @@ class _CompletionShortcutEditorDialogState
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: _CompletionShortcutUnit.values.map((unit) {
-                    final isSelected = _units[index] == unit;
-                    return InkWell(
-                      key: unit == _CompletionShortcutUnit.days
-                          ? ValueKey<String>(
-                              'orders-editor-shortcut-unit-$index',
-                            )
-                          : null,
-                      onTap: () {
-                        setState(() {
-                          _units[index] = unit;
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(999),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 11,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF6049E3)
-                              : Colors.white,
+                  children: _CompletionShortcutUnit.values
+                      .map((unit) {
+                        final isSelected = _units[index] == unit;
+                        return InkWell(
+                          key: unit == _CompletionShortcutUnit.days
+                              ? ValueKey<String>(
+                                  'orders-editor-shortcut-unit-$index',
+                                )
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              _units[index] = unit;
+                            });
+                          },
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFF6049E3)
-                                : const Color(0xFFD7DBE7),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF6049E3)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF6049E3)
+                                    : const Color(0xFFD7DBE7),
+                              ),
+                            ),
+                            child: Text(
+                              unit.label,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xFF374151),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          unit.label,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Colors.white
-                                : const Color(0xFF374151),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(growable: false),
+                        );
+                      })
+                      .toList(growable: false),
                 ),
               ),
             ],
@@ -2926,10 +3789,7 @@ class _CompletionShortcutEditorDialogState
 }
 
 class _CompletionShortcutPreset {
-  const _CompletionShortcutPreset({
-    required this.amount,
-    required this.unit,
-  });
+  const _CompletionShortcutPreset({required this.amount, required this.unit});
 
   final int amount;
   final _CompletionShortcutUnit unit;
@@ -3006,43 +3866,53 @@ class _OrderSelectionStep {
 class _OrderSummary {
   const _OrderSummary({
     required this.total,
-    required this.notStarted,
-    required this.inProgress,
+    required this.draft,
+    required this.confirmed,
+    required this.inProduction,
     required this.completed,
-    required this.delayed,
+    required this.onHold,
   });
 
   final int total;
-  final int notStarted;
-  final int inProgress;
+  final int draft;
+  final int confirmed;
+  final int inProduction;
   final int completed;
-  final int delayed;
+  final int onHold;
 
   factory _OrderSummary.fromOrders(List<OrderEntry> orders) {
-    var notStarted = 0;
-    var inProgress = 0;
+    var draft = 0;
+    var confirmed = 0;
+    var inProduction = 0;
     var completed = 0;
-    var delayed = 0;
+    var onHold = 0;
 
     for (final order in orders) {
       switch (order.status) {
-        case OrderStatus.notStarted:
-          notStarted += 1;
-        case OrderStatus.inProgress:
-          inProgress += 1;
+        case OrderStatus.draft:
+          draft += 1;
+        case OrderStatus.confirmed:
+          confirmed += 1;
+        case OrderStatus.inProduction:
+          inProduction += 1;
         case OrderStatus.completed:
           completed += 1;
-        case OrderStatus.delayed:
-          delayed += 1;
+        case OrderStatus.onHold:
+          onHold += 1;
+        case OrderStatus.allocated:
+        case OrderStatus.dispatched:
+        case OrderStatus.closed:
+        case OrderStatus.cancelled:
       }
     }
 
     return _OrderSummary(
       total: orders.length,
-      notStarted: notStarted,
-      inProgress: inProgress,
+      draft: draft,
+      confirmed: confirmed,
+      inProduction: inProduction,
       completed: completed,
-      delayed: delayed,
+      onHold: onHold,
     );
   }
 }
@@ -3057,10 +3927,15 @@ class _MenuValue<T> {
 extension on OrderStatus {
   String get label {
     return switch (this) {
-      OrderStatus.notStarted => 'Not Started',
-      OrderStatus.inProgress => 'In Progress',
+      OrderStatus.draft => 'Draft',
+      OrderStatus.confirmed => 'Confirmed',
+      OrderStatus.allocated => 'Allocated',
+      OrderStatus.inProduction => 'In Production',
       OrderStatus.completed => 'Completed',
-      OrderStatus.delayed => 'Delayed',
+      OrderStatus.dispatched => 'Dispatched',
+      OrderStatus.closed => 'Closed',
+      OrderStatus.onHold => 'On Hold',
+      OrderStatus.cancelled => 'Cancelled',
     };
   }
 }

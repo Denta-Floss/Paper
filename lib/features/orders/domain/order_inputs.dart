@@ -13,7 +13,7 @@ class CreateOrderInput {
     required this.variationPathLabel,
     required this.variationPathNodeIds,
     required this.quantity,
-    this.status = OrderStatus.notStarted,
+    this.status = OrderStatus.draft,
     this.startDate,
     this.endDate,
   });
@@ -37,13 +37,22 @@ class CreateOrderInput {
 class UpdateOrderLifecycleInput {
   const UpdateOrderLifecycleInput({
     required this.id,
-    required this.status,
+    required this.toStatus,
+    this.reason,
     this.startDate,
     this.endDate,
   });
 
   final int id;
-  final OrderStatus status;
+  final OrderStatus toStatus;
+  final String? reason;
   final DateTime? startDate;
   final DateTime? endDate;
+}
+
+class AddOrderNoteInput {
+  const AddOrderNoteInput({required this.orderId, required this.note});
+
+  final int orderId;
+  final String note;
 }
