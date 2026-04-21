@@ -114,6 +114,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   bool _sortNewestFirst = true;
   bool _isBulkRunning = false;
   String? _bulkProgressLabel;
+  bool _isCreateGroupEditorVisible = false;
+  MaterialRecord? _groupEditorInitialRecord;
 
   @override
   void initState() {
@@ -383,6 +385,47 @@ class _InventoryScreenState extends State<InventoryScreen> {
               const _DeleteSelectionIntent(),
         };
 
+        final workspaceShell = ClipRect(
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              AnimatedSlide(
+                duration: const Duration(milliseconds: 520),
+                curve: const Cubic(0.22, 1.0, 0.36, 1.0),
+                offset: _isCreateGroupEditorVisible
+                    ? const Offset(-1.0, 0)
+                    : Offset.zero,
+                child: IgnorePointer(
+                  ignoring: _isCreateGroupEditorVisible,
+                  child: workspaceContent,
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_isCreateGroupEditorVisible,
+                  child: AnimatedSlide(
+                    duration: const Duration(milliseconds: 520),
+                    curve: const Cubic(0.22, 1.0, 0.36, 1.0),
+                    offset: _isCreateGroupEditorVisible
+                        ? Offset.zero
+                        : const Offset(1.03, 0),
+                    child: Material(
+                      color: const Color(0xFFF4F7FB),
+                      child: SafeArea(
+                        top: false,
+                        child: _InventoryCreateGroupEditor(
+                          initialRecord: _groupEditorInitialRecord,
+                          onClose: _closeCreateGroupEditor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
         return Shortcuts(
           shortcuts: shortcuts,
           child: Actions(
@@ -420,7 +463,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 },
               ),
             },
-            child: Focus(autofocus: true, child: workspaceContent),
+            child: Focus(autofocus: true, child: workspaceShell),
           ),
         );
       },
@@ -428,83 +471,30 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _openCreateGroupEditor({MaterialRecord? initialRecord}) async {
-    final inventory = context.read<InventoryProvider>();
-    final groups = context.read<GroupsProvider>();
-    final items = context.read<ItemsProvider>();
-    final units = context.read<UnitsProvider>();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _groupEditorInitialRecord = initialRecord;
+      _isCreateGroupEditorVisible = true;
+    });
+  }
 
-    await showGeneralDialog<void>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      barrierLabel: 'Create group',
-      barrierColor: Colors.transparent,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        final mediaQuery = MediaQuery.of(dialogContext);
-        final size = mediaQuery.size;
-        final isMobile = size.width < 900;
-        const sidebarWidth = 272.0;
-        const topBarHeight = 76.0;
-        final leftInset = isMobile ? 0.0 : sidebarWidth;
-        final topInset = isMobile ? 0.0 : topBarHeight;
-
-        return MultiProvider(
-          providers: [
-            ChangeNotifierProvider<InventoryProvider>.value(value: inventory),
-            ChangeNotifierProvider<GroupsProvider>.value(value: groups),
-            ChangeNotifierProvider<ItemsProvider>.value(value: items),
-            ChangeNotifierProvider<UnitsProvider>.value(value: units),
-          ],
-          child: Material(
-            color: Colors.transparent,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: leftInset,
-                  top: topInset,
-                  right: 0,
-                  bottom: 0,
-                  child: Material(
-                    color: const Color(0xFFF4F7FB),
-                    child: SafeArea(
-                      top: false,
-                      child: _InventoryCreateGroupEditor(
-                        initialRecord: initialRecord,
-                        onClose: () => Navigator.of(
-                          dialogContext,
-                          rootNavigator: true,
-                        ).pop(),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 520),
-      transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: const Cubic(0.16, 1.0, 0.3, 1.0),
-          reverseCurve: const Cubic(0.32, 0.0, 0.2, 1.0),
-        );
-        final tween = Tween<Offset>(
-          begin: const Offset(1.02, 0),
-          end: Offset.zero,
-        );
-        final fade = CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.0, 0.9, curve: Curves.easeOutCubic),
-          reverseCurve: const Interval(0.0, 0.82, curve: Curves.easeInCubic),
-        );
-        return FadeTransition(
-          opacity: fade,
-          child: SlideTransition(position: tween.animate(curved), child: child),
-        );
-      },
-    );
+  void _closeCreateGroupEditor() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isCreateGroupEditorVisible = false;
+    });
+    Future<void>.delayed(const Duration(milliseconds: 560), () {
+      if (!mounted || _isCreateGroupEditorVisible) {
+        return;
+      }
+      setState(() {
+        _groupEditorInitialRecord = null;
+      });
+    });
   }
 
   List<String> _distinctValues(Iterable<String> values) {
@@ -1696,9 +1686,8 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
         return Row(
           children: [
-            Expanded(
-              child: Align(alignment: Alignment.centerLeft, child: segmented),
-            ),
+            SizedBox(width: 320, child: segmented),
+            const Spacer(),
             const SizedBox(width: 16),
             actions,
           ],
