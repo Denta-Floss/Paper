@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/soft_primitives.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/clients/presentation/providers/clients_provider.dart';
 import '../../features/groups/presentation/providers/groups_provider.dart';
 import '../../features/inventory/presentation/providers/inventory_provider.dart';
 import '../../features/items/presentation/providers/items_provider.dart';
 import '../../features/orders/presentation/providers/orders_provider.dart';
-import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/units/presentation/providers/units_provider.dart';
 import 'navigation_provider.dart';
 
@@ -74,14 +75,6 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
           initialValue: provider.searchQuery,
           onChanged: provider.setSearchQuery,
         ),
-        actions: [
-          ShellTopStripAction(
-            label: 'New Order',
-            icon: Icons.add,
-            isPrimary: true,
-            onPressed: () => OrdersScreen.openEditor(context),
-          ),
-        ],
       );
     case 'configurator_clients':
       final provider = context.watch<ClientsProvider>();
@@ -173,25 +166,32 @@ class AppTopBar extends StatelessWidget {
     final hasLeading = config.leadingBuilder != null || config.title != null;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      padding: const EdgeInsets.fromLTRB(24, 14, 24, 16),
       decoration: const BoxDecoration(
-        color: Color(0xFFF4F6FA),
-        border: Border(bottom: BorderSide(color: Color(0xFFE7E7EF))),
+        color: SoftErpTheme.shellSurface,
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
       ),
-      child: Row(
-        children: [
-          if (hasLeading) Expanded(child: _TopStripLeading(config: config)),
-          if (!hasLeading && config.search == null && config.actions.isNotEmpty)
-            const Spacer(),
-          if (config.search != null) ...[
-            const SizedBox(width: 16),
-            _TopStripSearchSlot(search: config.search!),
+      child: SoftSurface(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        radius: 20,
+        color: SoftErpTheme.cardSurface,
+        child: Row(
+          children: [
+            if (hasLeading) Expanded(child: _TopStripLeading(config: config)),
+            if (!hasLeading &&
+                config.search == null &&
+                config.actions.isNotEmpty)
+              const Spacer(),
+            if (config.search != null) ...[
+              const SizedBox(width: 16),
+              _TopStripSearchSlot(search: config.search!),
+            ],
+            if (config.actions.isNotEmpty) ...[
+              const SizedBox(width: 16),
+              _TopStripActions(actions: config.actions),
+            ],
           ],
-          if (config.actions.isNotEmpty) ...[
-            const SizedBox(width: 16),
-            _TopStripActions(actions: config.actions),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -216,7 +216,7 @@ class _TopStripLeading extends StatelessWidget {
         config.title!,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w700,
-          color: const Color(0xFF1F2937),
+          color: SoftErpTheme.textPrimary,
         ),
       ),
     );
@@ -293,22 +293,22 @@ class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
         hintText: widget.search.placeholder,
         prefixIcon: const Icon(Icons.search_rounded, size: 18),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: SoftErpTheme.cardSurfaceAlt,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 10,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFD7E6FB)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFD7E6FB)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFF8AB5F8)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.accent),
         ),
       ),
     );
@@ -359,39 +359,18 @@ class _TopStripChipAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSelected = action.isSelected;
-    return InkWell(
+    return SoftPill(
+      label: action.label,
       onTap: action.onPressed,
-      borderRadius: BorderRadius.circular(isToggle ? 14 : 18),
-      child: Container(
-        height: isToggle ? 28 : 34,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFE9F7EA) : Colors.white,
-          borderRadius: BorderRadius.circular(isToggle ? 14 : 18),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF9DD8A4)
-                : const Color(0xFFD8DCE8),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (action.icon != null) ...[
-              Icon(action.icon, size: 16, color: const Color(0xFF394150)),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              action.label,
-              style: const TextStyle(
-                color: Color(0xFF394150),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
+      background: isSelected
+          ? const Color(0xFFEAF8EE)
+          : SoftErpTheme.cardSurface,
+      borderColor: isSelected ? const Color(0xFF9DD8A4) : SoftErpTheme.border,
+      foreground: SoftErpTheme.textPrimary,
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: isToggle ? 6 : 8),
+      leading: action.icon == null
+          ? null
+          : Icon(action.icon, size: 16, color: SoftErpTheme.textSecondary),
     );
   }
 }

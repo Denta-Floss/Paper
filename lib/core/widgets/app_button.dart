@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/soft_erp_theme.dart';
+
 class AppButton extends StatelessWidget {
   const AppButton({
     super.key,
@@ -19,10 +21,12 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPrimary = variant == AppButtonVariant.primary;
-    final foregroundColor = isPrimary ? Colors.white : const Color(0xFF394150);
-    final backgroundColor = isPrimary ? const Color(0xFF6C63FF) : Colors.white;
+    final foregroundColor = isPrimary ? Colors.white : SoftErpTheme.textPrimary;
+    final backgroundColor = isPrimary
+        ? SoftErpTheme.accent
+        : SoftErpTheme.cardSurface;
     final side = BorderSide(
-      color: isPrimary ? const Color(0xFF6C63FF) : const Color(0xFFD8DCE8),
+      color: isPrimary ? SoftErpTheme.accent : SoftErpTheme.borderStrong,
     );
 
     return SizedBox(
@@ -30,16 +34,19 @@ class AppButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          elevation: 0,
+          elevation: isPrimary ? 4 : 1,
+          shadowColor: isPrimary
+              ? const Color(0x3A6366F1)
+              : const Color(0x14909DC3),
           backgroundColor: backgroundColor,
           foregroundColor: foregroundColor,
           disabledBackgroundColor: backgroundColor.withValues(alpha: 0.7),
           disabledForegroundColor: foregroundColor.withValues(alpha: 0.7),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(14),
             side: side,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -57,7 +64,10 @@ class AppButton extends StatelessWidget {
               Icon(icon, size: 18),
               const SizedBox(width: 8),
             ],
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
           ],
         ),
       ),

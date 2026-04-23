@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../items/domain/item_definition.dart';
@@ -49,7 +51,7 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  static const double _contentHorizontalPadding = 18;
+  static const double _contentHorizontalPadding = 22;
   final Set<int> _selectedOrderIds = <int>{};
   int? _partyFilterClientId;
   int? _itemFilterId;
@@ -77,17 +79,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
 
     return Container(
-      color: const Color(0xFFF5F6FA),
+      color: SoftErpTheme.canvas,
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-              ),
+            child: SoftSurface(
+              color: SoftErpTheme.shellSurface,
+              radius: 44,
               padding: const EdgeInsets.fromLTRB(0, 14, 0, 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,7 +135,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  const Divider(height: 1, color: Color(0xFFE9E9EE)),
+                  const Divider(height: 1, color: SoftErpTheme.border),
                   const SizedBox(height: 18),
                   if (ordersProvider.errorMessage != null) ...[
                     Padding(
@@ -279,13 +279,25 @@ class _OrdersHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final title = Text(
-          'Order Book',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF3F3F3F),
-          ),
+        final title = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Order Book',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: SoftErpTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Soft operational dashboard for orders, progress, and fulfillment.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+          ],
         );
         final button = _OrdersPrimaryButton(
           key: const Key('orders-new-order-button'),
@@ -293,23 +305,28 @@ class _OrdersHeader extends StatelessWidget {
           onPressed: onNewOrder,
         );
 
-        if (constraints.maxWidth < 760) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              title,
-              const SizedBox(height: 12),
-              Align(alignment: Alignment.centerRight, child: button),
-            ],
-          );
-        }
+        final content = constraints.maxWidth < 900
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  title,
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerRight, child: button),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 16),
+                  button,
+                ],
+              );
 
-        return Row(
-          children: [
-            Expanded(child: title),
-            const SizedBox(width: 16),
-            button,
-          ],
+        return SoftSurface(
+          radius: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          color: SoftErpTheme.cardSurface,
+          child: content,
         );
       },
     );
@@ -328,29 +345,48 @@ class _OrdersPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 52,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          elevation: 0,
-          backgroundColor: const Color(0xFF6C5AF3),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6A66F2), Color(0xFF5C6BF2)],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.add_rounded, size: 18),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x386366F1),
+            blurRadius: 14,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        height: 52,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            shadowColor: Colors.transparent,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
             ),
-          ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.add_rounded, size: 18),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -458,9 +494,9 @@ class _OrdersControlRow extends StatelessWidget {
                 child: Text(
                   '$selectedCount Selected',
                   style: const TextStyle(
-                    color: Color(0xFF5E6572),
+                    color: SoftErpTheme.textSecondary,
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -468,16 +504,17 @@ class _OrdersControlRow extends StatelessWidget {
                 onTap: onClearSelection,
                 borderRadius: BorderRadius.circular(15),
                 child: Container(
-                  width: 26,
-                  height: 26,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF4F4F7),
-                    borderRadius: BorderRadius.circular(13),
+                    color: SoftErpTheme.cardSurfaceAlt,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: SoftErpTheme.border),
                   ),
                   child: const Icon(
                     Icons.close_rounded,
                     size: 16,
-                    color: Color(0xFF6A6A6A),
+                    color: SoftErpTheme.textSecondary,
                   ),
                 ),
               ),
@@ -493,7 +530,7 @@ class _OrdersControlRow extends StatelessWidget {
           ],
         );
 
-        if (constraints.maxWidth < 980) {
+        if (constraints.maxWidth < 1140) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -535,11 +572,12 @@ class _FilterChipButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.horizontal(
+      left: Radius.circular(isFirst ? 22 : 14),
+      right: Radius.circular(isLast ? 22 : 14),
+    );
     return InkWell(
-      borderRadius: BorderRadius.horizontal(
-        left: Radius.circular(isFirst ? 10 : 0),
-        right: Radius.circular(isLast ? 10 : 0),
-      ),
+      borderRadius: radius,
       onTap: () async {
         final selected = await showSearchableSelectDialog<T>(
           context: context,
@@ -559,15 +597,12 @@ class _FilterChipButton<T> extends StatelessWidget {
         }
       },
       child: Container(
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: const Color(0xFFD8DDE7)),
-          borderRadius: BorderRadius.horizontal(
-            left: Radius.circular(isFirst ? 10 : 0),
-            right: Radius.circular(isLast ? 10 : 0),
-          ),
+          color: SoftErpTheme.cardSurfaceAlt,
+          border: Border.all(color: SoftErpTheme.border),
+          borderRadius: radius,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -576,33 +611,33 @@ class _FilterChipButton<T> extends StatelessWidget {
               const Icon(
                 Icons.filter_alt_outlined,
                 size: 15,
-                color: Color(0xFF6A7280),
+                color: SoftErpTheme.textSecondary,
               ),
               const SizedBox(width: 7),
             ],
             Text(
               '$label: ',
               style: const TextStyle(
-                color: Color(0xFF5F6775),
+                color: SoftErpTheme.textSecondary,
                 fontFamily: 'Segoe UI',
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
             Text(
               valueLabel,
               style: const TextStyle(
-                color: Color(0xFF1C2632),
+                color: SoftErpTheme.textPrimary,
                 fontFamily: 'Segoe UI',
                 fontSize: 12,
-                fontWeight: FontWeight.w400,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 2),
+            const SizedBox(width: 4),
             const Icon(
               Icons.keyboard_arrow_down_rounded,
               size: 16,
-              color: Color(0xFF6A7280),
+              color: SoftErpTheme.textSecondary,
             ),
           ],
         ),
@@ -619,27 +654,13 @@ class _ActionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F6F8),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFF6A7280)),
-          const SizedBox(width: 7),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF4F5561),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+    return SoftPill(
+      label: label,
+      leading: Icon(icon, size: 16, color: SoftErpTheme.textSecondary),
+      background: SoftErpTheme.cardSurfaceAlt,
+      borderColor: SoftErpTheme.border,
+      foreground: SoftErpTheme.textPrimary,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     );
   }
 }
@@ -659,7 +680,7 @@ class _OrdersSummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const cardWidth = 338.0;
     return SizedBox(
-      height: 66,
+      height: 84,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -735,55 +756,11 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return SoftMetricCard(
+      label: label,
+      value: value,
+      isActive: isActive,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 66,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFFFCFAFF) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isActive ? const Color(0xFF7B61FF) : const Color(0xFFE4E7EE),
-            width: isActive ? 1.4 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF474747),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Container(
-              constraints: const BoxConstraints(minWidth: 72),
-              height: 42,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isActive
-                    ? const Color(0xFFF5F2FF)
-                    : const Color(0xFFFCFCFE),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$value',
-                style: const TextStyle(
-                  color: Color(0xFF303030),
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -812,11 +789,10 @@ class _OrdersTableCard extends StatelessWidget {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return SoftSurface(
+      radius: 30,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      color: SoftErpTheme.cardSurface,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final layout = _OrdersTableLayout.fromContainerWidth(
@@ -866,8 +842,9 @@ class _TableHeaderRow extends StatelessWidget {
         horizontal: _OrdersTableMetrics.horizontalPadding,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F2FF),
-        borderRadius: BorderRadius.circular(12),
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: SoftErpTheme.border),
       ),
       child: Row(
         children: [
@@ -899,9 +876,9 @@ class _HeaderCell extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          color: Color(0xFF616779),
+          color: SoftErpTheme.textSecondary,
           fontSize: 12,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -927,79 +904,69 @@ class _OrderDataRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: () => onSelectionChanged(!isSelected),
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          height: 48,
-          child: Ink(
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFFF5F2FF)
-                  : isStriped
-                  ? const Color(0xFFFBFBFD)
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(12),
+    return SoftRowCard(
+      isSelected: isSelected,
+      onTap: onTap,
+      child: SizedBox(
+        height: 56,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPress: () => onSelectionChanged(!isSelected),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _OrdersTableMetrics.horizontalPadding,
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: _OrdersTableMetrics.horizontalPadding,
-              ),
-              child: Row(
-                children: [
-                  _DataCell(
-                    order.orderNo,
-                    width: layout.orderIdWidth,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                    overflow: TextOverflow.ellipsis,
+            child: Row(
+              children: [
+                _DataCell(
+                  order.orderNo,
+                  width: layout.orderIdWidth,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _DataCell(
+                  _formatDate(order.createdAt),
+                  width: layout.dateWidth,
+                ),
+                _DataCell(
+                  order.clientName,
+                  width: layout.partyWidth,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _DataCell(
+                  order.variationPathLabel.isEmpty ||
+                          order.variationPathLabel == order.itemName
+                      ? order.itemName
+                      : '${order.itemName} · ${order.variationPathLabel}',
+                  width: layout.itemWidth,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _DataCell(
+                  order.poNumber.isEmpty ? '—' : order.poNumber,
+                  width: layout.poWidth,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _DataCell(
+                  '${order.quantity} Pieces',
+                  width: layout.quantityWidth,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _DataCell(
+                  _formatDate(order.startDate),
+                  width: layout.startDateWidth,
+                ),
+                _DataCell(
+                  _formatDate(order.endDate),
+                  width: layout.endDateWidth,
+                ),
+                SizedBox(
+                  width: layout.statusWidth,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _StatusPill(status: order.status),
                   ),
-                  _DataCell(
-                    _formatDate(order.createdAt),
-                    width: layout.dateWidth,
-                  ),
-                  _DataCell(
-                    order.clientName,
-                    width: layout.partyWidth,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  _DataCell(
-                    order.variationPathLabel.isEmpty ||
-                            order.variationPathLabel == order.itemName
-                        ? order.itemName
-                        : '${order.itemName} · ${order.variationPathLabel}',
-                    width: layout.itemWidth,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  _DataCell(
-                    order.poNumber.isEmpty ? '—' : order.poNumber,
-                    width: layout.poWidth,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  _DataCell(
-                    '${order.quantity} Pieces',
-                    width: layout.quantityWidth,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  _DataCell(
-                    _formatDate(order.startDate),
-                    width: layout.startDateWidth,
-                  ),
-                  _DataCell(
-                    _formatDate(order.endDate),
-                    width: layout.endDateWidth,
-                  ),
-                  SizedBox(
-                    width: layout.statusWidth,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: _StatusPill(status: order.status),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1034,15 +1001,18 @@ class _DataCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      child: Text(
-        text,
-        softWrap: false,
-        maxLines: 1,
-        overflow: overflow,
-        style: const TextStyle(
-          color: Color(0xFF3C3C3C),
-          fontSize: 13,
-        ).merge(style),
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: Text(
+          text,
+          softWrap: false,
+          maxLines: 1,
+          overflow: overflow,
+          style: const TextStyle(
+            color: SoftErpTheme.textPrimary,
+            fontSize: 13,
+          ).merge(style),
+        ),
       ),
     );
   }
@@ -1057,39 +1027,39 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = switch (status) {
       OrderStatus.notStarted => (
-        bg: const Color(0xFFFDF5F0),
-        border: const Color(0xFFF8DBB9),
-        text: const Color(0xFF824C00),
+        bg: SoftErpTheme.warningBg,
+        border: const Color(0xFFE8D0A6),
+        text: SoftErpTheme.warningText,
       ),
       OrderStatus.inProgress => (
-        bg: const Color(0xFFF0F6FD),
-        border: const Color(0xFFB9CFF8),
-        text: const Color(0xFF003BFB),
+        bg: SoftErpTheme.infoBg,
+        border: const Color(0xFFBDD0F8),
+        text: SoftErpTheme.infoText,
       ),
       OrderStatus.completed => (
-        bg: const Color(0xFFEFFBF2),
-        border: const Color(0xFFB5E5C0),
-        text: const Color(0xFF007D30),
+        bg: SoftErpTheme.successBg,
+        border: const Color(0xFFB7DEBF),
+        text: SoftErpTheme.successText,
       ),
       OrderStatus.delayed => (
-        bg: const Color(0xFFFDF0F0),
-        border: const Color(0xFFFF8C8C),
-        text: const Color(0xFFDC0000),
+        bg: SoftErpTheme.dangerBg,
+        border: const Color(0xFFF0B4B4),
+        text: SoftErpTheme.dangerText,
       ),
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: scheme.bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(999),
         border: Border.all(color: scheme.border),
       ),
       child: Text(
         status.label,
         style: TextStyle(
           color: scheme.text,
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -1099,15 +1069,15 @@ class _StatusPill extends StatelessWidget {
 
 class _OrdersTableMetrics {
   static const double horizontalPadding = 18;
-  static const double orderIdWidth = 112;
-  static const double dateWidth = 124;
-  static const double partyWidth = 190;
-  static const double itemWidth = 242;
-  static const double poWidth = 198;
+  static const double orderIdWidth = 120;
+  static const double dateWidth = 122;
+  static const double partyWidth = 212;
+  static const double itemWidth = 236;
+  static const double poWidth = 214;
   static const double quantityWidth = 150;
   static const double startDateWidth = 136;
   static const double endDateWidth = 136;
-  static const double statusWidth = 116;
+  static const double statusWidth = 128;
 
   static const double totalWidth =
       horizontalPadding * 2 +
@@ -1147,10 +1117,8 @@ class _OrdersTableLayout {
 
   static _OrdersTableLayout fromContainerWidth(double containerWidth) {
     final contentWidth =
-        (containerWidth - (_OrdersTableMetrics.horizontalPadding * 2)).clamp(
-          0.0,
-          double.infinity,
-        );
+        (containerWidth - (_OrdersTableMetrics.horizontalPadding * 2) - 8)
+            .clamp(0.0, double.infinity);
     final baseContentWidth =
         _OrdersTableMetrics.totalWidth -
         (_OrdersTableMetrics.horizontalPadding * 2);
@@ -1215,14 +1183,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _startDateController = TextEditingController();
     _endDateController = TextEditingController();
     _completionShortcuts = const <_CompletionShortcutPreset>[
-      _CompletionShortcutPreset(
-        amount: 3,
-        unit: _CompletionShortcutUnit.days,
-      ),
-      _CompletionShortcutPreset(
-        amount: 3,
-        unit: _CompletionShortcutUnit.weeks,
-      ),
+      _CompletionShortcutPreset(amount: 3, unit: _CompletionShortcutUnit.days),
+      _CompletionShortcutPreset(amount: 3, unit: _CompletionShortcutUnit.weeks),
     ];
   }
 
@@ -1252,8 +1214,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: SoftErpTheme.border),
+        boxShadow: SoftErpTheme.raisedShadow,
       ),
       child: Form(
         key: _formKey,
@@ -1264,13 +1228,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
               decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E2E2))),
+                border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
               ),
               child: Text(
                 'Create New Order',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFF3F3F3F),
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textPrimary,
                 ),
               ),
             ),
@@ -1529,8 +1493,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                       onSelected: (value) {
                                         setState(() {
                                           _endDate = value;
-                                          _endDateController.text =
-                                              _formatDate(value);
+                                          _endDateController.text = _formatDate(
+                                            value,
+                                          );
                                         });
                                       },
                                     ),
@@ -1549,8 +1514,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                           key: ValueKey<String>(
                                             'orders-editor-shortcut-$index',
                                           ),
-                                          label: _completionShortcuts[index]
-                                              .label,
+                                          label:
+                                              _completionShortcuts[index].label,
                                           onTap: () => _applyCompletionShortcut(
                                             _completionShortcuts[index],
                                           ),
@@ -1582,17 +1547,18 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
               decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFE2E2E2))),
+                border: Border(top: BorderSide(color: SoftErpTheme.border)),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 10,
                 children: [
                   AppButton(
                     label: 'Cancel',
                     variant: AppButtonVariant.secondary,
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 10),
                   AppButton(
                     label: 'Create Order',
                     onPressed: clients.isEmpty || items.isEmpty
@@ -1959,22 +1925,26 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   InputDecoration _inputDecoration({String? hintText, String? errorText}) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFF9D9D9D), fontSize: 14),
+      hintStyle: const TextStyle(
+        color: SoftErpTheme.textSecondary,
+        fontSize: 14,
+      ),
       errorText: errorText,
-      filled: false,
+      filled: true,
+      fillColor: SoftErpTheme.cardSurfaceAlt,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: SoftErpTheme.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: SoftErpTheme.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFF6049E3)),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: SoftErpTheme.accent),
       ),
     );
   }
@@ -2018,10 +1988,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final updatedShortcuts = await showDialog<List<_CompletionShortcutPreset>>(
       context: context,
       builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 32,
-        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: _CompletionShortcutEditorDialog(
@@ -2083,8 +2050,10 @@ class _OrderLifecycleEditorSheetState
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: SoftErpTheme.border),
+        boxShadow: SoftErpTheme.raisedShadow,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2101,7 +2070,7 @@ class _OrderLifecycleEditorSheetState
             '${widget.order.orderNo} • ${widget.order.clientName}',
             style: Theme.of(
               context,
-            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF6B7280)),
+            ).textTheme.bodyMedium?.copyWith(color: SoftErpTheme.textSecondary),
           ),
           const SizedBox(height: 20),
           SearchableSelectField<OrderStatus>(
@@ -2113,7 +2082,7 @@ class _OrderLifecycleEditorSheetState
             decoration: const InputDecoration(
               labelText: 'Status',
               filled: true,
-              fillColor: Color(0xFFF9FAFB),
+              fillColor: SoftErpTheme.cardSurfaceAlt,
             ),
             dialogTitle: 'Status',
             searchHintText: 'Search status',
@@ -2172,15 +2141,16 @@ class _OrderLifecycleEditorSheetState
             ],
           ),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 12,
+            runSpacing: 10,
             children: [
               AppButton(
                 label: 'Close',
                 variant: AppButtonVariant.secondary,
                 onPressed: () => Navigator.of(context).pop(),
               ),
-              const SizedBox(width: 12),
               AppButton(
                 label: 'Save',
                 onPressed: () async {
@@ -2268,11 +2238,13 @@ class _OrderDetailsSheet extends StatelessWidget {
       color: Colors.transparent,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: SoftErpTheme.cardSurface,
           borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            bottomLeft: Radius.circular(16),
+            topLeft: Radius.circular(24),
+            bottomLeft: Radius.circular(24),
           ),
+          border: Border.all(color: SoftErpTheme.border),
+          boxShadow: SoftErpTheme.raisedShadow,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.max,
@@ -2282,16 +2254,16 @@ class _OrderDetailsSheet extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 24),
               decoration: const BoxDecoration(
-                color: Color(0xFFFBFBFB),
-                borderRadius: BorderRadius.only(topLeft: Radius.circular(16)),
+                color: SoftErpTheme.shellSurface,
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(24)),
               ),
               alignment: Alignment.centerLeft,
               child: const Text(
                 'Order Details',
                 style: TextStyle(
-                  color: Color(0xFF3F3F3F),
+                  color: SoftErpTheme.textPrimary,
                   fontSize: 16,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -2309,7 +2281,7 @@ class _OrderDetailsSheet extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 24),
                         decoration: const BoxDecoration(
                           border: Border(
-                            bottom: BorderSide(color: Color(0xFFEDEDED)),
+                            bottom: BorderSide(color: SoftErpTheme.border),
                           ),
                         ),
                         child: Column(
@@ -2329,7 +2301,7 @@ class _OrderDetailsSheet extends StatelessWidget {
                                           child: Text(
                                             entry.label,
                                             style: const TextStyle(
-                                              color: Color(0xFF888888),
+                                              color: SoftErpTheme.textSecondary,
                                               fontSize: 14,
                                             ),
                                           ),
@@ -2338,7 +2310,7 @@ class _OrderDetailsSheet extends StatelessWidget {
                                           child: Text(
                                             entry.value,
                                             style: const TextStyle(
-                                              color: Color(0xFF282828),
+                                              color: SoftErpTheme.textPrimary,
                                               fontSize: 16,
                                             ),
                                           ),
@@ -2362,7 +2334,7 @@ class _OrderDetailsSheet extends StatelessWidget {
                               child: Text(
                                 'Status',
                                 style: TextStyle(
-                                  color: Color(0xFF888888),
+                                  color: SoftErpTheme.textSecondary,
                                   fontSize: 14,
                                 ),
                               ),
@@ -2385,17 +2357,18 @@ class _OrderDetailsSheet extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFEDEDED))),
+                border: Border(top: BorderSide(color: SoftErpTheme.border)),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 10,
                 children: [
                   AppButton(
                     label: 'Cancel',
                     variant: AppButtonVariant.secondary,
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 10),
                   _OrderDetailActionButton(label: 'Edit', onPressed: onEdit),
                 ],
               ),
@@ -2432,19 +2405,22 @@ class _OrderDetailActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 40,
+      height: 44,
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          elevation: 0,
-          backgroundColor: const Color(0xFF6049E3),
+          elevation: 3,
+          backgroundColor: SoftErpTheme.accent,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          shadowColor: const Color(0x2A6366F1),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
         child: Text(
           label,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -2462,8 +2438,8 @@ class _OrdersMessageBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4F2),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFFFF2EF),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFF1B8AE)),
       ),
       child: Row(
@@ -2505,7 +2481,7 @@ class _OrderEditorField extends StatelessWidget {
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             fontSize: 14,
-            color: const Color(0xFF373737),
+            color: SoftErpTheme.textSecondary,
           ),
         ),
         const SizedBox(height: 4),
@@ -2538,24 +2514,33 @@ class _DateField extends StatelessWidget {
         onTap: onTap,
         decoration: InputDecoration(
           hintText: 'Enter',
-          hintStyle: const TextStyle(color: Color(0xFF9D9D9D), fontSize: 14),
+          hintStyle: const TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 14,
+          ),
+          filled: true,
+          fillColor: SoftErpTheme.cardSurfaceAlt,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
-            vertical: 11,
+            vertical: 13,
           ),
-          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+          suffixIcon: const Icon(
+            Icons.calendar_today_outlined,
+            size: 18,
+            color: SoftErpTheme.textSecondary,
+          ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: SoftErpTheme.border),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: SoftErpTheme.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF6049E3)),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: SoftErpTheme.accent),
           ),
         ),
       ),
@@ -2581,18 +2566,18 @@ class _CompletionShortcutButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
-          color: isGhost ? Colors.white : const Color(0xFFF5F2FF),
-          borderRadius: BorderRadius.circular(8),
+          color: isGhost ? SoftErpTheme.cardSurface : const Color(0xFFF1EEFF),
+          borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: isGhost ? const Color(0xFFD7DBE7) : const Color(0xFFD9D2FF),
+            color: isGhost ? SoftErpTheme.border : const Color(0xFFD9D2FF),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isGhost ? const Color(0xFF4B5563) : const Color(0xFF6049E3),
+            color: isGhost ? SoftErpTheme.textSecondary : SoftErpTheme.accent,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -2655,8 +2640,10 @@ class _CompletionShortcutEditorDialogState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: SoftErpTheme.border),
+        boxShadow: SoftErpTheme.raisedShadow,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2673,7 +2660,7 @@ class _CompletionShortcutEditorDialogState
           Text(
             'Set quick completion presets for common lead times. People can still enter a date manually when the job runs longer.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF6B7280),
+              color: SoftErpTheme.textSecondary,
               height: 1.4,
             ),
           ),
@@ -2699,9 +2686,9 @@ class _CompletionShortcutEditorDialogState
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
+                  color: SoftErpTheme.cardSurfaceAlt,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  border: Border.all(color: SoftErpTheme.border),
                 ),
                 child: const Row(
                   children: [
@@ -2725,15 +2712,16 @@ class _CompletionShortcutEditorDialogState
             ),
           ],
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 10,
             children: [
               AppButton(
                 label: 'Cancel',
                 variant: AppButtonVariant.secondary,
                 onPressed: () => Navigator.of(context).pop(),
               ),
-              const SizedBox(width: 10),
               AppButton(
                 label: 'Save',
                 onPressed: () {
@@ -2772,9 +2760,9 @@ class _CompletionShortcutEditorDialogState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFCFCFE),
+        color: SoftErpTheme.cardSurfaceAlt,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: SoftErpTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2783,10 +2771,10 @@ class _CompletionShortcutEditorDialogState
             children: [
               Text(
                 index == 0
-                  ? 'Primary Button'
-                  : index == 1
-                  ? 'Secondary Button'
-                  : 'Extra Button',
+                    ? 'Primary Button'
+                    : index == 1
+                    ? 'Secondary Button'
+                    : 'Extra Button',
                 style: const TextStyle(
                   color: Color(0xFF2F3441),
                   fontSize: 13,
@@ -2795,10 +2783,7 @@ class _CompletionShortcutEditorDialogState
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF2EEFF),
                   borderRadius: BorderRadius.circular(999),
@@ -2847,21 +2832,25 @@ class _CompletionShortcutEditorDialogState
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     labelText: 'Days',
-                    hintText: index == 0 ? '3' : index == 1 ? '3' : '7',
+                    hintText: index == 0
+                        ? '3'
+                        : index == 1
+                        ? '3'
+                        : '7',
                     isDense: true,
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: SoftErpTheme.cardSurface,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 10,
                       vertical: 10,
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                      borderSide: const BorderSide(color: SoftErpTheme.border),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                      borderSide: const BorderSide(color: SoftErpTheme.border),
                     ),
                   ),
                 ),
@@ -2871,50 +2860,52 @@ class _CompletionShortcutEditorDialogState
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: _CompletionShortcutUnit.values.map((unit) {
-                    final isSelected = _units[index] == unit;
-                    return InkWell(
-                      key: unit == _CompletionShortcutUnit.days
-                          ? ValueKey<String>(
-                              'orders-editor-shortcut-unit-$index',
-                            )
-                          : null,
-                      onTap: () {
-                        setState(() {
-                          _units[index] = unit;
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(999),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 11,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF6049E3)
-                              : Colors.white,
+                  children: _CompletionShortcutUnit.values
+                      .map((unit) {
+                        final isSelected = _units[index] == unit;
+                        return InkWell(
+                          key: unit == _CompletionShortcutUnit.days
+                              ? ValueKey<String>(
+                                  'orders-editor-shortcut-unit-$index',
+                                )
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              _units[index] = unit;
+                            });
+                          },
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFF6049E3)
-                                : const Color(0xFFD7DBE7),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? SoftErpTheme.accent
+                                  : SoftErpTheme.cardSurface,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: isSelected
+                                    ? SoftErpTheme.accent
+                                    : SoftErpTheme.border,
+                              ),
+                            ),
+                            child: Text(
+                              unit.label,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : SoftErpTheme.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          unit.label,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Colors.white
-                                : const Color(0xFF374151),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(growable: false),
+                        );
+                      })
+                      .toList(growable: false),
                 ),
               ),
             ],
@@ -2926,10 +2917,7 @@ class _CompletionShortcutEditorDialogState
 }
 
 class _CompletionShortcutPreset {
-  const _CompletionShortcutPreset({
-    required this.amount,
-    required this.unit,
-  });
+  const _CompletionShortcutPreset({required this.amount, required this.unit});
 
   final int amount;
   final _CompletionShortcutUnit unit;
@@ -2973,15 +2961,15 @@ class _DependencyMessage extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF4C98B)),
+        color: SoftErpTheme.warningBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE6CC9D)),
       ),
       child: Text(
         'Orders need $missing before a record can be created.',
         style: Theme.of(
           context,
-        ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF9A5B13)),
+        ).textTheme.bodyMedium?.copyWith(color: SoftErpTheme.warningText),
       ),
     );
   }

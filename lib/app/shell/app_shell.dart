@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/soft_erp_theme.dart';
+import '../../core/widgets/soft_primitives.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/auth/presentation/screens/user_management_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
@@ -47,14 +49,14 @@ class AppShell extends StatelessWidget {
             const sidebarWidth = 272.0;
 
             return Scaffold(
-              backgroundColor: const Color(0xFFF4F5F9),
+              backgroundColor: SoftErpTheme.canvas,
               drawer: isMobile
                   ? Drawer(width: 260, child: _ShellDrawerContent())
                   : null,
               appBar: isMobile
                   ? AppBar(
-                      backgroundColor: const Color(0xFF6C63FF),
-                      foregroundColor: Colors.white,
+                      backgroundColor: SoftErpTheme.shellSurface,
+                      foregroundColor: SoftErpTheme.textPrimary,
                       title: const Text('Paper ERP'),
                     )
                   : null,
@@ -213,34 +215,31 @@ class _ModulePlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
+      child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE6E8F0)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 42, color: const Color(0xFF6C63FF)),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              description,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF6B7280)),
-            ),
-          ],
+        child: SoftSurface(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 42, color: SoftErpTheme.accent),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                description,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

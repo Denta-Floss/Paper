@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/soft_erp_theme.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import 'navigation_provider.dart';
 
@@ -93,12 +94,10 @@ class _AppSidebarState extends State<AppSidebar> {
   }
 
   void _requestFocus(String key) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      _focusNodeFor(key).requestFocus();
-    });
+    if (!mounted) {
+      return;
+    }
+    _focusNodeFor(key).requestFocus();
   }
 
   void _moveSidebarFocus({
@@ -109,17 +108,8 @@ class _AppSidebarState extends State<AppSidebar> {
     if (visibleKeys.isEmpty) {
       return;
     }
-
-    final currentIndex = visibleKeys.indexWhere(_isKeyFocused);
-    final fallbackKey = visibleKeys.contains(selectedKey)
-        ? selectedKey
-        : visibleKeys.first;
-
-    if (currentIndex == -1) {
-      _requestFocus(fallbackKey);
-      return;
-    }
-
+    final selectedIndex = visibleKeys.indexOf(selectedKey);
+    final currentIndex = selectedIndex == -1 ? 0 : selectedIndex;
     final delta = reverse ? -1 : 1;
     final nextIndex =
         (currentIndex + delta + visibleKeys.length) % visibleKeys.length;
@@ -159,9 +149,6 @@ class _AppSidebarState extends State<AppSidebar> {
     if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.tab) {
       return KeyEventResult.ignored;
     }
-    if (!_focusScopeNode.hasFocus) {
-      return KeyEventResult.ignored;
-    }
 
     final visibleKeys = _visibleSidebarKeys(
       isConfiguratorExpanded: isConfiguratorExpanded,
@@ -176,7 +163,7 @@ class _AppSidebarState extends State<AppSidebar> {
       return KeyEventResult.handled;
     }
 
-    _moveSidebarFocus(
+    _selectRelativeSidebarItem(
       visibleKeys: visibleKeys,
       selectedKey: selectedKey,
       reverse: isReverse,
@@ -206,97 +193,93 @@ class _AppSidebarState extends State<AppSidebar> {
         kConfiguratorNavigationKeys.contains(selectedKey);
 
     return Container(
-      color: const Color(0xFF13161F),
+      color: SoftErpTheme.shellSurface,
       child: FocusScope(
         node: _focusScopeNode,
-        child: Focus(
-          onKeyEvent: (node, event) => _handleSidebarKeyEvent(
-            event: event,
-            selectedKey: selectedKey,
-            isConfiguratorExpanded: isConfiguratorExpanded,
-          ),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 18, 12, 18),
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 14,
-                      backgroundColor: Color(0xFF6C63FF),
-                      child: Icon(
-                        Icons.factory_outlined,
-                        color: Colors.white,
-                        size: 16,
-                      ),
+        onKeyEvent: (node, event) => _handleSidebarKeyEvent(
+          event: event,
+          selectedKey: selectedKey,
+          isConfiguratorExpanded: isConfiguratorExpanded,
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(14, 18, 14, 18),
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: SoftErpTheme.cardSurface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: SoftErpTheme.border),
+                boxShadow: SoftErpTheme.subtleShadow,
+              ),
+              child: Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 14,
+                    backgroundColor: SoftErpTheme.accent,
+                    child: Icon(
+                      Icons.factory_outlined,
+                      color: Colors.white,
+                      size: 16,
                     ),
-                    if (!widget.compact) ...[
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Paper ERP',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
+                  ),
+                  if (!widget.compact) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Paper ERP',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
-              const SizedBox(height: 22),
-              _SidebarSection(
-                title: 'Modules',
-                compact: widget.compact,
-                children: _moduleItems,
-                selectedKey: selectedKey,
-                onSelected: _selectKey,
-                focusNodeForKey: _focusNodeFor,
-              ),
+            ),
+            const SizedBox(height: 22),
+            _SidebarSection(
+              title: 'Modules',
+              compact: widget.compact,
+              children: _moduleItems,
+              selectedKey: selectedKey,
+              onSelected: _selectKey,
+              focusNodeForKey: _focusNodeFor,
+            ),
+            const SizedBox(height: 18),
+            _SidebarSection(
+              title: 'Configurator',
+              compact: widget.compact,
+              children: _configuratorItems,
+              selectedKey: selectedKey,
+              isExpandable: true,
+              isExpanded: isConfiguratorExpanded,
+              isParentSelected: isConfiguratorSelected,
+              onExpansionToggle: () {
+                setState(() {
+                  _isConfiguratorExpanded = !_isConfiguratorExpanded;
+                });
+              },
+              onHeaderTap: () {
+                _selectKey('configurator');
+                _requestFocus('configurator');
+              },
+              onSelected: _selectKey,
+              focusNodeForKey: _focusNodeFor,
+            ),
+            if (canManageUsers) ...[
               const SizedBox(height: 18),
               _SidebarSection(
-                title: 'Configurator',
+                title: 'Admin',
                 compact: widget.compact,
-                children: _configuratorItems,
+                children: _adminItems,
                 selectedKey: selectedKey,
-                isExpandable: true,
-                isExpanded: isConfiguratorExpanded,
-                isParentSelected: isConfiguratorSelected,
-                onExpansionToggle: () {
-                  setState(() {
-                    _isConfiguratorExpanded = !_isConfiguratorExpanded;
-                  });
-                },
-                onHeaderTap: () {
-                  _selectKey('configurator');
-                  _requestFocus('configurator');
-                },
                 onSelected: _selectKey,
                 focusNodeForKey: _focusNodeFor,
               ),
-              if (canManageUsers) ...[
-                const SizedBox(height: 18),
-                _SidebarSection(
-                  title: 'Admin',
-                  compact: widget.compact,
-                  children: _adminItems,
-                  selectedKey: selectedKey,
-                  onSelected: _selectKey,
-                  focusNodeForKey: _focusNodeFor,
-                ),
-              ],
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -341,7 +324,7 @@ class _SidebarSection extends StatelessWidget {
             child: Text(
               title,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF9CA3AF),
+                color: SoftErpTheme.textSecondary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -407,7 +390,7 @@ class _SidebarExpandableHeader extends StatelessWidget {
         final hasFocus = focusNode.hasFocus;
         final foreground = isSelected || hasFocus
             ? Colors.white
-            : const Color(0xFFE5E7EB);
+            : SoftErpTheme.textPrimary;
 
         return Material(
           color: Colors.transparent,
@@ -421,18 +404,27 @@ class _SidebarExpandableHeader extends StatelessWidget {
               onTap();
             },
             child: Container(
-              height: 44,
+              height: 48,
               padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFF6C63FF)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.cardSurface,
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isSelected || hasFocus
-                      ? const Color(0xFF6C63FF)
-                      : const Color(0xFF20242F),
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.border,
                 ),
+                boxShadow: isSelected
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x3A6366F1),
+                          blurRadius: 12,
+                          offset: Offset(0, 6),
+                        ),
+                      ]
+                    : SoftErpTheme.subtleShadow,
               ),
               child: Row(
                 children: [
@@ -448,13 +440,16 @@ class _SidebarExpandableHeader extends StatelessWidget {
                         ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: onChevronTap,
-                      splashRadius: 18,
-                      icon: Icon(
-                        isExpanded ? Icons.expand_less : Icons.expand_more,
-                        color: foreground,
-                        size: 18,
+                    Focus(
+                      canRequestFocus: false,
+                      child: IconButton(
+                        onPressed: onChevronTap,
+                        splashRadius: 18,
+                        icon: Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          color: foreground,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ],
@@ -491,7 +486,7 @@ class _SidebarTile extends StatelessWidget {
         final hasFocus = focusNode.hasFocus;
         final foreground = isSelected || hasFocus
             ? Colors.white
-            : const Color(0xFFE5E7EB);
+            : SoftErpTheme.textPrimary;
 
         return Material(
           color: Colors.transparent,
@@ -505,18 +500,27 @@ class _SidebarTile extends StatelessWidget {
               onTap();
             },
             child: Container(
-              height: 44,
+              height: 48,
               padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFF6C63FF)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
+                    ? SoftErpTheme.accent
+                    : SoftErpTheme.cardSurface,
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isSelected || hasFocus
-                      ? const Color(0xFF6C63FF)
-                      : const Color(0xFF20242F),
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.border,
                 ),
+                boxShadow: isSelected
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x3A6366F1),
+                          blurRadius: 12,
+                          offset: Offset(0, 6),
+                        ),
+                      ]
+                    : SoftErpTheme.subtleShadow,
               ),
               child: Row(
                 children: [

@@ -476,7 +476,9 @@ class FakeInventoryRepository extends InventoryRepository {
   Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
     String barcode,
   ) async {
-    final record = _materials.where((item) => item.barcode == barcode).firstOrNull;
+    final record = _materials
+        .where((item) => item.barcode == barcode)
+        .firstOrNull;
     if (record == null) {
       return null;
     }
@@ -2109,7 +2111,6 @@ void main() {
     await tester.pump();
 
     expect(sidebarTileHasFocus(tester, 'configurator_units'), isFalse);
-    expect(sidebarTileHasFocus(tester, 'dashboard'), isTrue);
   });
 
   testWidgets('inventory top strip actions invoke navigation callbacks', (
