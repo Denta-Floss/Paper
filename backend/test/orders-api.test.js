@@ -79,6 +79,15 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     const updatedDto = backend.rowToOrderDto ? backend.rowToOrderDto(updated) : updated;
     assert.equal(updatedDto.status, 'completed');
     assert.equal(updatedDto.endDate, '2026-04-12T00:00:00.000Z');
+
+    const drafted = await backend.updateOrderLifecycle({
+      id: created.id,
+      status: 'draft',
+      startDate: null,
+      endDate: null,
+    });
+    const draftedDto = backend.rowToOrderDto ? backend.rowToOrderDto(drafted) : drafted;
+    assert.equal(draftedDto.status, 'draft');
   } finally {
     await backend.closeDb();
   }

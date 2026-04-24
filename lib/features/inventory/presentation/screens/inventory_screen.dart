@@ -120,17 +120,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
   MaterialRecord? _groupEditorInitialRecord;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      context.read<InventoryProvider>().loadInventoryHealth();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final isRequestDelete = context.select<AuthProvider, bool>(
       (auth) =>
@@ -1701,10 +1690,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
             SizedBox(width: 320, child: segmented),
             const SizedBox(width: 16),
             Expanded(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: actions,
-              ),
+              child: Align(alignment: Alignment.centerRight, child: actions),
             ),
           ],
         );
@@ -1729,7 +1715,9 @@ class _InventoryToolbarButton extends StatelessWidget {
     return AppButton(
       label: label,
       onPressed: onTap,
-      variant: isPrimary ? AppButtonVariant.primary : AppButtonVariant.secondary,
+      variant: isPrimary
+          ? AppButtonVariant.primary
+          : AppButtonVariant.secondary,
     );
   }
 }
@@ -2925,7 +2913,9 @@ class _InventoryMainDataRow extends StatelessWidget {
         child: SizedBox(
           height: metrics.rowHeight,
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.horizontalPadding,
+            ),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: surfaceColor,

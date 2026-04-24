@@ -1,4 +1,4 @@
-enum OrderStatus { notStarted, inProgress, completed, delayed }
+enum OrderStatus { draft, notStarted, inProgress, completed, delayed }
 
 class OrderEntry {
   const OrderEntry({

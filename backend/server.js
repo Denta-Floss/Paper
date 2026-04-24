@@ -3079,7 +3079,13 @@ async function saveOrder({
   const trimmedClientCode = String(clientCode || '').trim();
   const trimmedItemName = String(itemName || '').trim();
   const trimmedVariationPathLabel = String(variationPathLabel || '').trim();
-  const allowedStatuses = new Set(['notStarted', 'inProgress', 'completed', 'delayed']);
+  const allowedStatuses = new Set([
+    'draft',
+    'notStarted',
+    'inProgress',
+    'completed',
+    'delayed',
+  ]);
   const normalizedStatus = allowedStatuses.has(status) ? status : 'notStarted';
 
   if (!trimmedOrderNo) {
@@ -3178,7 +3184,13 @@ async function updateOrderLifecycle({
     error.statusCode = 404;
     throw error;
   }
-  const allowedStatuses = new Set(['notStarted', 'inProgress', 'completed', 'delayed']);
+  const allowedStatuses = new Set([
+    'draft',
+    'notStarted',
+    'inProgress',
+    'completed',
+    'delayed',
+  ]);
   const normalizedStatus = allowedStatuses.has(status) ? status : 'notStarted';
   await run(
     'UPDATE orders SET status = ?, start_date = ?, end_date = ? WHERE id = ?',

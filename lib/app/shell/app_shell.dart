@@ -21,73 +21,135 @@ import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  final FocusNode _shellFocusNode = FocusNode(debugLabel: 'app_shell');
+  bool _isOpeningNewOrder = false;
 
   bool get _isDesktopPlatform =>
       kIsWeb || Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   @override
-  Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
-            context.read<NavigationProvider>().selectRelativeSidebarItem(),
-        const SingleActivator(
-          LogicalKeyboardKey.tab,
-          control: true,
-          shift: true,
-        ): () => context.read<NavigationProvider>().selectRelativeSidebarItem(
-          reverse: true,
-        ),
-      },
-      child: Focus(
-        autofocus: true,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isMobile = constraints.maxWidth < 900;
-            const sidebarWidth = 272.0;
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _shellFocusNode.hasFocus) {
+        return;
+      }
+      _shellFocusNode.requestFocus();
+    });
+  }
 
-            return Scaffold(
-              backgroundColor: SoftErpTheme.canvas,
-              drawer: isMobile
-                  ? Drawer(width: 260, child: _ShellDrawerContent())
-                  : null,
-              appBar: isMobile
-                  ? AppBar(
-                      backgroundColor: SoftErpTheme.shellSurface,
-                      foregroundColor: SoftErpTheme.textPrimary,
-                      title: const Text('Paper ERP'),
-                    )
-                  : null,
-              body: SafeArea(
-                top: !isMobile,
-                child: Row(
-                  children: [
-                    if (!isMobile)
-                      SizedBox(
-                        width: sidebarWidth,
-                        child: const AppSidebar(compact: false),
-                      ),
-                    Expanded(
-                      child: _DesktopContentFrame(
-                        enabled: _isDesktopPlatform,
-                        child: Column(
-                          children: [
-                            if (!isMobile) const AppTopBar(),
-                            const Expanded(child: _ShellContentSwitcher()),
-                          ],
-                        ),
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
+    _shellFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _shellFocusNode,
+      autofocus: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 900;
+          const sidebarWidth = 272.0;
+
+          return Scaffold(
+            backgroundColor: SoftErpTheme.canvas,
+            drawer: isMobile
+                ? Drawer(width: 260, child: _ShellDrawerContent())
+                : null,
+            appBar: isMobile
+                ? AppBar(
+                    backgroundColor: SoftErpTheme.shellSurface,
+                    foregroundColor: SoftErpTheme.textPrimary,
+                    title: const Text('Paper ERP'),
+                  )
+                : null,
+            body: SafeArea(
+              top: !isMobile,
+              child: Row(
+                children: [
+                  if (!isMobile)
+                    SizedBox(
+                      width: sidebarWidth,
+                      child: const AppSidebar(compact: false),
+                    ),
+                  Expanded(
+                    child: _DesktopContentFrame(
+                      enabled: _isDesktopPlatform,
+                      child: Column(
+                        children: [
+                          if (!isMobile) const AppTopBar(),
+                          const Expanded(child: _ShellContentSwitcher()),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  bool _handleGlobalKeyEvent(KeyEvent event) {
+    if (ModalRoute.of(context)?.isCurrent != true) {
+      return false;
+    }
+    return _handleShellKeyEvent(event) == KeyEventResult.handled;
+  }
+
+  KeyEventResult _handleShellKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final isControlPressed = HardwareKeyboard.instance.isControlPressed;
+    final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
+    final usesCommandModifier = isControlPressed || isMetaPressed;
+    if (!usesCommandModifier) {
+      return KeyEventResult.ignored;
+    }
+
+    switch (event.logicalKey) {
+      case LogicalKeyboardKey.tab:
+        context.read<NavigationProvider>().selectRelativeSidebarItem(
+          reverse: HardwareKeyboard.instance.isShiftPressed,
+        );
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.keyN:
+        _openNewOrderFromShortcut(context);
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.keyF:
+        context.read<NavigationProvider>().focusTopStripSearch();
+        return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  void _openNewOrderFromShortcut(BuildContext context) {
+    if (_isOpeningNewOrder) {
+      return;
+    }
+
+    _isOpeningNewOrder = true;
+    OrdersScreen.openEditor(context).whenComplete(() {
+      _isOpeningNewOrder = false;
+    });
   }
 }
 
@@ -146,8 +208,13 @@ class _ShellContentSwitcher extends StatelessWidget {
     return Selector<NavigationProvider, String>(
       selector: (_, navigation) => navigation.selectedKey,
       builder: (context, key, _) {
+        final skipTransition = context
+            .read<NavigationProvider>()
+            .consumeSkipNextContentTransition();
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
+          duration: skipTransition
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
           switchInCurve: Curves.easeOut,
           switchOutCurve: Curves.easeOut,
           layoutBuilder: (currentChild, previousChildren) {

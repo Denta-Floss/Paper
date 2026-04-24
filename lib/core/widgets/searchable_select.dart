@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class SearchableSelectOption<T> {
   const SearchableSelectOption({
@@ -94,20 +95,54 @@ class SearchableSelectField<T> extends FormField<T> {
              suffixIcon: const Icon(Icons.keyboard_arrow_down_rounded),
            );
 
-           return InkWell(
-             key: tapTargetKey,
-             borderRadius: BorderRadius.circular(12),
-             onTap: widget.fieldEnabled ? field.openSelector : null,
-             child: InputDecorator(
-               decoration: effectiveDecoration,
-               isEmpty: selected == null,
-               child: selected == null
-                   ? const SizedBox.shrink()
-                   : Text(
-                       selected.label,
-                       maxLines: 1,
-                       overflow: TextOverflow.ellipsis,
+           return Focus(
+             focusNode: field.focusNode,
+             canRequestFocus: widget.fieldEnabled,
+             onKeyEvent: (node, event) {
+               if (!widget.fieldEnabled || event is! KeyDownEvent) {
+                 return KeyEventResult.ignored;
+               }
+               if (event.logicalKey == LogicalKeyboardKey.enter ||
+                   event.logicalKey == LogicalKeyboardKey.space) {
+                 field.openSelector();
+                 return KeyEventResult.handled;
+               }
+               return KeyEventResult.ignored;
+             },
+             child: Builder(
+               builder: (context) {
+                 final focused = Focus.of(context).hasFocus;
+                 return InkWell(
+                   key: tapTargetKey,
+                   canRequestFocus: false,
+                   borderRadius: BorderRadius.circular(12),
+                   onTap: widget.fieldEnabled ? field.openSelector : null,
+                   child: InputDecorator(
+                     decoration: effectiveDecoration.copyWith(
+                       focusedBorder: focused
+                           ? const OutlineInputBorder(
+                               borderRadius: BorderRadius.all(
+                                 Radius.circular(12),
+                               ),
+                               borderSide: BorderSide(
+                                 color: Color(0xFF7C6BFF),
+                                 width: 1.4,
+                               ),
+                             )
+                           : effectiveDecoration.focusedBorder,
                      ),
+                     isFocused: focused,
+                     isEmpty: selected == null,
+                     child: selected == null
+                         ? const SizedBox.shrink()
+                         : Text(
+                             selected.label,
+                             maxLines: 1,
+                             overflow: TextOverflow.ellipsis,
+                           ),
+                   ),
+                 );
+               },
              ),
            );
          },
@@ -128,9 +163,17 @@ class SearchableSelectField<T> extends FormField<T> {
 }
 
 class _SearchableSelectFieldState<T> extends FormFieldState<T> {
+  final FocusNode focusNode = FocusNode(debugLabel: 'searchable_select_field');
+
   @override
   SearchableSelectField<T> get widget =>
       super.widget as SearchableSelectField<T>;
+
+  @override
+  void dispose() {
+    focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant SearchableSelectField<T> oldWidget) {
@@ -314,149 +357,203 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      elevation: 18,
-      color: Colors.white,
-      shadowColor: const Color(0x24101828),
-      surfaceTintColor: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (title != null) ...[
+    return FocusTraversalGroup(
+      child: Material(
+        elevation: 18,
+        color: Colors.white,
+        shadowColor: const Color(0x24101828),
+        surfaceTintColor: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (title != null) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                  child: Text(
+                    title!,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF2F3744),
+                    ),
+                  ),
+                ),
+              ] else
+                const SizedBox(height: 14),
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-                child: Text(
-                  title!,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF2F3744),
-                  ),
-                ),
-              ),
-            ] else
-              const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: SizedBox(
-                height: 40,
-                child: TextField(
-                  controller: searchController,
-                  autofocus: true,
-                  onChanged: onQueryChanged,
-                  decoration: InputDecoration(
-                    hintText: searchHintText,
-                    hintStyle: const TextStyle(
-                      color: Color(0xFF7B8494),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      size: 18,
-                      color: Color(0xFF7B8494),
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFFF7F8FB),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF7C6BFF)),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Flexible(
-              child: options.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-                        child: Text(
-                          emptyText,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: const Color(0xFF6B7280)),
-                          textAlign: TextAlign.center,
-                        ),
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: SizedBox(
+                  height: 40,
+                  child: TextField(
+                    controller: searchController,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    onChanged: onQueryChanged,
+                    decoration: InputDecoration(
+                      hintText: searchHintText,
+                      hintStyle: const TextStyle(
+                        color: Color(0xFF7B8494),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
                       ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                      itemCount: options.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: 2),
-                      itemBuilder: (context, index) {
-                        final option = options[index];
-                        final isSelected = option.value == selectedValue;
-                        return Material(
-                          color: isSelected
-                              ? const Color(0xFFF3F0FF)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(10),
-                            onTap: () => Navigator.of(context).pop(option),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 11,
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      option.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: const Color(0xFF2F3744),
-                                        fontSize: 13,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  AnimatedOpacity(
-                                    opacity: isSelected ? 1 : 0,
-                                    duration: const Duration(milliseconds: 120),
-                                    child: const Icon(
-                                      Icons.check_rounded,
-                                      size: 18,
-                                      color: Color(0xFF6C63FF),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        size: 18,
+                        color: Color(0xFF7B8494),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF7F8FB),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFF7C6BFF)),
+                      ),
                     ),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: options.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                          child: Text(
+                            emptyText,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: const Color(0xFF6B7280)),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        itemCount: options.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 2),
+                        itemBuilder: (context, index) {
+                          final option = options[index];
+                          return _SearchableSelectOptionTile<T>(
+                            option: option,
+                            isSelected: option.value == selectedValue,
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchableSelectOptionTile<T> extends StatefulWidget {
+  const _SearchableSelectOptionTile({
+    required this.option,
+    required this.isSelected,
+  });
+
+  final SearchableSelectOption<T> option;
+  final bool isSelected;
+
+  @override
+  State<_SearchableSelectOptionTile<T>> createState() =>
+      _SearchableSelectOptionTileState<T>();
+}
+
+class _SearchableSelectOptionTileState<T>
+    extends State<_SearchableSelectOptionTile<T>> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor = _isFocused
+        ? const Color(0xFFEDE9FF)
+        : widget.isSelected
+        ? const Color(0xFFF3F0FF)
+        : Colors.white;
+
+    void selectOption() {
+      Navigator.of(context).pop(widget.option);
+    }
+
+    return FocusableActionDetector(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      },
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (intent) {
+            selectOption();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (focused) {
+        setState(() {
+          _isFocused = focused;
+        });
+      },
+      child: Material(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          canRequestFocus: false,
+          borderRadius: BorderRadius.circular(10),
+          onTap: selectOption,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: const Color(0xFF2F3744),
+                      fontSize: 13,
+                      fontWeight: widget.isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                AnimatedOpacity(
+                  opacity: widget.isSelected ? 1 : 0,
+                  duration: const Duration(milliseconds: 120),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 18,
+                    color: Color(0xFF6C63FF),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

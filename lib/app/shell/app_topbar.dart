@@ -257,11 +257,26 @@ class _ShellTopStripSearchField extends StatefulWidget {
 
 class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
   late final TextEditingController _controller;
+  FocusNode? _focusNode;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.search.initialValue);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextFocusNode = context
+        .read<NavigationProvider>()
+        .topStripSearchFocusNode;
+    if (_focusNode == nextFocusNode) {
+      return;
+    }
+    _focusNode?.removeListener(_handleFocusChanged);
+    _focusNode = nextFocusNode;
+    _focusNode?.addListener(_handleFocusChanged);
   }
 
   @override
@@ -279,14 +294,25 @@ class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
 
   @override
   void dispose() {
+    _focusNode?.removeListener(_handleFocusChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (_focusNode?.hasFocus ?? false) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       key: const ValueKey<String>('shell_top_strip_search_field'),
+      focusNode: _focusNode,
       controller: _controller,
       onChanged: widget.search.onChanged,
       decoration: InputDecoration(

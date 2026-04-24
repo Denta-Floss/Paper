@@ -210,98 +210,221 @@ class SoftIconButton extends StatelessWidget {
   }
 }
 
-class SoftMetricCard extends StatelessWidget {
+class SoftMetricCard extends StatefulWidget {
   const SoftMetricCard({
     super.key,
     required this.label,
     required this.value,
     required this.isActive,
     required this.onTap,
+    this.subLabel,
   });
 
   final String label;
   final int value;
   final bool isActive;
   final VoidCallback onTap;
+  final String? subLabel;
+
+  @override
+  State<SoftMetricCard> createState() => _SoftMetricCardState();
+}
+
+class _SoftMetricCardState extends State<SoftMetricCard> {
+  bool _isHovered = false;
+  bool _isPressed = false;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-      child: SoftSurface(
-        color: isActive ? const Color(0xFFF4F1FF) : SoftErpTheme.cardSurface,
-        radius: 22,
-        strongBorder: isActive,
-        elevated: !isActive,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+    final isActive = widget.isActive;
+    final lift = _isPressed ? 0.0 : (_isHovered ? -2.0 : 0.0);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() {
+        _isHovered = false;
+        _isPressed = false;
+      }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        transform: Matrix4.translationValues(0, lift, 0),
+        child: InkWell(
+          onTap: widget.onTap,
+          onHighlightChanged: (pressed) => setState(() => _isPressed = pressed),
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+          child: SoftSurface(
+            color: isActive
+                ? const Color(0xFFF0EDFF)
+                : (_isHovered
+                      ? const Color(0xFFFDFDFF)
+                      : SoftErpTheme.cardSurface),
+            radius: 24,
+            strongBorder: isActive || _isHovered,
+            elevated: true,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (widget.subLabel != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.subLabel!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isActive
+                                ? SoftErpTheme.accentDark
+                                : SoftErpTheme.textSecondary,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
-            Container(
-              constraints: const BoxConstraints(minWidth: 74),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? const Color(0xFFE8E4FF)
-                    : SoftErpTheme.cardSurfaceAlt,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                '$value',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(width: 14),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  constraints: const BoxConstraints(minWidth: 82),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? const Color(0xFFDDD5FF)
+                        : SoftErpTheme.cardSurfaceAlt,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: isActive
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x1E6366F1),
+                              blurRadius: 12,
+                              offset: Offset(0, 6),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    '${widget.value}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isActive
+                          ? SoftErpTheme.accentDark
+                          : SoftErpTheme.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class SoftRowCard extends StatelessWidget {
+class SoftRowCard extends StatefulWidget {
   const SoftRowCard({
     super.key,
     required this.child,
     required this.onTap,
     this.isSelected = false,
+    this.baseColor,
+    this.hoverColor,
+    this.selectedColor,
+    this.baseShadow,
+    this.hoverShadow,
   });
 
   final Widget child;
   final VoidCallback onTap;
   final bool isSelected;
+  final Color? baseColor;
+  final Color? hoverColor;
+  final Color? selectedColor;
+  final List<BoxShadow>? baseShadow;
+  final List<BoxShadow>? hoverShadow;
+
+  @override
+  State<SoftRowCard> createState() => _SoftRowCardState();
+}
+
+class _SoftRowCardState extends State<SoftRowCard> {
+  bool _hovered = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          decoration: SoftErpTheme.surfaceDecoration(
-            color: isSelected
-                ? const Color(0xFFF1EEFF)
-                : SoftErpTheme.cardSurface,
-            radius: 20,
-            elevated: true,
-            strongBorder: isSelected,
+    final lift = _pressed ? 0.9 : (_hovered ? -1.7 : 0.0);
+    final selected = widget.isSelected;
+    final defaultHoverShadow = const [
+      BoxShadow(
+        color: Color(0x24909CC3),
+        blurRadius: 18,
+        offset: Offset(0, 12),
+      ),
+      BoxShadow(
+        color: Color(0xBFFFFFFF),
+        blurRadius: 8,
+        offset: Offset(-1.5, -1.5),
+      ),
+    ];
+    final shadow = _hovered
+        ? (widget.hoverShadow ?? defaultHoverShadow)
+        : (widget.baseShadow ?? SoftErpTheme.raisedShadow);
+    final baseColor = widget.baseColor ?? SoftErpTheme.cardSurface;
+    final hoverColor = widget.hoverColor ?? const Color(0xFFFDFDFF);
+    final selectedColor = widget.selectedColor ?? const Color(0xFFF2EFFF);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        transform: Matrix4.translationValues(0, lift, 0),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            onHighlightChanged: (pressed) => setState(() => _pressed = pressed),
+            borderRadius: BorderRadius.circular(22),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: selected
+                    ? selectedColor
+                    : (_hovered ? hoverColor : baseColor),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: selected || _hovered
+                      ? SoftErpTheme.borderStrong
+                      : SoftErpTheme.border,
+                ),
+                boxShadow: shadow,
+              ),
+              child: widget.child,
+            ),
           ),
-          child: child,
         ),
       ),
     );

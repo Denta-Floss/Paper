@@ -81,10 +81,13 @@ class _AppSidebarState extends State<AppSidebar> {
     ];
   }
 
-  void _selectKey(String key) {
+  void _selectKey(String key, {bool skipTransition = false}) {
     widget.onItemSelected?.call(key);
     if (widget.onItemSelected == null) {
-      context.read<NavigationProvider>().select(key);
+      context.read<NavigationProvider>().select(
+        key,
+        skipTransition: skipTransition,
+      );
     }
     if (kConfiguratorNavigationKeys.contains(key) && !_isConfiguratorExpanded) {
       setState(() {
@@ -98,22 +101,6 @@ class _AppSidebarState extends State<AppSidebar> {
       return;
     }
     _focusNodeFor(key).requestFocus();
-  }
-
-  void _moveSidebarFocus({
-    required List<String> visibleKeys,
-    required String selectedKey,
-    required bool reverse,
-  }) {
-    if (visibleKeys.isEmpty) {
-      return;
-    }
-    final selectedIndex = visibleKeys.indexOf(selectedKey);
-    final currentIndex = selectedIndex == -1 ? 0 : selectedIndex;
-    final delta = reverse ? -1 : 1;
-    final nextIndex =
-        (currentIndex + delta + visibleKeys.length) % visibleKeys.length;
-    _requestFocus(visibleKeys[nextIndex]);
   }
 
   void _selectRelativeSidebarItem({
@@ -135,7 +122,7 @@ class _AppSidebarState extends State<AppSidebar> {
         (safeCurrentIndex + delta + visibleKeys.length) % visibleKeys.length;
     final nextKey = visibleKeys[nextIndex];
 
-    _selectKey(nextKey);
+    _selectKey(nextKey, skipTransition: true);
     _requestFocus(nextKey);
   }
 

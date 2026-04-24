@@ -29,12 +29,19 @@ class NavigationProvider extends ChangeNotifier {
     : _selectedKey = initialKey;
 
   String _selectedKey;
+  final FocusNode topStripSearchFocusNode = FocusNode(
+    debugLabel: 'top_strip_search',
+  );
 
   String get selectedKey => _selectedKey;
+  bool _skipNextContentTransition = false;
 
-  void select(String key) {
+  void select(String key, {bool skipTransition = false}) {
     if (_selectedKey == key) {
       return;
+    }
+    if (skipTransition) {
+      _skipNextContentTransition = true;
     }
 
     _selectedKey = key;
@@ -48,6 +55,22 @@ class NavigationProvider extends ChangeNotifier {
     final nextIndex =
         (safeCurrentIndex + delta + kSidebarNavigationOrder.length) %
         kSidebarNavigationOrder.length;
-    select(kSidebarNavigationOrder[nextIndex]);
+    select(kSidebarNavigationOrder[nextIndex], skipTransition: true);
+  }
+
+  bool consumeSkipNextContentTransition() {
+    final shouldSkip = _skipNextContentTransition;
+    _skipNextContentTransition = false;
+    return shouldSkip;
+  }
+
+  void focusTopStripSearch() {
+    topStripSearchFocusNode.requestFocus();
+  }
+
+  @override
+  void dispose() {
+    topStripSearchFocusNode.dispose();
+    super.dispose();
   }
 }

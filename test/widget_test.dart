@@ -1878,8 +1878,19 @@ class FakeItemRepository extends ItemRepository {
 }
 
 class FakeOrderRepository extends OrderRepository {
-  final List<OrderEntry> _orders = <OrderEntry>[];
-  int _nextId = 1;
+  FakeOrderRepository({List<OrderEntry> seedOrders = const <OrderEntry>[]})
+    : _orders = List<OrderEntry>.from(seedOrders),
+      _nextId = seedOrders.isEmpty
+          ? 1
+          : seedOrders
+                    .map((order) => order.id)
+                    .reduce(
+                      (value, element) => value > element ? value : element,
+                    ) +
+                1;
+
+  final List<OrderEntry> _orders;
+  int _nextId;
 
   @override
   Future<void> init() async {}
@@ -2008,8 +2019,9 @@ void main() {
     FakeClientRepository? clientRepository,
     FakeItemRepository? itemRepository,
     FakeOrderRepository? orderRepository,
+    Size viewSize = const Size(1280, 900),
   }) async {
-    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.physicalSize = viewSize;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -2078,7 +2090,7 @@ void main() {
   });
 
   testWidgets('ctrl+tab cycles sidebar navigation forward', (tester) async {
-    await pumpApp(tester);
+    await pumpApp(tester, viewSize: const Size(1440, 900));
 
     await tester.tap(find.text('Orders'));
     await tester.pumpAndSettle();
@@ -2097,6 +2109,87 @@ void main() {
       find.text('Search groups, items, barcode, supplier, or notes'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('ctrl and command n open the new order editor', (tester) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create New Order'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel').last);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create New Order'), findsOneWidget);
+  });
+
+  testWidgets('ctrl f focuses the shared title bar search', (tester) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await tester.tap(find.text('Orders'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    final searchField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+    );
+    expect(searchField.focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('tab reaches order dropdowns and dropdown options', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
+      'TAB-ORDER-01',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
+      'TAB-PO-01',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Acme Packaging Pvt. Ltd. / Acme'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Search client'),
+      'acme',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Acme Packaging Pvt. Ltd. / Acme'), findsWidgets);
   });
 
   testWidgets('tab focus stays looped inside sidebar items', (tester) async {
@@ -2179,7 +2272,7 @@ void main() {
   testWidgets('orders flow auto-fills client code from client master', (
     tester,
   ) async {
-    await pumpApp(tester);
+    await pumpApp(tester, viewSize: const Size(1440, 900));
 
     await tester.tap(find.text('Orders'));
     await tester.pumpAndSettle();
@@ -2275,10 +2368,9 @@ void main() {
       '25',
     );
 
-    await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Create Order'),
-    );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Create Order'));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
     expect(find.text('ORD-001'), findsOneWidget);
@@ -2296,7 +2388,7 @@ void main() {
   testWidgets('orders search filters through the shared shell strip', (
     tester,
   ) async {
-    await pumpApp(tester);
+    await pumpApp(tester, viewSize: const Size(1440, 900));
 
     await tester.tap(find.text('Orders').first);
     await tester.pumpAndSettle();
@@ -2377,9 +2469,11 @@ void main() {
       '11',
     );
     await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Create Order'),
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
     );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Create Order'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -2396,7 +2490,190 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('No orders found'), findsOneWidget);
+    expect(find.text('No orders in this state'), findsOneWidget);
+  });
+
+  testWidgets('orders filtered empty state shows create order action', (
+    tester,
+  ) async {
+    final seededOrderRepo = FakeOrderRepository(
+      seedOrders: <OrderEntry>[
+        OrderEntry(
+          id: 1,
+          orderNo: 'ORD-SEEDED-01',
+          clientId: 1,
+          clientName: 'Acme Packaging Pvt. Ltd.',
+          poNumber: 'PO-SEEDED-01',
+          clientCode: 'Acme',
+          itemId: 1,
+          itemName: 'Switch Action Dolly - 1',
+          variationLeafNodeId: 11,
+          variationPathLabel: '5 Amp',
+          variationPathNodeIds: const <int>[1, 11],
+          quantity: 10,
+          status: OrderStatus.inProgress,
+          createdAt: DateTime(2026, 4, 20),
+          startDate: DateTime(2026, 4, 21),
+          endDate: DateTime(2026, 4, 26),
+        ),
+      ],
+    );
+    await pumpApp(
+      tester,
+      orderRepository: seededOrderRepo,
+      viewSize: const Size(1600, 1000),
+    );
+
+    await tester.tap(find.text('Orders').first);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+      'no-match-value',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('No orders in this state'), findsOneWidget);
+    expect(
+      find.text('No matching orders for the current filters.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-empty-create-order')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Create New Order'), findsOneWidget);
+  });
+
+  testWidgets('orders rows show urgency cues for near due and overdue', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final nearDue = DateTime(now.year, now.month, now.day + 2);
+    final overdue = DateTime(now.year, now.month, now.day - 1);
+
+    final seededOrderRepo = FakeOrderRepository(
+      seedOrders: <OrderEntry>[
+        OrderEntry(
+          id: 41,
+          orderNo: 'ORD-NEAR',
+          clientId: 1,
+          clientName: 'Acme Packaging Pvt. Ltd.',
+          poNumber: 'PO-NEAR',
+          clientCode: 'Acme',
+          itemId: 1,
+          itemName: 'Switch Action Dolly - 1',
+          variationLeafNodeId: 11,
+          variationPathLabel: '5 Amp',
+          variationPathNodeIds: const <int>[1, 11],
+          quantity: 6,
+          status: OrderStatus.inProgress,
+          createdAt: DateTime(2026, 4, 20),
+          startDate: DateTime(2026, 4, 21),
+          endDate: nearDue,
+        ),
+        OrderEntry(
+          id: 42,
+          orderNo: 'ORD-OVERDUE',
+          clientId: 1,
+          clientName: 'Acme Packaging Pvt. Ltd.',
+          poNumber: 'PO-OVERDUE',
+          clientCode: 'Acme',
+          itemId: 1,
+          itemName: 'Switch Action Dolly - 1',
+          variationLeafNodeId: 11,
+          variationPathLabel: '5 Amp',
+          variationPathNodeIds: const <int>[1, 11],
+          quantity: 6,
+          status: OrderStatus.notStarted,
+          createdAt: DateTime(2026, 4, 20),
+          startDate: DateTime(2026, 4, 21),
+          endDate: overdue,
+        ),
+      ],
+    );
+    await pumpApp(
+      tester,
+      orderRepository: seededOrderRepo,
+      viewSize: const Size(1600, 1000),
+    );
+
+    await tester.tap(find.text('Orders').first);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('orders-row-urgency-near-41')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('orders-row-urgency-overdue-42')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('orders summary cards show contextual sublabels and filter', (
+    tester,
+  ) async {
+    final seededOrderRepo = FakeOrderRepository(
+      seedOrders: <OrderEntry>[
+        OrderEntry(
+          id: 61,
+          orderNo: 'ORD-DRAFT-VIEW',
+          clientId: 1,
+          clientName: 'Acme Packaging Pvt. Ltd.',
+          poNumber: 'PO-DRAFT-VIEW',
+          clientCode: 'Acme',
+          itemId: 1,
+          itemName: 'Switch Action Dolly - 1',
+          variationLeafNodeId: 11,
+          variationPathLabel: '5 Amp',
+          variationPathNodeIds: const <int>[1, 11],
+          quantity: 4,
+          status: OrderStatus.draft,
+          createdAt: DateTime(2026, 4, 20),
+          startDate: DateTime(2026, 4, 21),
+          endDate: DateTime(2026, 4, 30),
+        ),
+        OrderEntry(
+          id: 62,
+          orderNo: 'ORD-COMPLETE-VIEW',
+          clientId: 1,
+          clientName: 'Acme Packaging Pvt. Ltd.',
+          poNumber: 'PO-COMPLETE-VIEW',
+          clientCode: 'Acme',
+          itemId: 1,
+          itemName: 'Switch Action Dolly - 1',
+          variationLeafNodeId: 11,
+          variationPathLabel: '5 Amp',
+          variationPathNodeIds: const <int>[1, 11],
+          quantity: 4,
+          status: OrderStatus.completed,
+          createdAt: DateTime(2026, 4, 20),
+          startDate: DateTime(2026, 4, 21),
+          endDate: DateTime(2026, 4, 30),
+        ),
+      ],
+    );
+    await pumpApp(
+      tester,
+      orderRepository: seededOrderRepo,
+      viewSize: const Size(1600, 1000),
+    );
+
+    await tester.tap(find.text('Orders').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('needs setup'), findsOneWidget);
+    expect(find.text('done'), findsOneWidget);
+
+    final completedFilter = find.text('done').first;
+    await tester.ensureVisible(completedFilter);
+    await tester.tap(completedFilter, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('ORD-COMPLETE-VIEW'), findsOneWidget);
+    expect(find.text('ORD-DRAFT-VIEW'), findsNothing);
   });
 
   testWidgets('orders merge duplicate lines by order client po and item', (
@@ -2484,9 +2761,11 @@ void main() {
         qty,
       );
       await tester.ensureVisible(
-        find.widgetWithText(ElevatedButton, 'Create Order'),
+        find.byKey(const ValueKey<String>('orders-editor-create-order')),
       );
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Create Order'));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('orders-editor-create-order')),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -2589,9 +2868,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Create Order'),
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
     );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Create Order'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('In Progress'), findsWidgets);
@@ -2621,6 +2902,102 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Completed'), findsWidgets);
+  });
+
+  testWidgets('orders can be saved as draft from create dialog', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1600, 1000));
+
+    await tester.tap(find.text('Orders').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('New Order').first);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
+      'ORD-DRAFT-001',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
+      'PO-DRAFT-001',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('5 Amp').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('11+1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Brass').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 Way').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-type-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dolly').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Without Plating').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      '6',
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('orders-editor-save-draft')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-save-draft')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ORD-DRAFT-001'), findsOneWidget);
+    expect(find.text('Draft'), findsWidgets);
   });
 
   testWidgets('orders block creation when selected client has no code', (
@@ -2719,9 +3096,11 @@ void main() {
     );
 
     await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Create Order'),
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
     );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Create Order'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
     await tester.pumpAndSettle();
 
     expect(

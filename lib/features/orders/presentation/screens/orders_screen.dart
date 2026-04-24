@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/domain/client_definition.dart';
@@ -13,6 +13,15 @@ import '../../../items/presentation/providers/items_provider.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_inputs.dart';
 import '../providers/orders_provider.dart';
+
+Map<ShortcutActivator, VoidCallback> _submitShortcutBindings(
+  VoidCallback onSubmit,
+) {
+  return <ShortcutActivator, VoidCallback>{
+    const SingleActivator(LogicalKeyboardKey.enter, control: true): onSubmit,
+    const SingleActivator(LogicalKeyboardKey.enter, meta: true): onSubmit,
+  };
+}
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -51,7 +60,7 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  static const double _contentHorizontalPadding = 22;
+  static const double _contentHorizontalPadding = 28;
   final Set<int> _selectedOrderIds = <int>{};
   int? _partyFilterClientId;
   int? _itemFilterId;
@@ -80,15 +89,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     return Container(
       color: SoftErpTheme.canvas,
-      padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: SoftSurface(
               color: SoftErpTheme.shellSurface,
-              radius: 44,
-              padding: const EdgeInsets.fromLTRB(0, 14, 0, 18),
+              radius: 36,
+              padding: const EdgeInsets.fromLTRB(0, 20, 0, 22),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -97,7 +106,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       _contentHorizontalPadding,
                       0,
                       _contentHorizontalPadding,
-                      18,
+                      20,
                     ),
                     child: _OrdersHeader(
                       onNewOrder: () => OrdersScreen.openEditor(context),
@@ -134,8 +143,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  const Divider(height: 1, color: SoftErpTheme.border),
                   const SizedBox(height: 18),
                   if (ordersProvider.errorMessage != null) ...[
                     Padding(
@@ -146,7 +153,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         message: ordersProvider.errorMessage!,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                   ],
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -162,10 +169,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   Expanded(
                     child: _OrdersTableCard(
                       orders: visibleOrders,
+                      hasAnyOrders: orders.isNotEmpty,
+                      hasActiveFilters:
+                          _partyFilterClientId != null ||
+                          _itemFilterId != null ||
+                          _statusFilter != null ||
+                          ordersProvider.searchQuery.trim().isNotEmpty,
                       selectedOrderIds: _selectedOrderIds,
                       onToggleSelection: (orderId, selected) {
                         setState(() {
@@ -177,6 +190,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         });
                       },
                       onRowTap: (order) => _openLifecycleEditor(context, order),
+                      onCreateOrder: () => OrdersScreen.openEditor(context),
                     ),
                   ),
                 ],
@@ -189,7 +203,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   List<OrderEntry> _applyFilters(List<OrderEntry> orders) {
-    return orders
+    final filtered = orders
         .where((order) {
           if (_partyFilterClientId != null &&
               order.clientId != _partyFilterClientId) {
@@ -204,6 +218,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
           return true;
         })
         .toList(growable: false);
+
+    filtered.sort((a, b) {
+      final urgencyCompare = _urgencyWeight(
+        _resolveOrderUrgency(b),
+      ).compareTo(_urgencyWeight(_resolveOrderUrgency(a)));
+      if (urgencyCompare != 0) {
+        return urgencyCompare;
+      }
+      final statusCompare = _statusPriorityWeight(
+        b.status,
+      ).compareTo(_statusPriorityWeight(a.status));
+      if (statusCompare != 0) {
+        return statusCompare;
+      }
+      final aEnd = a.endDate;
+      final bEnd = b.endDate;
+      if (aEnd == null && bEnd != null) {
+        return 1;
+      }
+      if (aEnd != null && bEnd == null) {
+        return -1;
+      }
+      if (aEnd != null && bEnd != null) {
+        final dueCompare = aEnd.compareTo(bEnd);
+        if (dueCompare != 0) {
+          return dueCompare;
+        }
+      }
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return filtered;
   }
 
   Future<void> _openLifecycleEditor(BuildContext context, OrderEntry order) {
@@ -310,7 +355,7 @@ class _OrdersHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   title,
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   Align(alignment: Alignment.centerRight, child: button),
                 ],
               )
@@ -323,9 +368,10 @@ class _OrdersHeader extends StatelessWidget {
               );
 
         return SoftSurface(
-          radius: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          radius: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
           color: SoftErpTheme.cardSurface,
+          elevated: true,
           child: content,
         );
       },
@@ -353,9 +399,14 @@ class _OrdersPrimaryButton extends StatelessWidget {
         ),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x386366F1),
-            blurRadius: 14,
-            offset: Offset(0, 8),
+            color: Color(0x346366F1),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Color(0x7AFFFFFF),
+            blurRadius: 4,
+            offset: Offset(-1, -1),
           ),
         ],
       ),
@@ -530,23 +581,31 @@ class _OrdersControlRow extends StatelessWidget {
           ],
         );
 
-        if (constraints.maxWidth < 1140) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(spacing: 0, runSpacing: 8, children: filters),
-              const SizedBox(height: 12),
-              trailing,
-            ],
-          );
-        }
+        final strip = constraints.maxWidth < 1140
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(spacing: 10, runSpacing: 10, children: filters),
+                  const SizedBox(height: 12),
+                  trailing,
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: Wrap(spacing: 10, runSpacing: 10, children: filters),
+                  ),
+                  const SizedBox(width: 14),
+                  trailing,
+                ],
+              );
 
-        return Row(
-          children: [
-            Expanded(child: Wrap(spacing: 0, runSpacing: 8, children: filters)),
-            const SizedBox(width: 12),
-            trailing,
-          ],
+        return SoftSurface(
+          radius: 26,
+          color: SoftErpTheme.cardSurface,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          elevated: true,
+          child: strip,
         );
       },
     );
@@ -572,9 +631,8 @@ class _FilterChipButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.horizontal(
-      left: Radius.circular(isFirst ? 22 : 14),
-      right: Radius.circular(isLast ? 22 : 14),
+    final radius = BorderRadius.circular(
+      isFirst || isLast ? SoftErpTheme.radiusLg : SoftErpTheme.radiusMd,
     );
     return InkWell(
       borderRadius: radius,
@@ -597,12 +655,13 @@ class _FilterChipButton<T> extends StatelessWidget {
         }
       },
       child: Container(
-        height: 38,
+        height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: SoftErpTheme.cardSurfaceAlt,
           border: Border.all(color: SoftErpTheme.border),
           borderRadius: radius,
+          boxShadow: SoftErpTheme.insetShadow,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -620,7 +679,7 @@ class _FilterChipButton<T> extends StatelessWidget {
               style: const TextStyle(
                 color: SoftErpTheme.textSecondary,
                 fontFamily: 'Segoe UI',
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -629,8 +688,8 @@ class _FilterChipButton<T> extends StatelessWidget {
               style: const TextStyle(
                 color: SoftErpTheme.textPrimary,
                 fontFamily: 'Segoe UI',
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(width: 4),
@@ -660,7 +719,7 @@ class _ActionChip extends StatelessWidget {
       background: SoftErpTheme.cardSurfaceAlt,
       borderColor: SoftErpTheme.border,
       foreground: SoftErpTheme.textPrimary,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
     );
   }
 }
@@ -678,9 +737,9 @@ class _OrdersSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const cardWidth = 338.0;
+    const cardWidth = 320.0;
     return SizedBox(
-      height: 84,
+      height: 94,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -689,46 +748,62 @@ class _OrdersSummaryRow extends StatelessWidget {
               width: cardWidth,
               child: _SummaryCard(
                 label: 'All',
+                subLabel: 'total orders',
                 value: summary.total,
                 isActive: activeStatus == null,
                 onTap: () => onStatusSelected(null),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
+            SizedBox(
+              width: cardWidth,
+              child: _SummaryCard(
+                label: 'Draft',
+                subLabel: 'needs setup',
+                value: summary.draft,
+                isActive: activeStatus == OrderStatus.draft,
+                onTap: () => onStatusSelected(OrderStatus.draft),
+              ),
+            ),
+            const SizedBox(width: 14),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
                 label: 'Not Started',
+                subLabel: 'ready to begin',
                 value: summary.notStarted,
                 isActive: activeStatus == OrderStatus.notStarted,
                 onTap: () => onStatusSelected(OrderStatus.notStarted),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
                 label: 'In Progress',
+                subLabel: 'active work',
                 value: summary.inProgress,
                 isActive: activeStatus == OrderStatus.inProgress,
                 onTap: () => onStatusSelected(OrderStatus.inProgress),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
                 label: 'Completed',
+                subLabel: 'done',
                 value: summary.completed,
                 isActive: activeStatus == OrderStatus.completed,
                 onTap: () => onStatusSelected(OrderStatus.completed),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
                 label: 'Delayed',
+                subLabel: 'needs attention',
                 value: summary.delayed,
                 isActive: activeStatus == OrderStatus.delayed,
                 onTap: () => onStatusSelected(OrderStatus.delayed),
@@ -744,12 +819,14 @@ class _OrdersSummaryRow extends StatelessWidget {
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
     required this.label,
+    required this.subLabel,
     required this.value,
     required this.isActive,
     required this.onTap,
   });
 
   final String label;
+  final String subLabel;
   final int value;
   final bool isActive;
   final VoidCallback onTap;
@@ -758,6 +835,7 @@ class _SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SoftMetricCard(
       label: label,
+      subLabel: subLabel,
       value: value,
       isActive: isActive,
       onTap: onTap,
@@ -768,30 +846,89 @@ class _SummaryCard extends StatelessWidget {
 class _OrdersTableCard extends StatelessWidget {
   const _OrdersTableCard({
     required this.orders,
+    required this.hasAnyOrders,
+    required this.hasActiveFilters,
     required this.selectedOrderIds,
     required this.onToggleSelection,
     required this.onRowTap,
+    required this.onCreateOrder,
   });
 
   final List<OrderEntry> orders;
+  final bool hasAnyOrders;
+  final bool hasActiveFilters;
   final Set<int> selectedOrderIds;
   final void Function(int orderId, bool selected) onToggleSelection;
   final ValueChanged<OrderEntry> onRowTap;
+  final VoidCallback onCreateOrder;
 
   @override
   Widget build(BuildContext context) {
+    final hasUrgentOrders = orders.any(
+      (order) => _resolveOrderUrgency(order) != _OrderUrgency.none,
+    );
     if (orders.isEmpty) {
-      return const AppEmptyState(
-        title: 'No orders found',
-        message:
-            'Try a different filter or create a new order to populate the order book.',
-        icon: Icons.receipt_long_outlined,
+      final title = hasActiveFilters
+          ? 'No orders in this state'
+          : 'No orders found';
+      final message = hasActiveFilters
+          ? hasAnyOrders
+                ? 'No matching orders for the current filters.'
+                : 'Try another filter or create a new order.'
+          : 'Create your first order to populate the order book.';
+
+      return SoftSurface(
+        radius: 28,
+        color: SoftErpTheme.cardSurface,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.receipt_long_outlined,
+                  size: 42,
+                  color: SoftErpTheme.accentDark,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                AppButton(
+                  key: const ValueKey<String>('orders-empty-create-order'),
+                  label: 'Create Order',
+                  icon: Icons.add_rounded,
+                  onPressed: onCreateOrder,
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
     return SoftSurface(
       radius: 30,
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
       color: SoftErpTheme.cardSurface,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -801,6 +938,39 @@ class _OrdersTableCard extends StatelessWidget {
 
           return Column(
             children: [
+              if (!hasUrgentOrders) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F8EF),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFCFE2CC)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: 16,
+                        color: Color(0xFF3E9152),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'No urgent orders — all on track',
+                        style: TextStyle(
+                          color: Color(0xFF3E9152),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               _TableHeaderRow(layout: layout),
               const SizedBox(height: 10),
               Expanded(
@@ -813,7 +983,6 @@ class _OrdersTableCard extends StatelessWidget {
                       order: order,
                       layout: layout,
                       isSelected: selectedOrderIds.contains(order.id),
-                      isStriped: index.isOdd,
                       onSelectionChanged: (selected) =>
                           onToggleSelection(order.id, selected),
                       onTap: () => onRowTap(order),
@@ -837,26 +1006,25 @@ class _TableHeaderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(
-        horizontal: _OrdersTableMetrics.horizontalPadding,
+      height: 44,
+      padding: const EdgeInsets.only(
+        left: _OrdersTableMetrics.leftPadding,
+        right: _OrdersTableMetrics.rightPadding,
       ),
       decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurfaceAlt,
+        color: SoftErpTheme.sectionSurface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: SoftErpTheme.border),
       ),
       child: Row(
         children: [
-          _HeaderCell('Order ID', width: layout.orderIdWidth),
-          _HeaderCell('Date', width: layout.dateWidth),
-          _HeaderCell('Party', width: layout.partyWidth),
-          _HeaderCell('Item', width: layout.itemWidth),
+          _HeaderCell('Order / Date', width: layout.orderDateGroupWidth),
+          _HeaderCell('Party / Item', width: layout.partyItemGroupWidth),
           _HeaderCell('Purchase Order Number', width: layout.poWidth),
-          _HeaderCell('Order Quantity', width: layout.quantityWidth),
+          _HeaderCell('Qty', width: layout.quantityWidth),
           _HeaderCell('Start Date', width: layout.startDateWidth),
           _HeaderCell('End Date', width: layout.endDateWidth),
           _HeaderCell('Status', width: layout.statusWidth),
+          _HeaderCell('Actions', width: layout.actionsWidth),
         ],
       ),
     );
@@ -885,12 +1053,11 @@ class _HeaderCell extends StatelessWidget {
   }
 }
 
-class _OrderDataRow extends StatelessWidget {
+class _OrderDataRow extends StatefulWidget {
   const _OrderDataRow({
     required this.order,
     required this.layout,
     required this.isSelected,
-    required this.isStriped,
     required this.onSelectionChanged,
     required this.onTap,
   });
@@ -898,80 +1065,317 @@ class _OrderDataRow extends StatelessWidget {
   final OrderEntry order;
   final _OrdersTableLayout layout;
   final bool isSelected;
-  final bool isStriped;
   final ValueChanged<bool> onSelectionChanged;
   final VoidCallback onTap;
 
   @override
+  State<_OrderDataRow> createState() => _OrderDataRowState();
+}
+
+class _OrderDataRowState extends State<_OrderDataRow> {
+  bool _hovered = false;
+  bool _updatingLifecycle = false;
+
+  @override
   Widget build(BuildContext context) {
-    return SoftRowCard(
-      isSelected: isSelected,
-      onTap: onTap,
-      child: SizedBox(
-        height: 56,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onLongPress: () => onSelectionChanged(!isSelected),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: _OrdersTableMetrics.horizontalPadding,
+    final order = widget.order;
+    final layout = widget.layout;
+    final urgency = _resolveOrderUrgency(order);
+    final edgeTint = _rowEdgeTint(order.status, urgency);
+    final markerColor = _priorityMarkerColor(urgency);
+    final quickAction = _primaryQuickAction(order, urgency);
+    final isCompleted = order.status == OrderStatus.completed;
+    final baseShadow = urgency == _OrderUrgency.overdue
+        ? const [
+            BoxShadow(
+              color: Color(0x1F9C6A6A),
+              blurRadius: 15,
+              offset: Offset(0, 8),
             ),
-            child: Row(
-              children: [
-                _DataCell(
-                  order.orderNo,
-                  width: layout.orderIdWidth,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
+            BoxShadow(
+              color: Color(0x9FFFFFFF),
+              blurRadius: 7,
+              offset: Offset(-1.5, -1.5),
+            ),
+          ]
+        : SoftErpTheme.raisedShadow;
+    final hoverShadow = urgency == _OrderUrgency.overdue
+        ? const [
+            BoxShadow(
+              color: Color(0x269C5656),
+              blurRadius: 18,
+              offset: Offset(0, 10),
+            ),
+            BoxShadow(
+              color: Color(0xAEFFFFFF),
+              blurRadius: 8,
+              offset: Offset(-1.5, -1.5),
+            ),
+          ]
+        : const [
+            BoxShadow(
+              color: Color(0x24909CC3),
+              blurRadius: 18,
+              offset: Offset(0, 12),
+            ),
+            BoxShadow(
+              color: Color(0xBFFFFFFF),
+              blurRadius: 8,
+              offset: Offset(-1.5, -1.5),
+            ),
+          ];
+    final baseColor = isCompleted
+        ? const Color(0xFFF9FBFF)
+        : SoftErpTheme.cardSurface;
+    final hoverColor = isCompleted
+        ? const Color(0xFFF5F7FD)
+        : const Color(0xFFFDFDFF);
+    final selectedColor = isCompleted
+        ? const Color(0xFFF1F5FF)
+        : const Color(0xFFF2EFFF);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Stack(
+        children: [
+          SoftRowCard(
+            isSelected: widget.isSelected,
+            onTap: widget.onTap,
+            baseColor: baseColor,
+            hoverColor: hoverColor,
+            selectedColor: selectedColor,
+            baseShadow: baseShadow,
+            hoverShadow: hoverShadow,
+            child: SizedBox(
+              height: 82,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onLongPress: () =>
+                    widget.onSelectionChanged(!widget.isSelected),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          width: 168,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                edgeTint.withAlpha(0),
+                                edgeTint.withAlpha(16),
+                              ],
+                            ),
+                            borderRadius: const BorderRadius.horizontal(
+                              right: Radius.circular(22),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: _OrdersTableMetrics.leftPadding,
+                        right: _OrdersTableMetrics.rightPadding,
+                      ),
+                      child: Row(
+                        children: [
+                          _GroupedDataCell(
+                            width: layout.orderDateGroupWidth,
+                            primary: order.orderNo,
+                            secondary: _formatDate(order.createdAt),
+                            primaryStyle: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15.5,
+                            ),
+                            secondaryStyle: const TextStyle(
+                              color: Color(0xFF8892A8),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          _GroupedDataCell(
+                            width: layout.partyItemGroupWidth,
+                            primary: order.clientName,
+                            secondary:
+                                order.variationPathLabel.isEmpty ||
+                                    order.variationPathLabel == order.itemName
+                                ? order.itemName
+                                : '${order.itemName} · ${order.variationPathLabel}',
+                            primaryStyle: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          _DataCell(
+                            order.poNumber.isEmpty ? '—' : order.poNumber,
+                            width: layout.poWidth,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          _DataCell(
+                            '${order.quantity} Pieces',
+                            width: layout.quantityWidth,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                          _DataCell(
+                            _formatDate(order.startDate),
+                            width: layout.startDateWidth,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          _DueDateCell(
+                            orderId: order.id,
+                            value: order.endDate,
+                            width: layout.endDateWidth,
+                            urgency: urgency,
+                          ),
+                          SizedBox(
+                            width: layout.statusWidth,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _StatusPill(status: order.status),
+                            ),
+                          ),
+                          SizedBox(
+                            width: layout.actionsWidth,
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: _InlineRowActions(
+                                hovered: _hovered,
+                                busy: _updatingLifecycle,
+                                quickAction: quickAction,
+                                onQuickAction: () =>
+                                    _performQuickAction(quickAction),
+                                onView: widget.onTap,
+                                onMenu: widget.onTap,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                _DataCell(
-                  _formatDate(order.createdAt),
-                  width: layout.dateWidth,
-                ),
-                _DataCell(
-                  order.clientName,
-                  width: layout.partyWidth,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                _DataCell(
-                  order.variationPathLabel.isEmpty ||
-                          order.variationPathLabel == order.itemName
-                      ? order.itemName
-                      : '${order.itemName} · ${order.variationPathLabel}',
-                  width: layout.itemWidth,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                _DataCell(
-                  order.poNumber.isEmpty ? '—' : order.poNumber,
-                  width: layout.poWidth,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                _DataCell(
-                  '${order.quantity} Pieces',
-                  width: layout.quantityWidth,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                _DataCell(
-                  _formatDate(order.startDate),
-                  width: layout.startDateWidth,
-                ),
-                _DataCell(
-                  _formatDate(order.endDate),
-                  width: layout.endDateWidth,
-                ),
-                SizedBox(
-                  width: layout.statusWidth,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _StatusPill(status: order.status),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+          Positioned(
+            left: 14,
+            top: 24,
+            bottom: 24,
+            child: Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: markerColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _performQuickAction(_QuickRowAction action) async {
+    if (action.kind == _QuickRowActionKind.view) {
+      widget.onTap();
+      return;
+    }
+    if (_updatingLifecycle) {
+      return;
+    }
+    setState(() => _updatingLifecycle = true);
+    final order = widget.order;
+    final now = DateTime.now();
+    final result = await context.read<OrdersProvider>().updateOrderLifecycle(
+      UpdateOrderLifecycleInput(
+        id: order.id,
+        status: action.targetStatus ?? order.status,
+        startDate: action.kind == _QuickRowActionKind.start
+            ? (order.startDate ?? now)
+            : order.startDate,
+        endDate: action.kind == _QuickRowActionKind.complete
+            ? (order.endDate ?? now)
+            : order.endDate,
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _updatingLifecycle = false);
+    if (result == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update order right now. Please retry.'),
+        ),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${action.label} applied to ${order.orderNo}.')),
+    );
+  }
+
+  Color _rowEdgeTint(OrderStatus status, _OrderUrgency urgency) {
+    if (urgency == _OrderUrgency.overdue) {
+      return const Color(0x22D35A5A);
+    }
+    return switch (status) {
+      OrderStatus.draft => SoftErpTheme.draftRowEdgeTint,
+      OrderStatus.notStarted => SoftErpTheme.notStartedRowEdgeTint,
+      OrderStatus.inProgress => SoftErpTheme.inProgressRowEdgeTint,
+      OrderStatus.completed => SoftErpTheme.completedRowEdgeTint,
+      OrderStatus.delayed => SoftErpTheme.delayedRowEdgeTint,
+    };
+  }
+
+  Color _priorityMarkerColor(_OrderUrgency urgency) {
+    return switch (urgency) {
+      _OrderUrgency.overdue => const Color(0xFFD15D5D),
+      _OrderUrgency.nearDue => const Color(0xFFD08A2A),
+      _OrderUrgency.none => const Color(0xFFCAD2E8),
+    };
+  }
+
+  _QuickRowAction _primaryQuickAction(OrderEntry order, _OrderUrgency urgency) {
+    if (order.status == OrderStatus.completed) {
+      return const _QuickRowAction(
+        kind: _QuickRowActionKind.view,
+        label: 'View',
+      );
+    }
+    if (order.status == OrderStatus.inProgress) {
+      return const _QuickRowAction(
+        kind: _QuickRowActionKind.complete,
+        label: 'Mark Complete',
+        targetStatus: OrderStatus.completed,
+      );
+    }
+    if (order.status == OrderStatus.notStarted ||
+        order.status == OrderStatus.draft ||
+        order.status == OrderStatus.delayed ||
+        urgency == _OrderUrgency.overdue) {
+      return const _QuickRowAction(
+        kind: _QuickRowActionKind.start,
+        label: 'Start',
+        targetStatus: OrderStatus.inProgress,
+      );
+    }
+    return const _QuickRowAction(kind: _QuickRowActionKind.view, label: 'View');
   }
 
   String _formatDate(DateTime? value) {
@@ -981,6 +1385,138 @@ class _OrderDataRow extends StatelessWidget {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
     return '$day-$month-${value.year}';
+  }
+}
+
+enum _QuickRowActionKind { start, complete, view }
+
+class _QuickRowAction {
+  const _QuickRowAction({
+    required this.kind,
+    required this.label,
+    this.targetStatus,
+  });
+
+  final _QuickRowActionKind kind;
+  final String label;
+  final OrderStatus? targetStatus;
+}
+
+class _QuickHintButton extends StatelessWidget {
+  const _QuickHintButton({
+    required this.label,
+    required this.onTap,
+    this.emphasized = false,
+    this.busy = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool emphasized;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: busy ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 26),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: emphasized
+                ? const Color(0xFFEDF0FF)
+                : const Color(0xFFF6F7FC),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: emphasized ? const Color(0xFFC6CCF6) : SoftErpTheme.border,
+            ),
+          ),
+          child: busy
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.8,
+                    color: SoftErpTheme.accentDark,
+                  ),
+                )
+              : Text(
+                  label,
+                  style: TextStyle(
+                    color: emphasized
+                        ? SoftErpTheme.accentDark
+                        : SoftErpTheme.textSecondary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineRowActions extends StatelessWidget {
+  const _InlineRowActions({
+    required this.hovered,
+    required this.busy,
+    required this.quickAction,
+    required this.onQuickAction,
+    required this.onView,
+    required this.onMenu,
+  });
+
+  final bool hovered;
+  final bool busy;
+  final _QuickRowAction quickAction;
+  final VoidCallback onQuickAction;
+  final VoidCallback onView;
+  final VoidCallback onMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showQuick = hovered || busy;
+        final maxWidth = constraints.maxWidth;
+        final showBothQuick = showQuick && maxWidth >= 190;
+        final showPrimaryOnly = showQuick && maxWidth >= 146 && !showBothQuick;
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showBothQuick || showPrimaryOnly)
+              IgnorePointer(
+                ignoring: !showQuick,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: showQuick ? 1 : 0,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _QuickHintButton(
+                        label: quickAction.label,
+                        emphasized: true,
+                        busy: busy,
+                        onTap: onQuickAction,
+                      ),
+                      if (showBothQuick) ...[
+                        const SizedBox(width: 6),
+                        _QuickHintButton(label: 'View', onTap: onView),
+                      ],
+                      const SizedBox(width: 8),
+                    ],
+                  ),
+                ),
+              ),
+            _RowActionButton(onTap: onMenu),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -1002,7 +1538,7 @@ class _DataCell extends StatelessWidget {
     return SizedBox(
       width: width,
       child: Padding(
-        padding: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.only(right: 16),
         child: Text(
           text,
           softWrap: false,
@@ -1010,8 +1546,184 @@ class _DataCell extends StatelessWidget {
           overflow: overflow,
           style: const TextStyle(
             color: SoftErpTheme.textPrimary,
-            fontSize: 13,
+            fontSize: 14,
           ).merge(style),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupedDataCell extends StatelessWidget {
+  const _GroupedDataCell({
+    required this.width,
+    required this.primary,
+    required this.secondary,
+    this.primaryStyle,
+    this.secondaryStyle,
+  });
+
+  final double width;
+  final String primary;
+  final String secondary;
+  final TextStyle? primaryStyle;
+  final TextStyle? secondaryStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 18),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              primary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ).merge(primaryStyle),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              secondary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ).merge(secondaryStyle),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DueDateCell extends StatelessWidget {
+  const _DueDateCell({
+    required this.orderId,
+    required this.value,
+    required this.width,
+    required this.urgency,
+  });
+
+  final int orderId;
+  final DateTime? value;
+  final double width;
+  final _OrderUrgency urgency;
+
+  @override
+  Widget build(BuildContext context) {
+    final urgencyColor = switch (urgency) {
+      _OrderUrgency.none => SoftErpTheme.textSecondary,
+      _OrderUrgency.nearDue => const Color(0xFFB37310),
+      _OrderUrgency.overdue => SoftErpTheme.dangerText,
+    };
+    final keySuffix = switch (urgency) {
+      _OrderUrgency.none => 'none',
+      _OrderUrgency.nearDue => 'near',
+      _OrderUrgency.overdue => 'overdue',
+    };
+
+    return SizedBox(
+      width: width,
+      child: Row(
+        children: [
+          if (urgency != _OrderUrgency.none)
+            Container(
+              key: ValueKey<String>('orders-row-urgency-$keySuffix-$orderId'),
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: urgencyColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+          if (urgency != _OrderUrgency.none) const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              _formatDate(value),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: urgency == _OrderUrgency.none
+                    ? SoftErpTheme.textSecondary
+                    : urgencyColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime? entry) {
+    if (entry == null) {
+      return '—';
+    }
+    final day = entry.day.toString().padLeft(2, '0');
+    final month = entry.month.toString().padLeft(2, '0');
+    return '$day-$month-${entry.year}';
+  }
+}
+
+class _RowActionButton extends StatefulWidget {
+  const _RowActionButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_RowActionButton> createState() => _RowActionButtonState();
+}
+
+class _RowActionButtonState extends State<_RowActionButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 130),
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: _hovered
+                ? const Color(0xFFEAEFFF)
+                : SoftErpTheme.cardSurfaceAlt,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: SoftErpTheme.border),
+            boxShadow: _hovered
+                ? const [
+                    BoxShadow(
+                      color: Color(0x22909CC3),
+                      blurRadius: 14,
+                      offset: Offset(0, 6),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Icon(
+            Icons.more_horiz_rounded,
+            size: 18,
+            color: _hovered
+                ? SoftErpTheme.accentDark
+                : SoftErpTheme.textSecondary,
+          ),
         ),
       ),
     );
@@ -1026,40 +1738,45 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = switch (status) {
+      OrderStatus.draft => (
+        bg: const Color(0xFFECE9FA),
+        border: const Color(0x00FFFFFF),
+        text: const Color(0xFF4F4680),
+      ),
       OrderStatus.notStarted => (
-        bg: SoftErpTheme.warningBg,
-        border: const Color(0xFFE8D0A6),
-        text: SoftErpTheme.warningText,
+        bg: const Color(0xFFFDF1E3),
+        border: const Color(0x00FFFFFF),
+        text: const Color(0xFF9A6100),
       ),
       OrderStatus.inProgress => (
-        bg: SoftErpTheme.infoBg,
-        border: const Color(0xFFBDD0F8),
-        text: SoftErpTheme.infoText,
+        bg: const Color(0xFFEAF2FF),
+        border: const Color(0x00FFFFFF),
+        text: const Color(0xFF3056BA),
       ),
       OrderStatus.completed => (
-        bg: SoftErpTheme.successBg,
-        border: const Color(0xFFB7DEBF),
-        text: SoftErpTheme.successText,
+        bg: const Color(0xFFE9F8EE),
+        border: const Color(0x00FFFFFF),
+        text: const Color(0xFF13894A),
       ),
       OrderStatus.delayed => (
-        bg: SoftErpTheme.dangerBg,
-        border: const Color(0xFFF0B4B4),
+        bg: const Color(0xFFFDEDEE),
+        border: const Color(0x00FFFFFF),
         text: SoftErpTheme.dangerText,
       ),
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
       decoration: BoxDecoration(
         color: scheme.bg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: scheme.border),
+        border: Border.all(color: scheme.border, width: 0.5),
       ),
       child: Text(
         status.label,
         style: TextStyle(
           color: scheme.text,
-          fontSize: 12,
+          fontSize: 12.5,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -1068,72 +1785,73 @@ class _StatusPill extends StatelessWidget {
 }
 
 class _OrdersTableMetrics {
-  static const double horizontalPadding = 18;
-  static const double orderIdWidth = 120;
-  static const double dateWidth = 122;
-  static const double partyWidth = 212;
-  static const double itemWidth = 236;
-  static const double poWidth = 214;
-  static const double quantityWidth = 150;
-  static const double startDateWidth = 136;
-  static const double endDateWidth = 136;
+  static const double leftPadding = 34;
+  static const double rightPadding = 20;
+  static const double orderDateGroupWidth = 232;
+  static const double partyItemGroupWidth = 344;
+  static const double poWidth = 198;
+  static const double quantityWidth = 132;
+  static const double startDateWidth = 124;
+  static const double endDateWidth = 124;
   static const double statusWidth = 128;
+  static const double actionsWidth = 204;
 
   static const double totalWidth =
-      horizontalPadding * 2 +
-      orderIdWidth +
-      dateWidth +
-      partyWidth +
-      itemWidth +
+      leftPadding +
+      rightPadding +
+      orderDateGroupWidth +
+      partyItemGroupWidth +
       poWidth +
       quantityWidth +
       startDateWidth +
       endDateWidth +
-      statusWidth;
+      statusWidth +
+      actionsWidth;
 }
 
 class _OrdersTableLayout {
   const _OrdersTableLayout({
-    required this.orderIdWidth,
-    required this.dateWidth,
-    required this.partyWidth,
-    required this.itemWidth,
+    required this.orderDateGroupWidth,
+    required this.partyItemGroupWidth,
     required this.poWidth,
     required this.quantityWidth,
     required this.startDateWidth,
     required this.endDateWidth,
     required this.statusWidth,
+    required this.actionsWidth,
   });
 
-  final double orderIdWidth;
-  final double dateWidth;
-  final double partyWidth;
-  final double itemWidth;
+  final double orderDateGroupWidth;
+  final double partyItemGroupWidth;
   final double poWidth;
   final double quantityWidth;
   final double startDateWidth;
   final double endDateWidth;
   final double statusWidth;
+  final double actionsWidth;
 
   static _OrdersTableLayout fromContainerWidth(double containerWidth) {
     final contentWidth =
-        (containerWidth - (_OrdersTableMetrics.horizontalPadding * 2) - 8)
+        (containerWidth -
+                _OrdersTableMetrics.leftPadding -
+                _OrdersTableMetrics.rightPadding -
+                8)
             .clamp(0.0, double.infinity);
     final baseContentWidth =
         _OrdersTableMetrics.totalWidth -
-        (_OrdersTableMetrics.horizontalPadding * 2);
+        _OrdersTableMetrics.leftPadding -
+        _OrdersTableMetrics.rightPadding;
     final scale = baseContentWidth == 0 ? 1.0 : contentWidth / baseContentWidth;
 
     return _OrdersTableLayout(
-      orderIdWidth: _OrdersTableMetrics.orderIdWidth * scale,
-      dateWidth: _OrdersTableMetrics.dateWidth * scale,
-      partyWidth: _OrdersTableMetrics.partyWidth * scale,
-      itemWidth: _OrdersTableMetrics.itemWidth * scale,
+      orderDateGroupWidth: _OrdersTableMetrics.orderDateGroupWidth * scale,
+      partyItemGroupWidth: _OrdersTableMetrics.partyItemGroupWidth * scale,
       poWidth: _OrdersTableMetrics.poWidth * scale,
       quantityWidth: _OrdersTableMetrics.quantityWidth * scale,
       startDateWidth: _OrdersTableMetrics.startDateWidth * scale,
       endDateWidth: _OrdersTableMetrics.endDateWidth * scale,
       statusWidth: _OrdersTableMetrics.statusWidth * scale,
+      actionsWidth: _OrdersTableMetrics.actionsWidth * scale,
     );
   }
 }
@@ -1211,364 +1929,394 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         .items
         .where((item) => !item.isArchived)
         .toList(growable: false);
+    final canSubmit = clients.isNotEmpty && items.isNotEmpty;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: SoftErpTheme.border),
-        boxShadow: SoftErpTheme.raisedShadow,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
-              ),
-              child: Text(
-                'Create New Order',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textPrimary,
+    return CallbackShortcuts(
+      bindings: _submitShortcutBindings(() {
+        if (canSubmit) {
+          _submit(context, clients, items);
+        }
+      }),
+      child: Container(
+        decoration: BoxDecoration(
+          color: SoftErpTheme.cardSurface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: SoftErpTheme.border),
+          boxShadow: SoftErpTheme.raisedShadow,
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: SoftErpTheme.border),
+                  ),
+                ),
+                child: Text(
+                  'Create New Order',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: SoftErpTheme.textPrimary,
+                  ),
                 ),
               ),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(56, 18, 56, 18),
-                child: clients.isEmpty || items.isEmpty
-                    ? _DependencyMessage(
-                        hasClients: clients.isNotEmpty,
-                        hasItems: items.isNotEmpty,
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final fieldWidth = ((constraints.maxWidth - 24) / 2)
-                              .clamp(260.0, 300.0);
-                          final children = <Widget>[
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Order No',
-                                child: TextFormField(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-order-no-field',
-                                  ),
-                                  controller: _orderNoController,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Enter',
-                                  ),
-                                  textInputAction: TextInputAction.next,
-                                  validator: (value) {
-                                    if ((value ?? '').trim().isEmpty) {
-                                      return 'Enter an order number.';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Purchase Order No.',
-                                child: TextFormField(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-po-number-field',
-                                  ),
-                                  controller: _poNumberController,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Enter',
-                                  ),
-                                  textInputAction: TextInputAction.next,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Client',
-                                child: SearchableSelectField<int>(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-client-field',
-                                  ),
-                                  tapTargetKey: const ValueKey<String>(
-                                    'orders-editor-client-field',
-                                  ),
-                                  value: _selectedClientId,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Select',
-                                  ),
-                                  dialogTitle: 'Client',
-                                  searchHintText: 'Search client',
-                                  options: clients
-                                      .map(
-                                        (client) => SearchableSelectOption<int>(
-                                          value: client.id,
-                                          label: client.displayLabel,
-                                        ),
-                                      )
-                                      .toList(growable: false),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedClientId = value;
-                                      final selected = _selectedClient(clients);
-                                      _clientCodeController.text =
-                                          _resolveClientCode(selected);
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null) {
-                                      return 'Select a client.';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Client Code',
-                                child: TextFormField(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-client-code-field',
-                                  ),
-                                  controller: _clientCodeController,
-                                  readOnly: true,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Enter',
-                                    errorText: _clientCodeError,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Item',
-                                child: SearchableSelectField<int>(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-item-field',
-                                  ),
-                                  tapTargetKey: const ValueKey<String>(
-                                    'orders-editor-item-field',
-                                  ),
-                                  value: _selectedItemId,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Select',
-                                  ),
-                                  dialogTitle: 'Item',
-                                  searchHintText: 'Search item',
-                                  options: items
-                                      .map(
-                                        (item) => SearchableSelectOption<int>(
-                                          value: item.id,
-                                          label: item.displayName,
-                                        ),
-                                      )
-                                      .toList(growable: false),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedItemId = value;
-                                      _selectionState.clear();
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null) {
-                                      return 'Select an item.';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                            ),
-                            ..._buildVariationSelectors(items, fieldWidth),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Quantity / Unit',
-                                child: TextFormField(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-quantity-field',
-                                  ),
-                                  controller: _quantityController,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Enter',
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                  validator: (value) {
-                                    final quantity = int.tryParse(
-                                      (value ?? '').trim(),
-                                    );
-                                    if (quantity == null || quantity <= 0) {
-                                      return 'Enter a valid quantity.';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _OrderEditorField(
-                                label: 'Status',
-                                child: SearchableSelectField<OrderStatus>(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-status-field',
-                                  ),
-                                  tapTargetKey: const ValueKey<String>(
-                                    'orders-editor-status-field',
-                                  ),
-                                  value: _selectedStatus,
-                                  decoration: _inputDecoration(
-                                    hintText: 'Select',
-                                  ),
-                                  dialogTitle: 'Status',
-                                  searchHintText: 'Search status',
-                                  options: OrderStatus.values
-                                      .map(
-                                        (status) =>
-                                            SearchableSelectOption<OrderStatus>(
-                                              value: status,
-                                              label: status.label,
-                                            ),
-                                      )
-                                      .toList(growable: false),
-                                  onChanged: (value) {
-                                    if (value == null) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _selectedStatus = value;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: _DateField(
-                                key: const ValueKey<String>(
-                                  'orders-editor-start-date-field',
-                                ),
-                                label: 'Start Date',
-                                controller: _startDateController,
-                                onTap: () => _pickDate(
-                                  context,
-                                  initial: _startDate ?? DateTime.now(),
-                                  onSelected: (value) {
-                                    setState(() {
-                                      _startDate = value;
-                                      _startDateController.text = _formatDate(
-                                        value,
-                                      );
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: fieldWidth,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _DateField(
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(56, 18, 56, 18),
+                  child: !canSubmit
+                      ? _DependencyMessage(
+                          hasClients: clients.isNotEmpty,
+                          hasItems: items.isNotEmpty,
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final fieldWidth = ((constraints.maxWidth - 24) / 2)
+                                .clamp(260.0, 300.0);
+                            final children = <Widget>[
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Order No',
+                                  child: TextFormField(
                                     key: const ValueKey<String>(
-                                      'orders-editor-end-date-field',
+                                      'orders-editor-order-no-field',
                                     ),
-                                    label: 'Estimated Completion Date',
-                                    controller: _endDateController,
-                                    onTap: () => _pickDate(
-                                      context,
-                                      initial:
-                                          _endDate ??
-                                          _startDate ??
-                                          DateTime.now(),
-                                      onSelected: (value) {
-                                        setState(() {
-                                          _endDate = value;
-                                          _endDateController.text = _formatDate(
-                                            value,
-                                          );
-                                        });
-                                      },
+                                    controller: _orderNoController,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Enter',
                                     ),
+                                    textInputAction: TextInputAction.next,
+                                    validator: (value) {
+                                      if ((value ?? '').trim().isEmpty) {
+                                        return 'Enter an order number.';
+                                      }
+                                      return null;
+                                    },
                                   ),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      for (
-                                        var index = 0;
-                                        index < _completionShortcuts.length;
-                                        index++
-                                      )
-                                        _CompletionShortcutButton(
-                                          key: ValueKey<String>(
-                                            'orders-editor-shortcut-$index',
-                                          ),
-                                          label:
-                                              _completionShortcuts[index].label,
-                                          onTap: () => _applyCompletionShortcut(
-                                            _completionShortcuts[index],
-                                          ),
-                                        ),
-                                      _CompletionShortcutButton(
-                                        key: const ValueKey<String>(
-                                          'orders-editor-shortcut-add',
-                                        ),
-                                        label: 'Add',
-                                        isGhost: true,
-                                        onTap: _openCompletionShortcutEditor,
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ];
-                          return Wrap(
-                            spacing: 24,
-                            runSpacing: 18,
-                            children: children,
-                          );
-                        },
-                      ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Purchase Order No.',
+                                  child: TextFormField(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-po-number-field',
+                                    ),
+                                    controller: _poNumberController,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Enter',
+                                    ),
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Client',
+                                  child: SearchableSelectField<int>(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-client-field',
+                                    ),
+                                    tapTargetKey: const ValueKey<String>(
+                                      'orders-editor-client-field',
+                                    ),
+                                    value: _selectedClientId,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Select',
+                                    ),
+                                    dialogTitle: 'Client',
+                                    searchHintText: 'Search client',
+                                    options: clients
+                                        .map(
+                                          (client) =>
+                                              SearchableSelectOption<int>(
+                                                value: client.id,
+                                                label: client.displayLabel,
+                                              ),
+                                        )
+                                        .toList(growable: false),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedClientId = value;
+                                        final selected = _selectedClient(
+                                          clients,
+                                        );
+                                        _clientCodeController.text =
+                                            _resolveClientCode(selected);
+                                      });
+                                    },
+                                    validator: (value) {
+                                      if (value == null) {
+                                        return 'Select a client.';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Client Code',
+                                  child: TextFormField(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-client-code-field',
+                                    ),
+                                    controller: _clientCodeController,
+                                    readOnly: true,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Enter',
+                                      errorText: _clientCodeError,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Item',
+                                  child: SearchableSelectField<int>(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-item-field',
+                                    ),
+                                    tapTargetKey: const ValueKey<String>(
+                                      'orders-editor-item-field',
+                                    ),
+                                    value: _selectedItemId,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Select',
+                                    ),
+                                    dialogTitle: 'Item',
+                                    searchHintText: 'Search item',
+                                    options: items
+                                        .map(
+                                          (item) => SearchableSelectOption<int>(
+                                            value: item.id,
+                                            label: item.displayName,
+                                          ),
+                                        )
+                                        .toList(growable: false),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedItemId = value;
+                                        _selectionState.clear();
+                                      });
+                                    },
+                                    validator: (value) {
+                                      if (value == null) {
+                                        return 'Select an item.';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ),
+                              ..._buildVariationSelectors(items, fieldWidth),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Quantity / Unit',
+                                  child: TextFormField(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-quantity-field',
+                                    ),
+                                    controller: _quantityController,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Enter',
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    validator: (value) {
+                                      final quantity = int.tryParse(
+                                        (value ?? '').trim(),
+                                      );
+                                      if (quantity == null || quantity <= 0) {
+                                        return 'Enter a valid quantity.';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _OrderEditorField(
+                                  label: 'Status',
+                                  child: SearchableSelectField<OrderStatus>(
+                                    key: const ValueKey<String>(
+                                      'orders-editor-status-field',
+                                    ),
+                                    tapTargetKey: const ValueKey<String>(
+                                      'orders-editor-status-field',
+                                    ),
+                                    value: _selectedStatus,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Select',
+                                    ),
+                                    dialogTitle: 'Status',
+                                    searchHintText: 'Search status',
+                                    options: OrderStatus.values
+                                        .map(
+                                          (status) =>
+                                              SearchableSelectOption<
+                                                OrderStatus
+                                              >(
+                                                value: status,
+                                                label: status.label,
+                                              ),
+                                        )
+                                        .toList(growable: false),
+                                    onChanged: (value) {
+                                      if (value == null) {
+                                        return;
+                                      }
+                                      setState(() {
+                                        _selectedStatus = value;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: _DateField(
+                                  key: const ValueKey<String>(
+                                    'orders-editor-start-date-field',
+                                  ),
+                                  label: 'Start Date',
+                                  controller: _startDateController,
+                                  onTap: () => _pickDate(
+                                    context,
+                                    initial: _startDate ?? DateTime.now(),
+                                    onSelected: (value) {
+                                      setState(() {
+                                        _startDate = value;
+                                        _startDateController.text = _formatDate(
+                                          value,
+                                        );
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: fieldWidth,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _DateField(
+                                      key: const ValueKey<String>(
+                                        'orders-editor-end-date-field',
+                                      ),
+                                      label: 'Estimated Completion Date',
+                                      controller: _endDateController,
+                                      onTap: () => _pickDate(
+                                        context,
+                                        initial:
+                                            _endDate ??
+                                            _startDate ??
+                                            DateTime.now(),
+                                        onSelected: (value) {
+                                          setState(() {
+                                            _endDate = value;
+                                            _endDateController.text =
+                                                _formatDate(value);
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        for (
+                                          var index = 0;
+                                          index < _completionShortcuts.length;
+                                          index++
+                                        )
+                                          _CompletionShortcutButton(
+                                            key: ValueKey<String>(
+                                              'orders-editor-shortcut-$index',
+                                            ),
+                                            label: _completionShortcuts[index]
+                                                .label,
+                                            onTap: () =>
+                                                _applyCompletionShortcut(
+                                                  _completionShortcuts[index],
+                                                ),
+                                          ),
+                                        _CompletionShortcutButton(
+                                          key: const ValueKey<String>(
+                                            'orders-editor-shortcut-add',
+                                          ),
+                                          label: 'Add',
+                                          isGhost: true,
+                                          onTap: _openCompletionShortcutEditor,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ];
+                            return Wrap(
+                              spacing: 24,
+                              runSpacing: 18,
+                              children: children,
+                            );
+                          },
+                        ),
+                ),
               ),
-            ),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: SoftErpTheme.border)),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: SoftErpTheme.border)),
+                ),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    AppButton(
+                      label: 'Cancel',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    AppButton(
+                      key: const ValueKey<String>('orders-editor-save-draft'),
+                      label: 'Save Draft',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: canSubmit
+                          ? () => _submit(
+                              context,
+                              clients,
+                              items,
+                              statusOverride: OrderStatus.draft,
+                              successMessage: 'Draft saved successfully.',
+                            )
+                          : null,
+                    ),
+                    AppButton(
+                      key: const ValueKey<String>('orders-editor-create-order'),
+                      label: 'Create Order',
+                      onPressed: canSubmit
+                          ? () => _submit(context, clients, items)
+                          : null,
+                    ),
+                  ],
+                ),
               ),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  AppButton(
-                    label: 'Cancel',
-                    variant: AppButtonVariant.secondary,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  AppButton(
-                    label: 'Create Order',
-                    onPressed: clients.isEmpty || items.isEmpty
-                        ? null
-                        : () => _submit(context, clients, items),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1577,8 +2325,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   Future<void> _submit(
     BuildContext context,
     List<ClientDefinition> clients,
-    List<ItemDefinition> items,
-  ) async {
+    List<ItemDefinition> items, {
+    OrderStatus? statusOverride,
+    String successMessage = 'Order created successfully.',
+  }) async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -1610,7 +2360,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         variationPathLabel: selectedLeaf.displayName,
         variationPathNodeIds: _selectedPathNodeIds(selectedLeaf),
         quantity: int.parse(_quantityController.text.trim()),
-        status: _selectedStatus,
+        status: statusOverride ?? _selectedStatus,
         startDate: _startDate,
         endDate: _endDate,
       ),
@@ -1621,9 +2371,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     if (result != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order created successfully.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
       Navigator.of(context).pop();
       return;
     }
@@ -2047,150 +2797,148 @@ class _OrderLifecycleEditorSheetState
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: SoftErpTheme.border),
-        boxShadow: SoftErpTheme.raisedShadow,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Update Order',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${widget.order.orderNo} • ${widget.order.clientName}',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: SoftErpTheme.textSecondary),
-          ),
-          const SizedBox(height: 20),
-          SearchableSelectField<OrderStatus>(
-            key: const ValueKey<String>('orders-lifecycle-status-field'),
-            tapTargetKey: const ValueKey<String>(
-              'orders-lifecycle-status-field',
+    return CallbackShortcuts(
+      bindings: _submitShortcutBindings(() => _save(context)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.cardSurface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: SoftErpTheme.border),
+          boxShadow: SoftErpTheme.raisedShadow,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Update Order',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
-            value: _status,
-            decoration: const InputDecoration(
-              labelText: 'Status',
-              filled: true,
-              fillColor: SoftErpTheme.cardSurfaceAlt,
+            const SizedBox(height: 8),
+            Text(
+              '${widget.order.orderNo} • ${widget.order.clientName}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: SoftErpTheme.textSecondary,
+              ),
             ),
-            dialogTitle: 'Status',
-            searchHintText: 'Search status',
-            options: OrderStatus.values
-                .map(
-                  (status) => SearchableSelectOption<OrderStatus>(
-                    value: status,
-                    label: status.label,
-                  ),
-                )
-                .toList(growable: false),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  _status = value;
-                });
-              }
-            },
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _DateField(
-                  label: 'Start Date',
-                  controller: _startDateController,
-                  onTap: () => _pickDate(
-                    context,
-                    initial: _startDate ?? widget.order.createdAt,
-                    onSelected: (value) {
-                      setState(() {
-                        _startDate = value;
-                        _startDateController.text = _formatDate(value);
-                      });
-                    },
+            const SizedBox(height: 20),
+            SearchableSelectField<OrderStatus>(
+              key: const ValueKey<String>('orders-lifecycle-status-field'),
+              tapTargetKey: const ValueKey<String>(
+                'orders-lifecycle-status-field',
+              ),
+              value: _status,
+              decoration: const InputDecoration(
+                labelText: 'Status',
+                filled: true,
+                fillColor: SoftErpTheme.cardSurfaceAlt,
+              ),
+              dialogTitle: 'Status',
+              searchHintText: 'Search status',
+              options: OrderStatus.values
+                  .map(
+                    (status) => SearchableSelectOption<OrderStatus>(
+                      value: status,
+                      label: status.label,
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _status = value;
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _DateField(
+                    label: 'Start Date',
+                    controller: _startDateController,
+                    onTap: () => _pickDate(
+                      context,
+                      initial: _startDate ?? widget.order.createdAt,
+                      onSelected: (value) {
+                        setState(() {
+                          _startDate = value;
+                          _startDateController.text = _formatDate(value);
+                        });
+                      },
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _DateField(
-                  label: 'End Date',
-                  controller: _endDateController,
-                  onTap: () => _pickDate(
-                    context,
-                    initial: _endDate ?? _startDate ?? widget.order.createdAt,
-                    onSelected: (value) {
-                      setState(() {
-                        _endDate = value;
-                        _endDateController.text = _formatDate(value);
-                      });
-                    },
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _DateField(
+                    label: 'End Date',
+                    controller: _endDateController,
+                    onTap: () => _pickDate(
+                      context,
+                      initial: _endDate ?? _startDate ?? widget.order.createdAt,
+                      onSelected: (value) {
+                        setState(() {
+                          _endDate = value;
+                          _endDateController.text = _formatDate(value);
+                        });
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 10,
-            children: [
-              AppButton(
-                label: 'Close',
-                variant: AppButtonVariant.secondary,
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              AppButton(
-                label: 'Save',
-                onPressed: () async {
-                  final result = await context
-                      .read<OrdersProvider>()
-                      .updateOrderLifecycle(
-                        UpdateOrderLifecycleInput(
-                          id: widget.order.id,
-                          status: _status,
-                          startDate: _startDate,
-                          endDate: _endDate,
-                        ),
-                      );
-                  if (!context.mounted) {
-                    return;
-                  }
-
-                  if (result != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Order updated successfully.'),
-                      ),
-                    );
-                    Navigator.of(context).pop();
-                    return;
-                  }
-
-                  final message =
-                      context.read<OrdersProvider>().errorMessage ??
-                      'Unable to update order. Please try again.';
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(message)));
-                },
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 12,
+              runSpacing: 10,
+              children: [
+                AppButton(
+                  label: 'Close',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                AppButton(label: 'Save', onPressed: () => _save(context)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _save(BuildContext context) async {
+    final result = await context.read<OrdersProvider>().updateOrderLifecycle(
+      UpdateOrderLifecycleInput(
+        id: widget.order.id,
+        status: _status,
+        startDate: _startDate,
+        endDate: _endDate,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+
+    if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order updated successfully.')),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final message =
+        context.read<OrdersProvider>().errorMessage ??
+        'Unable to update order. Please try again.';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _pickDate(
@@ -2637,117 +3385,117 @@ class _CompletionShortcutEditorDialogState
   @override
   Widget build(BuildContext context) {
     final visibleCount = _showThirdShortcut ? 3 : 2;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: SoftErpTheme.border),
-        boxShadow: SoftErpTheme.raisedShadow,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Edit Completion Buttons',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF2F3441),
+    return CallbackShortcuts(
+      bindings: _submitShortcutBindings(() => _save(context, visibleCount)),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.cardSurface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: SoftErpTheme.border),
+          boxShadow: SoftErpTheme.raisedShadow,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Edit Completion Buttons',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF2F3441),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Set quick completion presets for common lead times. People can still enter a date manually when the job runs longer.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: SoftErpTheme.textSecondary,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 10),
-          for (var index = 0; index < visibleCount; index++) ...[
-            _buildShortcutCard(index),
-            if (index != visibleCount - 1) const SizedBox(height: 8),
-          ],
-          if (!_showThirdShortcut) ...[
             const SizedBox(height: 8),
-            InkWell(
-              key: const ValueKey<String>('orders-editor-add-third-shortcut'),
-              onTap: () {
-                setState(() {
-                  _showThirdShortcut = true;
-                });
-              },
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.cardSurfaceAlt,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: SoftErpTheme.border),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(
-                      Icons.add_circle_outline_rounded,
-                      size: 18,
-                      color: Color(0xFF6049E3),
-                    ),
-                    SizedBox(width: 10),
-                    Text(
-                      'Add third shortcut',
-                      style: TextStyle(
-                        color: Color(0xFF374151),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+            Text(
+              'Set quick completion presets for common lead times. People can still enter a date manually when the job runs longer.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: SoftErpTheme.textSecondary,
+                height: 1.4,
               ),
             ),
-          ],
-          const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              AppButton(
-                label: 'Cancel',
-                variant: AppButtonVariant.secondary,
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              AppButton(
-                label: 'Save',
-                onPressed: () {
-                  final shortcuts = <_CompletionShortcutPreset>[];
-                  for (var index = 0; index < visibleCount; index++) {
-                    final amount = int.tryParse(
-                      _amountControllers[index].text.trim(),
-                    );
-                    if (amount == null || amount <= 0) {
-                      continue;
-                    }
-                    shortcuts.add(
-                      _CompletionShortcutPreset(
-                        amount: amount,
-                        unit: _units[index],
-                      ),
-                    );
-                  }
-                  Navigator.of(context).pop(shortcuts);
+            const SizedBox(height: 10),
+            for (var index = 0; index < visibleCount; index++) ...[
+              _buildShortcutCard(index),
+              if (index != visibleCount - 1) const SizedBox(height: 8),
+            ],
+            if (!_showThirdShortcut) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                key: const ValueKey<String>('orders-editor-add-third-shortcut'),
+                onTap: () {
+                  setState(() {
+                    _showThirdShortcut = true;
+                  });
                 },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.cardSurfaceAlt,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: SoftErpTheme.border),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 18,
+                        color: Color(0xFF6049E3),
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Add third shortcut',
+                        style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
-          ),
-        ],
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                AppButton(
+                  label: 'Cancel',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                AppButton(
+                  label: 'Save',
+                  onPressed: () => _save(context, visibleCount),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  void _save(BuildContext context, int visibleCount) {
+    final shortcuts = <_CompletionShortcutPreset>[];
+    for (var index = 0; index < visibleCount; index++) {
+      final amount = int.tryParse(_amountControllers[index].text.trim());
+      if (amount == null || amount <= 0) {
+        continue;
+      }
+      shortcuts.add(
+        _CompletionShortcutPreset(amount: amount, unit: _units[index]),
+      );
+    }
+    Navigator.of(context).pop(shortcuts);
   }
 
   Widget _buildShortcutCard(int index) {
@@ -2994,6 +3742,7 @@ class _OrderSelectionStep {
 class _OrderSummary {
   const _OrderSummary({
     required this.total,
+    required this.draft,
     required this.notStarted,
     required this.inProgress,
     required this.completed,
@@ -3001,12 +3750,14 @@ class _OrderSummary {
   });
 
   final int total;
+  final int draft;
   final int notStarted;
   final int inProgress;
   final int completed;
   final int delayed;
 
   factory _OrderSummary.fromOrders(List<OrderEntry> orders) {
+    var draft = 0;
     var notStarted = 0;
     var inProgress = 0;
     var completed = 0;
@@ -3014,6 +3765,8 @@ class _OrderSummary {
 
     for (final order in orders) {
       switch (order.status) {
+        case OrderStatus.draft:
+          draft += 1;
         case OrderStatus.notStarted:
           notStarted += 1;
         case OrderStatus.inProgress:
@@ -3027,6 +3780,7 @@ class _OrderSummary {
 
     return _OrderSummary(
       total: orders.length,
+      draft: draft,
       notStarted: notStarted,
       inProgress: inProgress,
       completed: completed,
@@ -3045,6 +3799,7 @@ class _MenuValue<T> {
 extension on OrderStatus {
   String get label {
     return switch (this) {
+      OrderStatus.draft => 'Draft',
       OrderStatus.notStarted => 'Not Started',
       OrderStatus.inProgress => 'In Progress',
       OrderStatus.completed => 'Completed',
@@ -3052,6 +3807,47 @@ extension on OrderStatus {
     };
   }
 }
+
+_OrderUrgency _resolveOrderUrgency(OrderEntry entry) {
+  if (entry.status == OrderStatus.completed || entry.endDate == null) {
+    return _OrderUrgency.none;
+  }
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final dueDate = DateTime(
+    entry.endDate!.year,
+    entry.endDate!.month,
+    entry.endDate!.day,
+  );
+  if (dueDate.isBefore(today)) {
+    return _OrderUrgency.overdue;
+  }
+  final nearDueDate = today.add(const Duration(days: 3));
+  if (!dueDate.isAfter(nearDueDate)) {
+    return _OrderUrgency.nearDue;
+  }
+  return _OrderUrgency.none;
+}
+
+int _urgencyWeight(_OrderUrgency urgency) {
+  return switch (urgency) {
+    _OrderUrgency.overdue => 3,
+    _OrderUrgency.nearDue => 2,
+    _OrderUrgency.none => 1,
+  };
+}
+
+int _statusPriorityWeight(OrderStatus status) {
+  return switch (status) {
+    OrderStatus.inProgress => 3,
+    OrderStatus.notStarted => 2,
+    OrderStatus.draft => 2,
+    OrderStatus.delayed => 2,
+    OrderStatus.completed => 0,
+  };
+}
+
+enum _OrderUrgency { none, nearDue, overdue }
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;

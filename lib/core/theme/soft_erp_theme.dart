@@ -24,6 +24,11 @@ class SoftErpTheme {
   static const Color infoText = Color(0xFF2E57C7);
   static const Color dangerBg = Color(0xFFFDEDEE);
   static const Color dangerText = Color(0xFFC62828);
+  static const Color draftRowEdgeTint = Color(0x146366F1);
+  static const Color notStartedRowEdgeTint = Color(0x14D08A2A);
+  static const Color inProgressRowEdgeTint = Color(0x143F74E0);
+  static const Color completedRowEdgeTint = Color(0x1417A85C);
+  static const Color delayedRowEdgeTint = Color(0x17D35A5A);
 
   static const double radiusSm = 12;
   static const double radiusMd = 18;
