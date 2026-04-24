@@ -369,7 +369,7 @@ class _OrdersHeader extends StatelessWidget {
 
         return SoftSurface(
           radius: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
           color: SoftErpTheme.cardSurface,
           elevated: true,
           child: content,
@@ -603,7 +603,7 @@ class _OrdersControlRow extends StatelessWidget {
         return SoftSurface(
           radius: 26,
           color: SoftErpTheme.cardSurface,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
           elevated: true,
           child: strip,
         );
@@ -739,7 +739,7 @@ class _OrdersSummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const cardWidth = 320.0;
     return SizedBox(
-      height: 94,
+      height: 100,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -975,6 +975,7 @@ class _OrdersTableCard extends StatelessWidget {
               const SizedBox(height: 10),
               Expanded(
                 child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(0, 2, 0, 18),
                   itemCount: orders.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
@@ -1017,6 +1018,7 @@ class _TableHeaderRow extends StatelessWidget {
       ),
       child: Row(
         children: [
+          const SizedBox(width: _OrdersTableMetrics.prioritySlotWidth),
           _HeaderCell('Order / Date', width: layout.orderDateGroupWidth),
           _HeaderCell('Party / Item', width: layout.partyItemGroupWidth),
           _HeaderCell('Purchase Order Number', width: layout.poWidth),
@@ -1085,45 +1087,6 @@ class _OrderDataRowState extends State<_OrderDataRow> {
     final markerColor = _priorityMarkerColor(urgency);
     final quickAction = _primaryQuickAction(order, urgency);
     final isCompleted = order.status == OrderStatus.completed;
-    final baseShadow = urgency == _OrderUrgency.overdue
-        ? const [
-            BoxShadow(
-              color: Color(0x1F9C6A6A),
-              blurRadius: 15,
-              offset: Offset(0, 8),
-            ),
-            BoxShadow(
-              color: Color(0x9FFFFFFF),
-              blurRadius: 7,
-              offset: Offset(-1.5, -1.5),
-            ),
-          ]
-        : SoftErpTheme.raisedShadow;
-    final hoverShadow = urgency == _OrderUrgency.overdue
-        ? const [
-            BoxShadow(
-              color: Color(0x269C5656),
-              blurRadius: 18,
-              offset: Offset(0, 10),
-            ),
-            BoxShadow(
-              color: Color(0xAEFFFFFF),
-              blurRadius: 8,
-              offset: Offset(-1.5, -1.5),
-            ),
-          ]
-        : const [
-            BoxShadow(
-              color: Color(0x24909CC3),
-              blurRadius: 18,
-              offset: Offset(0, 12),
-            ),
-            BoxShadow(
-              color: Color(0xBFFFFFFF),
-              blurRadius: 8,
-              offset: Offset(-1.5, -1.5),
-            ),
-          ];
     final baseColor = isCompleted
         ? const Color(0xFFF9FBFF)
         : SoftErpTheme.cardSurface;
@@ -1145,10 +1108,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
             baseColor: baseColor,
             hoverColor: hoverColor,
             selectedColor: selectedColor,
-            baseShadow: baseShadow,
-            hoverShadow: hoverShadow,
             child: SizedBox(
-              height: 82,
+              height: 76,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onLongPress: () =>
@@ -1183,6 +1144,20 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                       ),
                       child: Row(
                         children: [
+                          SizedBox(
+                            width: _OrdersTableMetrics.prioritySlotWidth,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                width: 2.5,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: markerColor,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ),
                           _GroupedDataCell(
                             width: layout.orderDateGroupWidth,
                             primary: order.orderNo,
@@ -1270,18 +1245,6 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 14,
-            top: 24,
-            bottom: 24,
-            child: Container(
-              width: 3,
-              decoration: BoxDecoration(
-                color: markerColor,
-                borderRadius: BorderRadius.circular(999),
               ),
             ),
           ),
@@ -1625,7 +1588,7 @@ class _DueDateCell extends StatelessWidget {
     final urgencyColor = switch (urgency) {
       _OrderUrgency.none => SoftErpTheme.textSecondary,
       _OrderUrgency.nearDue => const Color(0xFFB37310),
-      _OrderUrgency.overdue => SoftErpTheme.dangerText,
+      _OrderUrgency.overdue => const Color(0xFFC76565),
     };
     final keySuffix = switch (urgency) {
       _OrderUrgency.none => 'none',
@@ -1640,8 +1603,8 @@ class _DueDateCell extends StatelessWidget {
           if (urgency != _OrderUrgency.none)
             Container(
               key: ValueKey<String>('orders-row-urgency-$keySuffix-$orderId'),
-              width: 8,
-              height: 8,
+              width: 7,
+              height: 7,
               decoration: BoxDecoration(
                 color: urgencyColor,
                 shape: BoxShape.circle,
@@ -1787,18 +1750,20 @@ class _StatusPill extends StatelessWidget {
 class _OrdersTableMetrics {
   static const double leftPadding = 34;
   static const double rightPadding = 20;
+  static const double prioritySlotWidth = 14;
   static const double orderDateGroupWidth = 232;
   static const double partyItemGroupWidth = 344;
   static const double poWidth = 198;
-  static const double quantityWidth = 132;
-  static const double startDateWidth = 124;
-  static const double endDateWidth = 124;
-  static const double statusWidth = 128;
+  static const double quantityWidth = 142;
+  static const double startDateWidth = 130;
+  static const double endDateWidth = 130;
+  static const double statusWidth = 136;
   static const double actionsWidth = 204;
 
   static const double totalWidth =
       leftPadding +
       rightPadding +
+      prioritySlotWidth +
       orderDateGroupWidth +
       partyItemGroupWidth +
       poWidth +

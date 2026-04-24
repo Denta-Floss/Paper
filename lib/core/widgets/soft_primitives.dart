@@ -15,7 +15,7 @@ class SoftSurface extends StatelessWidget {
     this.radius = SoftErpTheme.radiusMd,
     this.elevated = true,
     this.strongBorder = false,
-    this.clipContent = true,
+    this.clipContent = false,
   });
 
   final Widget child;
@@ -238,6 +238,7 @@ class _SoftMetricCardState extends State<SoftMetricCard> {
   Widget build(BuildContext context) {
     final isActive = widget.isActive;
     final lift = _isPressed ? 0.0 : (_isHovered ? -2.0 : 0.0);
+    const cardRadius = 22.0;
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() {
@@ -251,17 +252,18 @@ class _SoftMetricCardState extends State<SoftMetricCard> {
         child: InkWell(
           onTap: widget.onTap,
           onHighlightChanged: (pressed) => setState(() => _isPressed = pressed),
-          borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
+          borderRadius: BorderRadius.circular(cardRadius),
           child: SoftSurface(
             color: isActive
                 ? const Color(0xFFF0EDFF)
                 : (_isHovered
                       ? const Color(0xFFFDFDFF)
                       : SoftErpTheme.cardSurface),
-            radius: 24,
+            radius: cardRadius,
             strongBorder: isActive || _isHovered,
             elevated: true,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+            clipContent: false,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
             child: Row(
               children: [
                 Expanded(
@@ -280,7 +282,7 @@ class _SoftMetricCardState extends State<SoftMetricCard> {
                         ),
                       ),
                       if (widget.subLabel != null) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Text(
                           widget.subLabel!,
                           maxLines: 1,
