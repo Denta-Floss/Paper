@@ -12,11 +12,13 @@ import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../items/presentation/screens/items_screen.dart';
 import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
 import '../../../pm/presentation/screens/pm_screen.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -38,6 +40,11 @@ enum _InventorySummaryFilter { all, awaitingScan, linked }
 const _inventoryHoverColor = SoftErpTheme.accentSurface;
 
 enum _InventoryStockAction { receive, transfer, adjust }
+
+enum _InventoryQuickCreateAction { group, item }
+
+final ValueNotifier<int> _inventoryActionsOverlayDismissSignal =
+    ValueNotifier<int>(0);
 
 class _SelectAllFilteredIntent extends Intent {
   const _SelectAllFilteredIntent();
@@ -163,9 +170,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           (barcode) => !records.any((record) => record.barcode == barcode),
         );
 
-        final workspaceContent = Container(
-          color: Colors.transparent,
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+        final workspaceContent = PageContainer(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -197,7 +202,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             _viewMode = value;
                           });
                         },
-                        onNewGroup: _openCreateGroupEditor,
+                        onQuickCreateSelected: _handleQuickCreate,
                         onAddStock: () =>
                             InventoryScreen.openAddStockForm(context),
                         onReceiveStock: () => _openMovementComposer(
@@ -317,6 +322,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             });
                           },
                           onOpenDetails: (record) => _openDetails(record),
+                          onReceive: (record) => _openMovementComposer(
+                            movementType: InventoryMovementType.receive,
+                            initialBarcode: record.barcode,
+                          ),
                           onAddSubGroup: (record) => _openAddSubGroup(record),
                           onEdit: (record) => _openEditMaterial(record),
                           onDelete: (record) => _confirmDelete(record),
@@ -465,6 +474,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
     });
   }
 
+  Future<void> _handleQuickCreate(_InventoryQuickCreateAction action) async {
+    switch (action) {
+      case _InventoryQuickCreateAction.group:
+        await _openCreateGroupEditor();
+      case _InventoryQuickCreateAction.item:
+        await ItemsScreen.openEditor(context);
+    }
+  }
+
   List<String> _distinctValues(Iterable<String> values) {
     final distinct =
         values
@@ -608,6 +626,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _openDetails(MaterialRecord record) async {
+    _dismissInventoryActionOverlays();
     final provider = context.read<InventoryProvider>();
     await provider.selectMaterial(record.barcode);
     if (!mounted) {
@@ -660,6 +679,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (!record.isParent) {
       return;
     }
+    _dismissInventoryActionOverlays();
     await showDialog<void>(
       context: context,
       builder: (context) => Dialog(
@@ -673,6 +693,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _openEditMaterial(MaterialRecord record) async {
+    _dismissInventoryActionOverlays();
     if (record.isParent &&
         (record.groupMode == 'item_group_authoring' ||
             record.type.trim().toLowerCase() == 'item group')) {
@@ -692,6 +713,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _confirmDelete(MaterialRecord record) async {
+    _dismissInventoryActionOverlays();
     final auth = context.read<AuthProvider>();
     if (!auth.can('inventory.delete') && auth.can('inventory.request_delete')) {
       await _requestDelete(record);
@@ -733,6 +755,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _requestDelete(MaterialRecord record) async {
+    _dismissInventoryActionOverlays();
     final controller = TextEditingController();
     final requested = await showDialog<bool>(
       context: context,
@@ -787,6 +810,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _openGroupLinker(MaterialRecord record) async {
+    _dismissInventoryActionOverlays();
     await showDialog<void>(
       context: context,
       builder: (context) => Dialog(
@@ -800,6 +824,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _openItemLinker(MaterialRecord record) async {
+    _dismissInventoryActionOverlays();
     await showDialog<void>(
       context: context,
       builder: (context) => Dialog(
@@ -818,21 +843,25 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _openMovementComposer({
     required InventoryMovementType movementType,
+    String? initialBarcode,
   }) async {
+    _dismissInventoryActionOverlays();
     final inventory = context.read<InventoryProvider>();
     final materials = inventory.materials;
     if (materials.isEmpty) {
       return;
     }
 
-    final initialBarcode =
-        inventory.selectedMaterial?.barcode ?? materials.first.barcode;
+    final resolvedInitialBarcode =
+        initialBarcode ??
+        inventory.selectedMaterial?.barcode ??
+        materials.first.barcode;
     final draft = await showDialog<_MovementComposerDraft>(
       context: context,
       builder: (dialogContext) => _InventoryMovementComposerDialog(
         movementType: movementType,
         materials: materials,
-        initialBarcode: initialBarcode,
+        initialBarcode: resolvedInitialBarcode,
       ),
     );
 
@@ -878,6 +907,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  void _dismissInventoryActionOverlays() {
+    _inventoryActionsOverlayDismissSignal.value++;
   }
 
   Future<void> _bulkResetTrace(List<MaterialRecord> records) async {
@@ -1580,10 +1613,15 @@ class _InventoryMovementComposerDialogState
 }
 
 class _InventoryWorkspaceHeader extends StatelessWidget {
+  static const List<PMFigmaSegmentOption> _segments = <PMFigmaSegmentOption>[
+    PMFigmaSegmentOption(key: 'group', label: 'Groups'),
+    PMFigmaSegmentOption(key: 'item', label: 'Items'),
+  ];
+
   const _InventoryWorkspaceHeader({
     required this.viewMode,
     required this.onViewModeChanged,
-    required this.onNewGroup,
+    required this.onQuickCreateSelected,
     required this.onAddStock,
     required this.onReceiveStock,
     required this.onTransferStock,
@@ -1592,7 +1630,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
   final _InventoryViewMode viewMode;
   final ValueChanged<_InventoryViewMode> onViewModeChanged;
-  final VoidCallback onNewGroup;
+  final ValueChanged<_InventoryQuickCreateAction> onQuickCreateSelected;
   final VoidCallback onAddStock;
   final VoidCallback onReceiveStock;
   final VoidCallback onTransferStock;
@@ -1602,6 +1640,8 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final segmented = PMFigmaSegmentedControl(
       value: viewMode == _InventoryViewMode.groups ? 'group' : 'item',
+      segments: _segments,
+      semanticLabel: 'Inventory group and item segmented control',
       onChanged: (value) {
         onViewModeChanged(
           value == 'group'
@@ -1611,20 +1651,25 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
       },
     );
 
-    final actions = Wrap(
-      spacing: 14,
+    final secondaryActions = Wrap(
+      spacing: 10,
       runSpacing: 8,
       children: [
-        _InventoryToolbarButton(
-          label: '+ New Group',
-          onTap: onNewGroup,
-          isPrimary: false,
-        ),
+        _InventoryQuickCreateMenuButton(onSelected: onQuickCreateSelected),
         _InventoryStockActionsButton(
           onReceiveStock: onReceiveStock,
           onTransferStock: onTransferStock,
           onAdjustStock: onAdjustStock,
         ),
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 20,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        secondaryActions,
         _InventoryToolbarButton(
           label: '+ Add Stock',
           onTap: onAddStock,
@@ -1682,9 +1727,8 @@ class _InventoryToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final minWidth = switch (label) {
-      '+ New Group' => 172.0,
-      '+ Add Stock' => 182.0,
-      _ => 132.0,
+      '+ Add Stock' => 140.0,
+      _ => 120.0,
     };
 
     return Material(
@@ -1698,19 +1742,17 @@ class _InventoryToolbarButton extends StatelessWidget {
           curve: Curves.easeOutCubic,
           height: 44,
           constraints: BoxConstraints(minWidth: minWidth),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: EdgeInsets.symmetric(horizontal: isPrimary ? 24 : 16),
           decoration: BoxDecoration(
             gradient: isPrimary ? SoftErpTheme.accentGradient : null,
-            color: isPrimary ? null : const Color(0xFFFDFDFF),
+            color: isPrimary ? null : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isPrimary
-                  ? SoftErpTheme.accentDark
-                  : const Color(0xFFE7E8F2),
+              color: isPrimary ? SoftErpTheme.accentDark : SoftErpTheme.border,
             ),
             boxShadow: isPrimary
                 ? SoftErpTheme.raisedShadow
-                : SoftErpTheme.subtleShadow,
+                : const <BoxShadow>[],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1815,19 +1857,19 @@ class _InventoryStockActionsButton extends StatelessWidget {
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOutCubic,
           height: 44,
-          constraints: const BoxConstraints(minWidth: 164),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          constraints: const BoxConstraints(minWidth: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: const Color(0xFFFDFDFF),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE7E8F2)),
-            boxShadow: SoftErpTheme.subtleShadow,
+            border: Border.all(color: SoftErpTheme.border),
           ),
           child: const Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Create',
+                'Warehouse ▾',
                 style: TextStyle(
                   color: SoftErpTheme.textPrimary,
                   fontSize: 14,
@@ -1835,11 +1877,63 @@ class _InventoryStockActionsButton extends StatelessWidget {
                   letterSpacing: 0.1,
                 ),
               ),
-              SizedBox(width: 6),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 18,
-                color: SoftErpTheme.textSecondary,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryQuickCreateMenuButton extends StatelessWidget {
+  const _InventoryQuickCreateMenuButton({required this.onSelected});
+
+  final ValueChanged<_InventoryQuickCreateAction> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: PopupMenuButton<_InventoryQuickCreateAction>(
+        tooltip: 'Create',
+        onSelected: onSelected,
+        color: SoftErpTheme.cardSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: SoftErpTheme.border),
+        ),
+        itemBuilder: (context) => const [
+          PopupMenuItem<_InventoryQuickCreateAction>(
+            value: _InventoryQuickCreateAction.group,
+            height: 42,
+            child: Text('Create Group'),
+          ),
+          PopupMenuItem<_InventoryQuickCreateAction>(
+            value: _InventoryQuickCreateAction.item,
+            height: 42,
+            child: Text('Create Item'),
+          ),
+        ],
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 100),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: SoftErpTheme.border),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Create ▾',
+                style: TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
               ),
             ],
           ),
@@ -2501,6 +2595,7 @@ class _InventoryTable extends StatefulWidget {
     required this.onToggleSelection,
     required this.onToggleExpanded,
     required this.onOpenDetails,
+    required this.onReceive,
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
@@ -2519,6 +2614,7 @@ class _InventoryTable extends StatefulWidget {
   final ValueChanged<String> onToggleSelection;
   final ValueChanged<String> onToggleExpanded;
   final ValueChanged<MaterialRecord> onOpenDetails;
+  final ValueChanged<MaterialRecord> onReceive;
   final ValueChanged<MaterialRecord> onAddSubGroup;
   final ValueChanged<MaterialRecord> onEdit;
   final ValueChanged<MaterialRecord> onDelete;
@@ -2632,6 +2728,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                           onExpandToggle: entry.canExpand
                               ? () => widget.onToggleExpanded(record.barcode)
                               : null,
+                          onReceive: () => widget.onReceive(record),
                           onAddSubGroup: () => widget.onAddSubGroup(record),
                           onEdit: () => widget.onEdit(record),
                           onDelete: () => widget.onDelete(record),
@@ -2733,7 +2830,7 @@ class _HeaderCell extends StatelessWidget {
   }
 }
 
-class _InventoryMainDataRow extends StatelessWidget {
+class _InventoryMainDataRow extends StatefulWidget {
   const _InventoryMainDataRow({
     required this.record,
     required this.entry,
@@ -2743,6 +2840,7 @@ class _InventoryMainDataRow extends StatelessWidget {
     required this.isRequestDelete,
     required this.onTap,
     required this.onLongPress,
+    required this.onReceive,
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
@@ -2760,6 +2858,7 @@ class _InventoryMainDataRow extends StatelessWidget {
   final bool isRequestDelete;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback onReceive;
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -2769,93 +2868,108 @@ class _InventoryMainDataRow extends StatelessWidget {
   final VoidCallback? onExpandToggle;
 
   @override
+  State<_InventoryMainDataRow> createState() => _InventoryMainDataRowState();
+}
+
+class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final surfaceColor = isSelected
+    final surfaceColor = widget.isSelected
         ? _inventoryHoverColor
-        : entry.depth == 0 && entry.isExpanded
+        : widget.entry.depth == 0 && widget.entry.isExpanded
         ? _inventoryHoverColor
-        : isStriped
+        : widget.isStriped
         ? SoftErpTheme.cardSurfaceAlt
         : SoftErpTheme.cardSurface;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      child: SoftRowCard(
-        isSelected: isSelected || (entry.depth == 0 && entry.isExpanded),
-        onTap: onTap,
-        child: SizedBox(
-          height: metrics.rowHeight,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: metrics.horizontalPadding,
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                borderRadius: BorderRadius.circular(metrics.rowRadius),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        child: SoftRowCard(
+          isSelected:
+              widget.isSelected ||
+              (widget.entry.depth == 0 && widget.entry.isExpanded),
+          onTap: widget.onTap,
+          child: SizedBox(
+            height: widget.metrics.rowHeight,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.metrics.horizontalPadding,
               ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: metrics.nameWidth,
-                      child: _InventoryNameCell(
-                        record: record,
-                        entry: entry,
-                        metrics: metrics,
-                        onExpandToggle: onExpandToggle,
-                      ),
-                    ),
-                    _DataCell(
-                      _displayGroupId(record),
-                      width: metrics.barcodeWidth,
-                      metrics: metrics,
-                    ),
-                    _DataCell(
-                      _displayStock(record),
-                      width: metrics.stockWidth,
-                      metrics: metrics,
-                    ),
-                    _DataCell(
-                      _activityDate(record),
-                      width: metrics.dateWidth,
-                      metrics: metrics,
-                    ),
-                    _DataCell(
-                      record.createdBy.ifEmpty('Demo Admin'),
-                      width: metrics.createdByWidth,
-                      metrics: metrics,
-                    ),
-                    SizedBox(
-                      width: metrics.statusWidth,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: _InventoryStatusBadge(
-                          record: record,
-                          metrics: metrics,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: surfaceColor,
+                  borderRadius: BorderRadius.circular(widget.metrics.rowRadius),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: widget.metrics.nameWidth,
+                        child: _InventoryNameCell(
+                          record: widget.record,
+                          entry: widget.entry,
+                          metrics: widget.metrics,
+                          onExpandToggle: widget.onExpandToggle,
                         ),
                       ),
-                    ),
-                    SizedBox(
-                      width: metrics.actionsWidth,
-                      child: _InventoryActionsCell(
-                        record: record,
-                        metrics: metrics,
-                        isSelected: isSelected,
-                        isStriped: isStriped,
-                        isRequestDelete: isRequestDelete,
-                        onTap: onTap,
-                        onAddSubGroup: onAddSubGroup,
-                        onEdit: onEdit,
-                        onDelete: onDelete,
-                        onLinkGroup: onLinkGroup,
-                        onLinkItem: onLinkItem,
-                        onUnlink: onUnlink,
+                      _DataCell(
+                        _displayGroupId(widget.record),
+                        width: widget.metrics.barcodeWidth,
+                        metrics: widget.metrics,
                       ),
-                    ),
-                  ],
+                      _DataCell(
+                        _displayStock(widget.record),
+                        width: widget.metrics.stockWidth,
+                        metrics: widget.metrics,
+                      ),
+                      _DataCell(
+                        _activityDate(widget.record),
+                        width: widget.metrics.dateWidth,
+                        metrics: widget.metrics,
+                      ),
+                      _DataCell(
+                        widget.record.createdBy.ifEmpty('Demo Admin'),
+                        width: widget.metrics.createdByWidth,
+                        metrics: widget.metrics,
+                      ),
+                      SizedBox(
+                        width: widget.metrics.statusWidth,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: _InventoryStatusBadge(
+                            record: widget.record,
+                            metrics: widget.metrics,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: widget.metrics.actionsWidth,
+                        child: _InventoryActionsCell(
+                          record: widget.record,
+                          metrics: widget.metrics,
+                          hovered: _hovered,
+                          isSelected: widget.isSelected,
+                          isStriped: widget.isStriped,
+                          isRequestDelete: widget.isRequestDelete,
+                          onTap: widget.onTap,
+                          onReceive: widget.onReceive,
+                          onAddSubGroup: widget.onAddSubGroup,
+                          onEdit: widget.onEdit,
+                          onDelete: widget.onDelete,
+                          onLinkGroup: widget.onLinkGroup,
+                          onLinkItem: widget.onLinkItem,
+                          onUnlink: widget.onUnlink,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2894,10 +3008,12 @@ class _InventoryActionsCell extends StatelessWidget {
   const _InventoryActionsCell({
     required this.record,
     required this.metrics,
+    required this.hovered,
     required this.isSelected,
     required this.isStriped,
     required this.isRequestDelete,
     required this.onTap,
+    required this.onReceive,
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
@@ -2908,10 +3024,12 @@ class _InventoryActionsCell extends StatelessWidget {
 
   final MaterialRecord record;
   final _InventoryTableMetrics metrics;
+  final bool hovered;
   final bool isSelected;
   final bool isStriped;
   final bool isRequestDelete;
   final VoidCallback onTap;
+  final VoidCallback onReceive;
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -2921,11 +3039,13 @@ class _InventoryActionsCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: _InventoryActionsOverlayAnchor(
+    return Align(
+      alignment: Alignment.centerRight,
+      child: _InventoryInlineRowActions(
+        hovered: hovered,
+        onOpen: onTap,
+        onReceive: onReceive,
+        menuAnchor: _InventoryActionsOverlayAnchor(
           triggerSize: metrics.actionButtonSize,
           canAddSubGroup:
               record.numberOfChildren > 0 ||
@@ -2936,6 +3056,109 @@ class _InventoryActionsCell extends StatelessWidget {
           onDelete: onDelete,
         ),
       ),
+    );
+  }
+}
+
+class _InventoryQuickHintButton extends StatelessWidget {
+  const _InventoryQuickHintButton({
+    required this.label,
+    required this.onTap,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 26),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: emphasized
+                ? const Color(0xFFEDF0FF)
+                : const Color(0xFFF6F7FC),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: emphasized ? const Color(0xFFC6CCF6) : SoftErpTheme.border,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: emphasized
+                  ? SoftErpTheme.accentDark
+                  : SoftErpTheme.textSecondary,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryInlineRowActions extends StatelessWidget {
+  const _InventoryInlineRowActions({
+    required this.hovered,
+    required this.onOpen,
+    required this.onReceive,
+    required this.menuAnchor,
+  });
+
+  final bool hovered;
+  final VoidCallback onOpen;
+  final VoidCallback onReceive;
+  final Widget menuAnchor;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showQuick = hovered && constraints.maxWidth >= 124;
+        final showBothQuick = showQuick && constraints.maxWidth >= 176;
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showQuick)
+              IgnorePointer(
+                ignoring: !hovered,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: hovered ? 1 : 0,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _InventoryQuickHintButton(
+                        label: 'Open',
+                        emphasized: true,
+                        onTap: onOpen,
+                      ),
+                      if (showBothQuick) ...[
+                        const SizedBox(width: 6),
+                        _InventoryQuickHintButton(
+                          label: 'Receive',
+                          onTap: onReceive,
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                    ],
+                  ),
+                ),
+              ),
+            menuAnchor,
+          ],
+        );
+      },
     );
   }
 }
@@ -3914,7 +4137,7 @@ class _InventoryTableMetrics {
         dateWidth: 148,
         createdByWidth: 138,
         statusWidth: 136,
-        actionsWidth: 56,
+        actionsWidth: 152,
         headerHeight: 46,
         rowHeight: 70,
         headerFontSize: 12,
@@ -3940,7 +4163,7 @@ class _InventoryTableMetrics {
         dateWidth: 170,
         createdByWidth: 166,
         statusWidth: 172,
-        actionsWidth: 58,
+        actionsWidth: 168,
         headerHeight: 48,
         rowHeight: 72,
         headerFontSize: 14,
@@ -3965,7 +4188,7 @@ class _InventoryTableMetrics {
       dateWidth: 184,
       createdByWidth: 182,
       statusWidth: 194,
-      actionsWidth: 60,
+      actionsWidth: 184,
       headerHeight: 50,
       rowHeight: 74,
       headerFontSize: 14,
@@ -4184,9 +4407,22 @@ class _InventoryActionsOverlayAnchorState
   bool _isOpen = false;
 
   @override
+  void initState() {
+    super.initState();
+    _inventoryActionsOverlayDismissSignal.addListener(_handleDismissSignal);
+  }
+
+  @override
   void dispose() {
+    _inventoryActionsOverlayDismissSignal.removeListener(_handleDismissSignal);
     _removeOverlay();
     super.dispose();
+  }
+
+  void _handleDismissSignal() {
+    if (_isOpen) {
+      _removeOverlay();
+    }
   }
 
   void _toggleMenu() {

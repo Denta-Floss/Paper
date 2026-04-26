@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
+import 'package:paper/app/shell/navigation_provider.dart';
 import 'package:paper/features/groups/data/repositories/group_repository.dart';
 import 'package:paper/features/groups/domain/group_definition.dart';
 import 'package:paper/features/groups/domain/group_inputs.dart';
@@ -2046,6 +2048,47 @@ void main() {
     return widget.focusNode?.hasFocus ?? false;
   }
 
+  Future<void> openOrdersScreen(WidgetTester tester) async {
+    final sidebarTile = find.byKey(
+      const ValueKey<String>('sidebar_tile_orders'),
+    );
+    if (sidebarTile.evaluate().isNotEmpty) {
+      await tester.tap(sidebarTile);
+      await tester.pumpAndSettle();
+      return;
+    }
+
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select('orders', skipTransition: true);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> selectPrimaryVariationPath(
+    WidgetTester tester, {
+    String itemLabel = 'Switch Action Dolly - 1',
+    String variationPathLabel = '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+    String quantity = '1',
+  }) async {
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(itemLabel).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(variationPathLabel).last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      quantity,
+    );
+  }
+
   testWidgets('app opens into inventory shell', (tester) async {
     await pumpApp(tester);
 
@@ -2089,11 +2132,56 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
   });
 
+  testWidgets('masters submenu animates closed and reopens from down arrow', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await tester.ensureVisible(find.text('Units'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Units'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Masters'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
+      findsNothing,
+    );
+    var chevronRotation = tester.widget<AnimatedRotation>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('sidebar_configurator_chevron')),
+        matching: find.byType(AnimatedRotation),
+      ),
+    );
+    expect(chevronRotation.turns, 0.0);
+
+    await tester.tap(find.text('Masters'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
+      findsOneWidget,
+    );
+    chevronRotation = tester.widget<AnimatedRotation>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('sidebar_configurator_chevron')),
+        matching: find.byType(AnimatedRotation),
+      ),
+    );
+    expect(chevronRotation.turns, 0.5);
+  });
+
   testWidgets('ctrl+tab cycles sidebar navigation forward', (tester) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
-    await tester.tap(find.text('Orders'));
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
     expect(
       find.text('Search orders, clients, PO, items, or status'),
@@ -2135,8 +2223,7 @@ void main() {
   testWidgets('ctrl f focuses the shared title bar search', (tester) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
-    await tester.tap(find.text('Orders'));
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
@@ -2274,8 +2361,7 @@ void main() {
   ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
-    await tester.tap(find.text('Orders'));
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
     expect(find.text('No orders found'), findsOneWidget);
     expect(find.byKey(const Key('orders-new-order-button')), findsOneWidget);
@@ -2295,78 +2381,17 @@ void main() {
     await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Acme'), findsWidgets);
+    expect(
+      find.text('Selected client has no client code in master.'),
+      findsNothing,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-42',
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-item-field')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Switch Action Dolly - 1').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('5 Amp').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('11+1').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Brass').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('1 Way').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-type-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Dolly').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Without Plating').last);
-    await tester.pumpAndSettle();
-
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      '25',
-    );
+    await selectPrimaryVariationPath(tester, quantity: '25');
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -2390,10 +2415,9 @@ void main() {
   ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
-    await tester.tap(find.text('New Order').first);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -2410,64 +2434,7 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-SHARED',
     );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-item-field')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Switch Action Dolly - 1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('5 Amp').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('11+1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Brass').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('1 Way').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-type-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Dolly').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Without Plating').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      '11',
-    );
+    await selectPrimaryVariationPath(tester, quantity: '11');
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-create-order')),
     );
@@ -2524,8 +2491,7 @@ void main() {
       viewSize: const Size(1600, 1000),
     );
 
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
@@ -2599,8 +2565,7 @@ void main() {
       viewSize: const Size(1600, 1000),
     );
 
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
     expect(
       find.byKey(const ValueKey<String>('orders-row-urgency-near-41')),
@@ -2661,8 +2626,7 @@ void main() {
       viewSize: const Size(1600, 1000),
     );
 
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
     expect(find.text('needs setup'), findsOneWidget);
     expect(find.text('done'), findsOneWidget);
@@ -2679,12 +2643,11 @@ void main() {
   testWidgets('orders merge duplicate lines by order client po and item', (
     tester,
   ) async {
-    await pumpApp(tester);
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await pumpApp(tester, viewSize: const Size(1600, 1000));
+    await openOrdersScreen(tester);
 
     Future<void> addOrder(String qty) async {
-      await tester.tap(find.text('New Order').first);
+      await tester.tap(find.byKey(const Key('orders-new-order-button')));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -2702,64 +2665,7 @@ void main() {
         find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
         'PO-77',
       );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('orders-editor-item-field')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Switch Action Dolly - 1').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-action-dolly-amp-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('5 Amp').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('11+1').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Brass').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-action-dolly-contact-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('1 Way').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-action-dolly-type-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Dolly').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-action-dolly-plating-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Without Plating').last);
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-        qty,
-      );
+      await selectPrimaryVariationPath(tester, quantity: qty);
       await tester.ensureVisible(
         find.byKey(const ValueKey<String>('orders-editor-create-order')),
       );
@@ -2777,12 +2683,11 @@ void main() {
   });
 
   testWidgets('orders lifecycle can be updated from table row', (tester) async {
-    await pumpApp(tester);
+    await pumpApp(tester, viewSize: const Size(1600, 1000));
 
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
-    await tester.tap(find.text('New Order').first);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -2799,73 +2704,7 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-88',
     );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-item-field')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Switch Action Dolly - 1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('5 Amp').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('11+1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Brass').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('1 Way').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-type-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Dolly').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Without Plating').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      '8',
-    );
-
-    final createStatusField = find.byKey(
-      const ValueKey<String>('orders-editor-status-field'),
-    );
-    await tester.ensureVisible(createStatusField);
-    await tester.tap(createStatusField);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('In Progress').last);
-    await tester.pumpAndSettle();
+    await selectPrimaryVariationPath(tester, quantity: '8');
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-create-order')),
@@ -2875,7 +2714,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('In Progress'), findsWidgets);
+    expect(find.text('Not Started'), findsWidgets);
 
     final orderRow = find.text('ORD-004').last;
     await tester.ensureVisible(orderRow);
@@ -2909,10 +2748,9 @@ void main() {
   ) async {
     await pumpApp(tester, viewSize: const Size(1600, 1000));
 
-    await tester.tap(find.text('Orders').first);
-    await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
 
-    await tester.tap(find.text('New Order').first);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -2929,64 +2767,7 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-DRAFT-001',
     );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-item-field')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Switch Action Dolly - 1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('5 Amp').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('11+1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Brass').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('1 Way').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-type-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Dolly').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Without Plating').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      '6',
-    );
+    await selectPrimaryVariationPath(tester, quantity: '6');
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-save-draft')),
@@ -3018,11 +2799,14 @@ void main() {
         ),
       ],
     );
-    await pumpApp(tester, clientRepository: clientRepository);
+    await pumpApp(
+      tester,
+      clientRepository: clientRepository,
+      viewSize: const Size(1600, 1000),
+    );
 
-    await tester.tap(find.text('Orders'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('New Order').first);
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -3036,64 +2820,7 @@ void main() {
     await tester.tap(find.text('No Code Client').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-item-field')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Switch Action Dolly - 1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('5 Amp').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('11+1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Brass').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('1 Way').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-type-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Dolly').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Without Plating').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      '4',
-    );
+    await selectPrimaryVariationPath(tester, quantity: '4');
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-create-order')),

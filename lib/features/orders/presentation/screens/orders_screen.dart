@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
-import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
-import '../../../items/presentation/screens/items_screen.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_inputs.dart';
 import '../providers/orders_provider.dart';
@@ -47,13 +47,22 @@ class OrdersScreen extends StatefulWidget {
 
     return showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 847, maxHeight: 680),
-          child: body,
-        ),
-      ),
+      builder: (context) {
+        final size = MediaQuery.of(context).size;
+        final dialogWidth = math.min(1499.0, size.width - 32);
+        final dialogHeight = math.min(873.0, size.height - 40);
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 20,
+          ),
+          child: SizedBox(
+            width: dialogWidth,
+            height: dialogHeight,
+            child: body,
+          ),
+        );
+      },
     );
   }
 
@@ -61,12 +70,8 @@ class OrdersScreen extends StatefulWidget {
   State<OrdersScreen> createState() => _OrdersScreenState();
 }
 
-enum _OrdersCreateMode { group, item }
-
-enum _OrdersQuickCreateAction { group, item }
-
 class _OrdersScreenState extends State<OrdersScreen> {
-  static const double _contentHorizontalPadding = 18;
+  static const double _contentHorizontalPadding = 0;
   final Set<int> _selectedOrderIds = <int>{};
   int? _partyFilterClientId;
   int? _itemFilterId;
@@ -75,16 +80,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     final ordersProvider = context.watch<OrdersProvider>();
-    final clients = context
-        .watch<ClientsProvider>()
-        .clients
-        .where((client) => !client.isArchived)
-        .toList(growable: false);
-    final items = context
-        .watch<ItemsProvider>()
-        .items
-        .where((item) => !item.isArchived)
-        .toList(growable: false);
     final orders = ordersProvider.orders;
     final visibleOrders = _applyFilters(ordersProvider.filteredOrders);
     final summary = _OrderSummary.fromOrders(orders);
@@ -93,9 +88,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       (id) => !orders.any((order) => order.id == id),
     );
 
-    return Container(
-      color: Colors.transparent,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+    return PageContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -108,9 +101,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   _OrdersHeader(
                     onPrimaryCreate: () {
                       _handlePrimaryCreate();
-                    },
-                    onQuickCreateSelected: (action) {
-                      _handleQuickCreate(action);
                     },
                   ),
                   const SizedBox(height: 18),
@@ -214,15 +204,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     await OrdersScreen.openEditor(context);
   }
 
-  Future<void> _handleQuickCreate(_OrdersQuickCreateAction action) async {
-    switch (action) {
-      case _OrdersQuickCreateAction.group:
-        await GroupsScreen.openEditor(context);
-      case _OrdersQuickCreateAction.item:
-        await ItemsScreen.openEditor(context);
-    }
-  }
-
   Future<void> _openLifecycleEditor(BuildContext context, OrderEntry order) {
     return showGeneralDialog<void>(
       context: context,
@@ -288,13 +269,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
 }
 
 class _OrdersHeader extends StatelessWidget {
-  const _OrdersHeader({
-    required this.onPrimaryCreate,
-    required this.onQuickCreateSelected,
-  });
+  const _OrdersHeader({required this.onPrimaryCreate});
 
   final VoidCallback onPrimaryCreate;
-  final ValueChanged<_OrdersQuickCreateAction> onQuickCreateSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -305,18 +282,15 @@ class _OrdersHeader extends StatelessWidget {
           label: 'New Order',
           onPressed: onPrimaryCreate,
         );
-        final createButton = _OrdersCreateMenuButton(
-          onSelected: onQuickCreateSelected,
-        );
         final title = Padding(
-          padding: const EdgeInsets.only(left: 4),
+          padding: const EdgeInsets.only(left: 0),
           child: Text(
             'Order Book',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: SoftErpTheme.textPrimary,
-                  letterSpacing: -0.5,
-                ),
+              fontWeight: FontWeight.w700,
+              color: SoftErpTheme.textPrimary,
+              letterSpacing: -0.5,
+            ),
           ),
         );
         final filtersButton = Container(
@@ -351,7 +325,7 @@ class _OrdersHeader extends StatelessWidget {
           spacing: 12,
           runSpacing: 10,
           crossAxisAlignment: WrapCrossAlignment.center,
-          children: [filtersButton, createButton, button],
+          children: [filtersButton, button],
         );
 
         final content =
@@ -385,63 +359,6 @@ class _OrdersHeader extends StatelessWidget {
 
         return content;
       },
-    );
-  }
-}
-
-class _OrdersCreateMenuButton extends StatelessWidget {
-  const _OrdersCreateMenuButton({required this.onSelected});
-
-  final ValueChanged<_OrdersQuickCreateAction> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 42,
-      child: PopupMenuButton<_OrdersQuickCreateAction>(
-        tooltip: 'Create',
-        onSelected: onSelected,
-        color: SoftErpTheme.cardSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        itemBuilder: (context) => const [
-          PopupMenuItem<_OrdersQuickCreateAction>(
-            value: _OrdersQuickCreateAction.group,
-            child: Text('Create Group'),
-          ),
-          PopupMenuItem<_OrdersQuickCreateAction>(
-            value: _OrdersQuickCreateAction.item,
-            child: Text('Create Item'),
-          ),
-        ],
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-          decoration: BoxDecoration(
-            color: SoftErpTheme.cardSurface,
-            border: Border.all(color: SoftErpTheme.accentDark.withAlpha(50)),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Create',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontFamily: 'Segoe UI',
-                  fontWeight: FontWeight.w600,
-                  color: SoftErpTheme.accentDark,
-                ),
-              ),
-              SizedBox(width: 8),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 18,
-                color: SoftErpTheme.accentDark,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -500,6 +417,7 @@ class _OrdersPrimaryButton extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _OrdersControlRow extends StatelessWidget {
   const _OrdersControlRow({
     required this.partyFilterClientId,
@@ -637,7 +555,7 @@ class _OrdersControlRow extends StatelessWidget {
           ],
         );
 
-        final strip = constraints.maxWidth < 980
+        final strip = constraints.maxWidth < 1040
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -985,7 +903,7 @@ class _OrdersTableCard extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+      padding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final layout = _OrdersTableLayout.fromContainerWidth(
@@ -1031,9 +949,9 @@ class _OrdersTableCard extends StatelessWidget {
               const SizedBox(height: 10),
               Expanded(
                 child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 22),
+                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
                   itemCount: orders.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  separatorBuilder: (_, _) => const SizedBox(height: 4),
                   itemBuilder: (context, index) {
                     final order = orders[index];
                     return _OrderDataRow(
@@ -1165,7 +1083,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
             hoverColor: hoverColor,
             selectedColor: selectedColor,
             child: SizedBox(
-              height: 74,
+              height: 86,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onLongPress: () =>
@@ -1894,42 +1812,25 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _orderNoController;
   late final TextEditingController _poNumberController;
-  late final TextEditingController _clientCodeController;
-  late final TextEditingController _quantityController;
   late final TextEditingController _startDateController;
   late final TextEditingController _endDateController;
 
   int? _selectedClientId;
-  int? _selectedItemId;
-  final Map<String, int> _selectionState = <String, int>{};
-  OrderStatus _selectedStatus = OrderStatus.notStarted;
+  late final List<_OrderLineDraft> _lines;
+  bool _itemWiseCompletionDate = true;
   DateTime? _startDate;
   DateTime? _endDate;
-  late List<_CompletionShortcutPreset> _completionShortcuts;
-
-  String? get _clientCodeError {
-    final text = _clientCodeController.text.trim();
-    if (_selectedClientId == null) {
-      return null;
-    }
-    if (text.isEmpty) {
-      return 'Selected client has no client code in master.';
-    }
-    return null;
-  }
+  String? _orderCompletionError;
 
   @override
   void initState() {
     super.initState();
     _orderNoController = TextEditingController();
     _poNumberController = TextEditingController();
-    _clientCodeController = TextEditingController();
-    _quantityController = TextEditingController(text: '1');
     _startDateController = TextEditingController();
     _endDateController = TextEditingController();
-    _completionShortcuts = const <_CompletionShortcutPreset>[
-      _CompletionShortcutPreset(amount: 3, unit: _CompletionShortcutUnit.days),
-      _CompletionShortcutPreset(amount: 3, unit: _CompletionShortcutUnit.weeks),
+    _lines = <_OrderLineDraft>[
+      _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch),
     ];
   }
 
@@ -1937,10 +1838,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   void dispose() {
     _orderNoController.dispose();
     _poNumberController.dispose();
-    _clientCodeController.dispose();
-    _quantityController.dispose();
     _startDateController.dispose();
     _endDateController.dispose();
+    for (final line in _lines) {
+      line.dispose();
+    }
     super.dispose();
   }
 
@@ -1966,35 +1868,31 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       }),
       child: Container(
         decoration: BoxDecoration(
-          color: SoftErpTheme.cardSurface,
-          borderRadius: BorderRadius.circular(24),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: SoftErpTheme.border),
-          boxShadow: SoftErpTheme.raisedShadow,
         ),
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
-                decoration: const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: SoftErpTheme.border),
-                  ),
-                ),
-                child: Text(
-                  'Create New Order',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: SoftErpTheme.textPrimary,
+              SizedBox(
+                height: 64,
+                child: Center(
+                  child: Text(
+                    'Create New Order',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: SoftErpTheme.textPrimary,
+                    ),
                   ),
                 ),
               ),
-              Flexible(
+              const Divider(height: 1, color: SoftErpTheme.border),
+              Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(56, 18, 56, 18),
+                  padding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
                   child: !canSubmit
                       ? _DependencyMessage(
                           hasClients: clients.isNotEmpty,
@@ -2002,326 +1900,56 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                         )
                       : LayoutBuilder(
                           builder: (context, constraints) {
-                            final fieldWidth = ((constraints.maxWidth - 24) / 2)
-                                .clamp(260.0, 300.0);
-                            final children = <Widget>[
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Order No',
-                                  child: TextFormField(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-order-no-field',
-                                    ),
-                                    controller: _orderNoController,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Enter',
-                                    ),
-                                    textInputAction: TextInputAction.next,
-                                    validator: (value) {
-                                      if ((value ?? '').trim().isEmpty) {
-                                        return 'Enter an order number.';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
+                            final isCompact = constraints.maxWidth < 720;
+                            final detailsPanel = _buildOrderDetailsPanel(
+                              context,
+                              clients,
+                            );
+                            final itemsPanel = _buildOrderItemsPanel(
+                              context,
+                              items,
+                              isCompact: isCompact,
+                            );
+                            if (isCompact) {
+                              return Column(
+                                children: [
+                                  detailsPanel,
+                                  const SizedBox(height: 10),
+                                  itemsPanel,
+                                ],
+                              );
+                            }
+                            return SizedBox(
+                              height: 704,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SizedBox(width: 435, child: detailsPanel),
+                                  const SizedBox(width: 14),
+                                  Expanded(child: itemsPanel),
+                                ],
                               ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Purchase Order No.',
-                                  child: TextFormField(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-po-number-field',
-                                    ),
-                                    controller: _poNumberController,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Enter',
-                                    ),
-                                    textInputAction: TextInputAction.next,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Client',
-                                  child: SearchableSelectField<int>(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-client-field',
-                                    ),
-                                    tapTargetKey: const ValueKey<String>(
-                                      'orders-editor-client-field',
-                                    ),
-                                    value: _selectedClientId,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Select',
-                                    ),
-                                    dialogTitle: 'Client',
-                                    searchHintText: 'Search client',
-                                    options: clients
-                                        .map(
-                                          (client) =>
-                                              SearchableSelectOption<int>(
-                                                value: client.id,
-                                                label: client.displayLabel,
-                                              ),
-                                        )
-                                        .toList(growable: false),
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _selectedClientId = value;
-                                        final selected = _selectedClient(
-                                          clients,
-                                        );
-                                        _clientCodeController.text =
-                                            _resolveClientCode(selected);
-                                      });
-                                    },
-                                    validator: (value) {
-                                      if (value == null) {
-                                        return 'Select a client.';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Client Code',
-                                  child: TextFormField(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-client-code-field',
-                                    ),
-                                    controller: _clientCodeController,
-                                    readOnly: true,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Enter',
-                                      errorText: _clientCodeError,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Item',
-                                  child: SearchableSelectField<int>(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-item-field',
-                                    ),
-                                    tapTargetKey: const ValueKey<String>(
-                                      'orders-editor-item-field',
-                                    ),
-                                    value: _selectedItemId,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Select',
-                                    ),
-                                    dialogTitle: 'Item',
-                                    searchHintText: 'Search item',
-                                    options: items
-                                        .map(
-                                          (item) => SearchableSelectOption<int>(
-                                            value: item.id,
-                                            label: item.displayName,
-                                          ),
-                                        )
-                                        .toList(growable: false),
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _selectedItemId = value;
-                                        _selectionState.clear();
-                                      });
-                                    },
-                                    validator: (value) {
-                                      if (value == null) {
-                                        return 'Select an item.';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ),
-                              ..._buildVariationSelectors(items, fieldWidth),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Quantity / Unit',
-                                  child: TextFormField(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-quantity-field',
-                                    ),
-                                    controller: _quantityController,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Enter',
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      final quantity = int.tryParse(
-                                        (value ?? '').trim(),
-                                      );
-                                      if (quantity == null || quantity <= 0) {
-                                        return 'Enter a valid quantity.';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _OrderEditorField(
-                                  label: 'Status',
-                                  child: SearchableSelectField<OrderStatus>(
-                                    key: const ValueKey<String>(
-                                      'orders-editor-status-field',
-                                    ),
-                                    tapTargetKey: const ValueKey<String>(
-                                      'orders-editor-status-field',
-                                    ),
-                                    value: _selectedStatus,
-                                    decoration: _inputDecoration(
-                                      hintText: 'Select',
-                                    ),
-                                    dialogTitle: 'Status',
-                                    searchHintText: 'Search status',
-                                    options: OrderStatus.values
-                                        .map(
-                                          (status) =>
-                                              SearchableSelectOption<
-                                                OrderStatus
-                                              >(
-                                                value: status,
-                                                label: status.label,
-                                              ),
-                                        )
-                                        .toList(growable: false),
-                                    onChanged: (value) {
-                                      if (value == null) {
-                                        return;
-                                      }
-                                      setState(() {
-                                        _selectedStatus = value;
-                                      });
-                                    },
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: _DateField(
-                                  key: const ValueKey<String>(
-                                    'orders-editor-start-date-field',
-                                  ),
-                                  label: 'Start Date',
-                                  controller: _startDateController,
-                                  onTap: () => _pickDate(
-                                    context,
-                                    initial: _startDate ?? DateTime.now(),
-                                    onSelected: (value) {
-                                      setState(() {
-                                        _startDate = value;
-                                        _startDateController.text = _formatDate(
-                                          value,
-                                        );
-                                      });
-                                    },
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: fieldWidth,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _DateField(
-                                      key: const ValueKey<String>(
-                                        'orders-editor-end-date-field',
-                                      ),
-                                      label: 'Estimated Completion Date',
-                                      controller: _endDateController,
-                                      onTap: () => _pickDate(
-                                        context,
-                                        initial:
-                                            _endDate ??
-                                            _startDate ??
-                                            DateTime.now(),
-                                        onSelected: (value) {
-                                          setState(() {
-                                            _endDate = value;
-                                            _endDateController.text =
-                                                _formatDate(value);
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        for (
-                                          var index = 0;
-                                          index < _completionShortcuts.length;
-                                          index++
-                                        )
-                                          _CompletionShortcutButton(
-                                            key: ValueKey<String>(
-                                              'orders-editor-shortcut-$index',
-                                            ),
-                                            label: _completionShortcuts[index]
-                                                .label,
-                                            onTap: () =>
-                                                _applyCompletionShortcut(
-                                                  _completionShortcuts[index],
-                                                ),
-                                          ),
-                                        _CompletionShortcutButton(
-                                          key: const ValueKey<String>(
-                                            'orders-editor-shortcut-add',
-                                          ),
-                                          label: 'Add',
-                                          isGhost: true,
-                                          onTap: _openCompletionShortcutEditor,
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ];
-                            return Wrap(
-                              spacing: 24,
-                              runSpacing: 18,
-                              children: children,
                             );
                           },
                         ),
                 ),
               ),
+              const Divider(height: 1, color: SoftErpTheme.border),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: SoftErpTheme.border)),
-                ),
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 10,
-                  runSpacing: 10,
+                height: 82,
+                padding: const EdgeInsets.fromLTRB(32, 16, 28, 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    AppButton(
+                    _OrderEditorFooterButton(
                       label: 'Cancel',
-                      variant: AppButtonVariant.secondary,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
-                    AppButton(
+                    const SizedBox(width: 10),
+                    _OrderEditorFooterButton(
                       key: const ValueKey<String>('orders-editor-save-draft'),
                       label: 'Save Draft',
-                      variant: AppButtonVariant.secondary,
                       onPressed: canSubmit
                           ? () => _submit(
                               context,
@@ -2332,9 +1960,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                             )
                           : null,
                     ),
-                    AppButton(
+                    const SizedBox(width: 10),
+                    _OrderEditorFooterButton(
                       key: const ValueKey<String>('orders-editor-create-order'),
-                      label: 'Create Order',
+                      label: 'Save',
+                      isPrimary: true,
                       onPressed: canSubmit
                           ? () => _submit(context, clients, items)
                           : null,
@@ -2349,6 +1979,526 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     );
   }
 
+  Widget _buildOrderDetailsPanel(
+    BuildContext context,
+    List<ClientDefinition> clients,
+  ) {
+    return _OrderEditorPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _OrderEditorField(
+            label: 'Order Code',
+            child: TextFormField(
+              key: const ValueKey<String>('orders-editor-order-no-field'),
+              controller: _orderNoController,
+              decoration: _inputDecoration(
+                hintText: '123456',
+                suffixIcon: Icons.edit_outlined,
+              ),
+              textInputAction: TextInputAction.next,
+              validator: (value) {
+                if ((value ?? '').trim().isEmpty) {
+                  return 'Enter an order number.';
+                }
+                return null;
+              },
+            ),
+          ),
+          const SizedBox(height: 28),
+          _OrderEditorField(
+            label: 'Client Name',
+            child: SearchableSelectField<int>(
+              key: const ValueKey<String>('orders-editor-client-field'),
+              tapTargetKey: const ValueKey<String>(
+                'orders-editor-client-field',
+              ),
+              value: _selectedClientId,
+              decoration: _inputDecoration(hintText: 'Select'),
+              dialogTitle: 'Client',
+              searchHintText: 'Search client',
+              options: clients
+                  .map(
+                    (client) => SearchableSelectOption<int>(
+                      value: client.id,
+                      label: client.displayLabel,
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                setState(() {
+                  _selectedClientId = value;
+                });
+              },
+              validator: (value) {
+                if (value == null) {
+                  return 'Select a client.';
+                }
+                return null;
+              },
+            ),
+          ),
+          if (_selectedClientId != null &&
+              _resolveClientCode(_selectedClient(clients)).isEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Selected client has no client code in master.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: SoftErpTheme.dangerText,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          _OrderEditorField(
+            label: 'Purchase Order No.',
+            child: TextFormField(
+              key: const ValueKey<String>('orders-editor-po-number-field'),
+              controller: _poNumberController,
+              decoration: _inputDecoration(hintText: 'PO-123'),
+              textInputAction: TextInputAction.next,
+            ),
+          ),
+          const SizedBox(height: 28),
+          _DateField(
+            key: const ValueKey<String>('orders-editor-start-date-field'),
+            label: 'Start Date',
+            controller: _startDateController,
+            onTap: () => _pickDate(
+              context,
+              initial: _startDate ?? DateTime.now(),
+              onSelected: (value) {
+                setState(() {
+                  _startDate = value;
+                  _startDateController.text = _formatDate(value);
+                  _clearCompletionErrors();
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 28),
+          _OrderEditorField(
+            label: 'Order Completion Date',
+            child: TextFormField(
+              key: const ValueKey<String>('orders-editor-end-date-field'),
+              controller: _endDateController,
+              onFieldSubmitted: (_) => _normalizeOrderCompletionDate(),
+              onTapOutside: (_) => _normalizeOrderCompletionDate(),
+              readOnly: _itemWiseCompletionDate,
+              enabled: !_itemWiseCompletionDate,
+              decoration: _inputDecoration(
+                hintText: '25 - 05 - 2026',
+                errorText: _orderCompletionError,
+                suffixIcon: Icons.calendar_today_outlined,
+                onSuffixTap: _itemWiseCompletionDate
+                    ? null
+                    : () => _pickDate(
+                        context,
+                        initial: _endDate ?? _startDate ?? DateTime.now(),
+                        onSelected: (value) {
+                          setState(() {
+                            _endDate = value;
+                            _endDateController.text = _formatDate(value);
+                            _orderCompletionError = null;
+                            _syncLineCompletionDates(value);
+                          });
+                        },
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          _ItemWiseCompletionToggle(
+            value: _itemWiseCompletionDate,
+            onChanged: (value) {
+              setState(() {
+                _itemWiseCompletionDate = value ?? false;
+                if (_itemWiseCompletionDate) {
+                  _orderCompletionError = null;
+                  _recalculateOrderCompletionFromLines();
+                } else if (_endDate != null) {
+                  _syncLineCompletionDates(_endDate);
+                }
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderItemsPanel(
+    BuildContext context,
+    List<ItemDefinition> items, {
+    required bool isCompact,
+  }) {
+    return _OrderEditorPanel(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final hasBoundedHeight = constraints.maxHeight.isFinite;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Orders Items',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (!isCompact) ...[
+                _OrderItemsHeader(),
+                const SizedBox(height: 20),
+              ],
+              if (hasBoundedHeight && !isCompact)
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    children: [
+                      for (var index = 0; index < _lines.length; index++) ...[
+                        _buildDesktopOrderItemSection(context, items, index),
+                        if (index != _lines.length - 1)
+                          const SizedBox(height: 14),
+                      ],
+                    ],
+                  ),
+                )
+              else
+                Column(
+                  children: [
+                    for (var index = 0; index < _lines.length; index++) ...[
+                      if (isCompact)
+                        _buildCompactOrderItemSection(context, items, index)
+                      else
+                        _buildDesktopOrderItemSection(context, items, index),
+                      if (index != _lines.length - 1)
+                        SizedBox(height: isCompact ? 18 : 14),
+                    ],
+                  ],
+                ),
+              const SizedBox(height: 10),
+              _AddOrderItemButton(onPressed: _addLine),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCompactOrderItemSection(
+    BuildContext context,
+    List<ItemDefinition> items,
+    int index,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _OrderEditorField(
+          label: 'Item',
+          child: _buildItemSelectForLine(items, index),
+        ),
+        const SizedBox(height: 10),
+        _OrderEditorField(
+          label: 'Order Quantity',
+          child: _buildQuantityFieldForLine(index),
+        ),
+        const SizedBox(height: 10),
+        _OrderEditorField(label: 'Unit', child: _buildUnitField()),
+        const SizedBox(height: 10),
+        _OrderEditorField(
+          label: 'Completion Date',
+          child: _buildCompletionDateFieldForLine(context, index),
+        ),
+        const SizedBox(height: 10),
+        ..._buildVariationSelectorsForLine(items, index, double.infinity),
+        if (index > 0) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _removeLine(index),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Remove item'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.dangerText,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDesktopOrderItemSection(
+    BuildContext context,
+    List<ItemDefinition> items,
+    int index,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _OrderItemsRow(
+          itemField: _buildItemSelectForLine(items, index),
+          quantityField: _buildQuantityFieldForLine(index),
+          unitField: _buildUnitField(),
+          completionDateField: _buildCompletionDateFieldForLine(context, index),
+          onDelete: index == 0 ? null : () => _removeLine(index),
+        ),
+        const SizedBox(height: 10),
+        _buildLineVariationSelectors(items, index),
+      ],
+    );
+  }
+
+  Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
+    final line = _lines[index];
+    final fieldKey = index == 0
+        ? const ValueKey<String>('orders-editor-item-field')
+        : ValueKey<String>('orders-editor-item-field-${line.id}');
+    return SearchableSelectField<int>(
+      key: fieldKey,
+      tapTargetKey: fieldKey,
+      value: line.selectedItemId,
+      decoration: _inputDecoration(hintText: 'Dolly'),
+      dialogTitle: 'Item',
+      searchHintText: 'Search item',
+      options: items
+          .map(
+            (item) => SearchableSelectOption<int>(
+              value: item.id,
+              label: item.displayName,
+            ),
+          )
+          .toList(growable: false),
+      onChanged: (value) {
+        setState(() {
+          line.selectedItemId = value;
+          final item = _selectedItemForLine(items, value);
+          line.selectedVariationLeafId = _defaultLeafIdForItem(item);
+          line.variationPathError = null;
+        });
+      },
+      validator: (value) {
+        if (value == null) {
+          return 'Select an item.';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildQuantityFieldForLine(int index) {
+    final line = _lines[index];
+    final fieldKey = index == 0
+        ? const ValueKey<String>('orders-editor-quantity-field')
+        : ValueKey<String>('orders-editor-quantity-field-${line.id}');
+    return TextFormField(
+      key: fieldKey,
+      controller: line.quantityController,
+      decoration: _inputDecoration(hintText: '1000'),
+      keyboardType: TextInputType.number,
+      validator: (value) {
+        final quantity = int.tryParse((value ?? '').trim());
+        if (quantity == null || quantity <= 0) {
+          return 'Enter a valid quantity.';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildUnitField() {
+    return TextFormField(
+      initialValue: 'Pieces',
+      readOnly: true,
+      decoration: _inputDecoration(
+        hintText: 'Pieces',
+        suffixIcon: Icons.keyboard_arrow_down_rounded,
+      ),
+    );
+  }
+
+  Widget _buildCompletionDateFieldForLine(BuildContext context, int index) {
+    final line = _lines[index];
+    final fieldKey = index == 0
+        ? const ValueKey<String>('orders-editor-completion-date-field')
+        : ValueKey<String>('orders-editor-completion-date-field-${line.id}');
+    return TextFormField(
+      key: fieldKey,
+      controller: line.completionDateController,
+      enabled: _itemWiseCompletionDate,
+      onFieldSubmitted: (_) => _normalizeCompletionDateLine(index),
+      onTapOutside: (_) => _normalizeCompletionDateLine(index),
+      decoration: _inputDecoration(
+        hintText: '25 - 05 - 2026',
+        errorText: line.completionDateError,
+        suffixIcon: Icons.calendar_today_outlined,
+        onSuffixTap: !_itemWiseCompletionDate
+            ? null
+            : () => _pickDate(
+                context,
+                initial:
+                    line.completionDate ??
+                    _endDate ??
+                    _startDate ??
+                    DateTime.now(),
+                onSelected: (value) {
+                  setState(() {
+                    line.completionDate = value;
+                    line.completionDateController.text = _formatDate(value);
+                    line.completionDateError = null;
+                    if (_itemWiseCompletionDate) {
+                      _recalculateOrderCompletionFromLines();
+                    }
+                  });
+                },
+              ),
+      ),
+    );
+  }
+
+  List<Widget> _buildVariationSelectorsForLine(
+    List<ItemDefinition> items,
+    int index,
+    double fieldWidth,
+  ) {
+    final line = _lines[index];
+    final item = _selectedItemForLine(items, line.selectedItemId);
+    if (item == null) {
+      final variationKey = index == 0
+          ? const ValueKey<String>('orders-editor-variation-path-field')
+          : ValueKey<String>('orders-editor-line-${line.id}-variation');
+      return [
+        SizedBox(
+          width: fieldWidth,
+          child: _OrderEditorField(
+            label: 'Variation Path',
+            child: SearchableSelectField<int>(
+              key: variationKey,
+              tapTargetKey: variationKey,
+              value: null,
+              decoration: _inputDecoration(hintText: 'Select item first'),
+              fieldEnabled: false,
+              options: const <SearchableSelectOption<int>>[],
+              onChanged: (_) {},
+              validator: (_) => 'Select an item first.',
+            ),
+          ),
+        ),
+      ];
+    }
+    final leaves = item.leafVariationNodes;
+    if (leaves.isEmpty) {
+      return [
+        SizedBox(
+          width: fieldWidth,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF4C98B)),
+            ),
+            child: const Text(
+              'This item has no active orderable variation path.',
+            ),
+          ),
+        ),
+      ];
+    }
+    final variationKey = index == 0
+        ? const ValueKey<String>('orders-editor-variation-path-field')
+        : ValueKey<String>('orders-editor-line-${line.id}-variation');
+    return [
+      SizedBox(
+        width: fieldWidth,
+        child: _OrderEditorField(
+          label: 'Variation Path',
+          child: SearchableSelectField<int>(
+            key: variationKey,
+            tapTargetKey: variationKey,
+            value: line.selectedVariationLeafId,
+            decoration: _inputDecoration(hintText: 'Select'),
+            dialogTitle: 'Variation Path',
+            searchHintText: 'Search variation path',
+            options: leaves
+                .map(
+                  (leaf) => SearchableSelectOption<int>(
+                    value: leaf.id,
+                    label: leaf.displayName,
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: (value) {
+              setState(() {
+                line.selectedVariationLeafId = value;
+                line.variationPathError = null;
+              });
+            },
+            validator: (value) {
+              if (value == null) {
+                return 'Select a variation path.';
+              }
+              return null;
+            },
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildLineVariationSelectors(List<ItemDefinition> items, int index) {
+    final selectors = _buildVariationSelectorsForLine(items, index, 180);
+    if (selectors.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, right: 56),
+      child: Wrap(spacing: 10, runSpacing: 10, children: selectors),
+    );
+  }
+
+  void _syncLineCompletionDates(DateTime? value) {
+    _endDate = value;
+    _endDateController.text = value == null ? '' : _formatDate(value);
+    for (final line in _lines) {
+      line.completionDate = value;
+      line.completionDateController.text = value == null
+          ? ''
+          : _formatDate(value);
+      line.completionDateError = null;
+    }
+  }
+
+  void _addLine() {
+    setState(() {
+      final line = _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch);
+      if (!_itemWiseCompletionDate && _endDate != null) {
+        line.completionDate = _endDate;
+        line.completionDateController.text = _formatDate(_endDate!);
+      }
+      _lines.add(line);
+      if (_itemWiseCompletionDate) {
+        _recalculateOrderCompletionFromLines();
+      }
+    });
+  }
+
+  void _removeLine(int index) {
+    if (index <= 0 || index >= _lines.length) {
+      return;
+    }
+    setState(() {
+      final line = _lines.removeAt(index);
+      line.dispose();
+      if (_itemWiseCompletionDate) {
+        _recalculateOrderCompletionFromLines();
+      }
+    });
+  }
+
   Future<void> _submit(
     BuildContext context,
     List<ClientDefinition> clients,
@@ -2359,39 +2509,74 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-
-    final selectedClient = _selectedClient(clients);
-    final selectedItem = _selectedItem(items);
-    final selectedLeaf = _selectedLeafValue(selectedItem);
-    if (selectedClient == null ||
-        selectedItem == null ||
-        selectedLeaf == null) {
+    final completionInputsValid = _normalizeCompletionDateInputs();
+    if (!completionInputsValid) {
       return;
     }
+
+    final selectedClient = _selectedClient(clients);
     final clientCode = _resolveClientCode(selectedClient);
-    if (clientCode.isEmpty) {
+    final isDraft = statusOverride == OrderStatus.draft;
+    if (!isDraft && clientCode.isEmpty) {
       setState(() {});
       return;
     }
+    if (selectedClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a client before saving.')),
+      );
+      return;
+    }
 
-    final result = await context.read<OrdersProvider>().createOrder(
-      CreateOrderInput(
-        orderNo: _orderNoController.text,
-        clientId: selectedClient.id,
-        clientName: selectedClient.name,
-        poNumber: _poNumberController.text,
-        clientCode: clientCode,
-        itemId: selectedItem.id,
-        itemName: selectedItem.displayName,
-        variationLeafNodeId: selectedLeaf.id,
-        variationPathLabel: selectedLeaf.displayName,
-        variationPathNodeIds: _selectedPathNodeIds(selectedLeaf),
-        quantity: int.parse(_quantityController.text.trim()),
-        status: statusOverride ?? _selectedStatus,
-        startDate: _startDate,
-        endDate: _endDate,
-      ),
-    );
+    final orderLines = <CreateOrderInput>[];
+    for (var index = 0; index < _lines.length; index++) {
+      final line = _lines[index];
+      final item = _selectedItemForLine(items, line.selectedItemId);
+      final leaf = _selectedLeafForLine(item, line.selectedVariationLeafId);
+      if (item == null || leaf == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              index == 0
+                  ? 'Complete the first order item path.'
+                  : 'Each added item row needs an item and variation path.',
+            ),
+          ),
+        );
+        return;
+      }
+      orderLines.add(
+        CreateOrderInput(
+          orderNo: _orderNoController.text,
+          clientId: selectedClient.id,
+          clientName: selectedClient.name,
+          poNumber: _poNumberController.text,
+          clientCode: clientCode,
+          itemId: item.id,
+          itemName: item.displayName,
+          variationLeafNodeId: leaf.id,
+          variationPathLabel: leaf.displayName,
+          variationPathNodeIds: _pathNodeIdsForLeaf(item, leaf),
+          quantity: int.parse(line.quantityController.text.trim()),
+          status: statusOverride ?? OrderStatus.notStarted,
+          startDate: _startDate,
+          endDate: _itemWiseCompletionDate
+              ? line.completionDate ?? _endDate
+              : _endDate,
+        ),
+      );
+    }
+
+    OrderEntry? result;
+    for (final input in orderLines) {
+      result = await context.read<OrdersProvider>().createOrder(input);
+      if (!context.mounted) {
+        return;
+      }
+      if (result == null) {
+        break;
+      }
+    }
 
     if (!context.mounted) {
       return;
@@ -2413,6 +2598,157 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  bool _normalizeCompletionDateInputs() {
+    var isValid = true;
+    if (_itemWiseCompletionDate) {
+      for (var index = 0; index < _lines.length; index++) {
+        if (!_normalizeCompletionDateLine(index)) {
+          isValid = false;
+        }
+      }
+      _recalculateOrderCompletionFromLines();
+    } else {
+      if (!_normalizeOrderCompletionDate()) {
+        isValid = false;
+      }
+    }
+    return isValid;
+  }
+
+  bool _normalizeOrderCompletionDate() {
+    final result = _resolveCompletionDateInput(_endDateController.text);
+    setState(() {
+      _orderCompletionError = result.error;
+      if (result.date != null || _endDateController.text.trim().isEmpty) {
+        _endDate = result.date;
+        _endDateController.text = result.formattedText;
+        if (!_itemWiseCompletionDate) {
+          _syncLineCompletionDates(result.date);
+        }
+      }
+    });
+    return result.error == null;
+  }
+
+  bool _normalizeCompletionDateLine(int index) {
+    if (!_itemWiseCompletionDate) {
+      return true;
+    }
+    final line = _lines[index];
+    final result = _resolveCompletionDateInput(
+      line.completionDateController.text,
+    );
+    setState(() {
+      line.completionDateError = result.error;
+      if (result.date != null ||
+          line.completionDateController.text.trim().isEmpty) {
+        line.completionDate = result.date;
+        line.completionDateController.text = result.formattedText;
+        if (_itemWiseCompletionDate) {
+          _recalculateOrderCompletionFromLines();
+        }
+      }
+    });
+    return result.error == null;
+  }
+
+  void _recalculateOrderCompletionFromLines() {
+    final dates = _lines
+        .map((line) => line.completionDate)
+        .whereType<DateTime>()
+        .toList(growable: false);
+    if (dates.isEmpty) {
+      _endDate = null;
+      _endDateController.text = '';
+      return;
+    }
+    final maxDate = dates.reduce(
+      (current, next) => next.isAfter(current) ? next : current,
+    );
+    _endDate = maxDate;
+    _endDateController.text = _formatDate(maxDate);
+  }
+
+  _CompletionDateResolution _resolveCompletionDateInput(String rawValue) {
+    final trimmed = rawValue.trim();
+    if (trimmed.isEmpty) {
+      return const _CompletionDateResolution(date: null, formattedText: '');
+    }
+    final parsedDate = _tryParseFormattedDate(trimmed);
+    if (parsedDate != null) {
+      return _CompletionDateResolution(
+        date: parsedDate,
+        formattedText: _formatDate(parsedDate),
+      );
+    }
+    final shortcutMatch = RegExp(
+      r'^(\d+(?:\.\d+)?)\s*([dDmM])$',
+    ).firstMatch(trimmed);
+    if (shortcutMatch == null) {
+      return const _CompletionDateResolution(
+        error: 'Enter a valid date, 14d, or 1.5M.',
+      );
+    }
+    if (_startDate == null) {
+      return const _CompletionDateResolution(error: 'Select start date first.');
+    }
+    final amount = double.tryParse(shortcutMatch.group(1) ?? '');
+    final unit = shortcutMatch.group(2);
+    if (amount == null || amount <= 0 || unit == null) {
+      return const _CompletionDateResolution(
+        error: 'Enter a valid date, 14d, or 1.5M.',
+      );
+    }
+    final dayMultiplier = unit.toLowerCase() == 'm' ? 30.0 : 1.0;
+    final totalDays = (amount * dayMultiplier).round();
+    final resolved = _startDate!.add(Duration(days: totalDays));
+    return _CompletionDateResolution(
+      date: resolved,
+      formattedText: _formatDate(resolved),
+    );
+  }
+
+  DateTime? _tryParseFormattedDate(String value) {
+    final match = RegExp(
+      r'^(\d{1,2})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{4})$',
+    ).firstMatch(value);
+    if (match == null) {
+      return null;
+    }
+    final day = int.tryParse(match.group(1) ?? '');
+    final month = int.tryParse(match.group(2) ?? '');
+    final year = int.tryParse(match.group(3) ?? '');
+    if (day == null || month == null || year == null) {
+      return null;
+    }
+    final candidate = DateTime(year, month, day);
+    if (candidate.year != year ||
+        candidate.month != month ||
+        candidate.day != day) {
+      return null;
+    }
+    return candidate;
+  }
+
+  void _clearCompletionErrors() {
+    _orderCompletionError = null;
+    for (final line in _lines) {
+      line.completionDateError = null;
+    }
+  }
+
+  ItemDefinition? _selectedItemForLine(
+    List<ItemDefinition> items,
+    int? itemId,
+  ) {
+    for (final item in items) {
+      if (item.id == itemId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
   ClientDefinition? _selectedClient(List<ClientDefinition> clients) {
     for (final client in clients) {
       if (client.id == _selectedClientId) {
@@ -2422,249 +2758,33 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return null;
   }
 
-  ItemDefinition? _selectedItem(List<ItemDefinition> items) {
-    for (final item in items) {
-      if (item.id == _selectedItemId) {
-        return item;
-      }
-    }
-    return null;
-  }
-
-  List<Widget> _buildVariationSelectors(
-    List<ItemDefinition> items,
-    double fieldWidth,
+  ItemVariationNodeDefinition? _selectedLeafForLine(
+    ItemDefinition? item,
+    int? leafId,
   ) {
-    final selectedItem = _selectedItem(items);
-    if (selectedItem == null) {
-      return [
-        SizedBox(
-          width: fieldWidth,
-          child: _OrderEditorField(
-            label: 'Variation Path',
-            child: SearchableSelectField<int>(
-              key: const ValueKey<String>('orders-editor-variation-path-field'),
-              tapTargetKey: const ValueKey<String>(
-                'orders-editor-variation-path-field',
-              ),
-              value: null,
-              decoration: _inputDecoration(hintText: 'Select'),
-              options: const <SearchableSelectOption<int>>[],
-              fieldEnabled: false,
-              onChanged: (_) {},
-              validator: (value) {
-                if (value == null) {
-                  return 'Select an item first.';
-                }
-                return null;
-              },
-            ),
-          ),
-        ),
-      ];
+    if (item == null || leafId == null) {
+      return null;
     }
-
-    final steps = _buildSelectionSteps(selectedItem);
-    if (steps.isEmpty) {
-      return [
-        SizedBox(
-          width: fieldWidth,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7ED),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF4C98B)),
-            ),
-            child: const Text(
-              'This item does not have any active orderable leaf paths yet.',
-            ),
-          ),
-        ),
-      ];
-    }
-
-    final widgets = <Widget>[];
-    for (var index = 0; index < steps.length; index++) {
-      final step = steps[index];
-      widgets.add(
-        SizedBox(
-          width: fieldWidth,
-          child: _OrderEditorField(
-            label: step.label,
-            child: SearchableSelectField<int>(
-              key: ValueKey<String>(
-                'orders-editor-${step.label.toLowerCase().replaceAll(' ', '-')}-field',
-              ),
-              tapTargetKey: ValueKey<String>(
-                'orders-editor-${step.label.toLowerCase().replaceAll(' ', '-')}-field',
-              ),
-              value: step.selectedId,
-              decoration: _inputDecoration(hintText: 'Select'),
-              dialogTitle: step.label,
-              searchHintText: 'Search ${step.label.toLowerCase()}',
-              options: step.options
-                  .map(
-                    (node) => SearchableSelectOption<int>(
-                      value: node.id,
-                      label: node.name,
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: (value) {
-                setState(() {
-                  if (value == null) {
-                    _selectionState.remove(step.stateKey);
-                  } else {
-                    _selectionState[step.stateKey] = value;
-                  }
-                  _clearSelectionAfter(steps, index);
-                });
-              },
-              validator: (value) {
-                if (step.required && value == null) {
-                  return 'Select ${step.label.toLowerCase()}.';
-                }
-                return null;
-              },
-            ),
-          ),
-        ),
-      );
-    }
-    final selectedLeaf = _selectedLeafValue(selectedItem);
-    if (selectedLeaf != null) {
-      widgets.add(
-        SizedBox(
-          width: fieldWidth,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Text('Selected Path: ${selectedLeaf.displayName}'),
-          ),
-        ),
-      );
-    }
-    return widgets;
+    return item.leafVariationNodes
+        .where((leaf) => leaf.id == leafId)
+        .firstOrNull;
   }
 
-  List<_OrderSelectionStep> _buildSelectionSteps(ItemDefinition item) {
-    final steps = <_OrderSelectionStep>[];
-    List<ItemVariationNodeDefinition> propertyOptions = item.topLevelProperties;
-    String branchKey = 'root';
-    while (propertyOptions.isNotEmpty) {
-      ItemVariationNodeDefinition propertyNode;
-      if (propertyOptions.length > 1) {
-        final propertySelectionKey = 'property:$branchKey';
-        final selectedPropertyId = _selectionState[propertySelectionKey];
-        steps.add(
-          _OrderSelectionStep(
-            label: 'Property Group',
-            stateKey: propertySelectionKey,
-            selectedId:
-                propertyOptions.any((node) => node.id == selectedPropertyId)
-                ? selectedPropertyId
-                : null,
-            options: propertyOptions,
-            required: true,
-          ),
-        );
-        propertyNode =
-            propertyOptions
-                .where((node) => node.id == selectedPropertyId)
-                .firstOrNull ??
-            propertyOptions.first;
-        if (selectedPropertyId == null) {
-          break;
-        }
-      } else {
-        propertyNode = propertyOptions.first;
-      }
-
-      final valueSelectionKey = 'value:${propertyNode.id}';
-      final valueOptions = propertyNode.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.value)
-          .toList(growable: false);
-      final selectedValueId = _selectionState[valueSelectionKey];
-      steps.add(
-        _OrderSelectionStep(
-          label: propertyNode.name,
-          stateKey: valueSelectionKey,
-          selectedId: valueOptions.any((node) => node.id == selectedValueId)
-              ? selectedValueId
-              : null,
-          options: valueOptions,
-          required: true,
-        ),
-      );
-      final selectedValue = valueOptions
-          .where((node) => node.id == selectedValueId)
-          .firstOrNull;
-      if (selectedValue == null) {
-        break;
-      }
-      propertyOptions = selectedValue.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.property)
-          .toList(growable: false);
-      branchKey = selectedValue.id.toString();
-    }
-    return steps;
-  }
-
-  void _clearSelectionAfter(List<_OrderSelectionStep> steps, int index) {
-    for (var cursor = index + 1; cursor < steps.length; cursor++) {
-      _selectionState.remove(steps[cursor].stateKey);
-    }
-  }
-
-  ItemVariationNodeDefinition? _selectedLeafValue(ItemDefinition? item) {
+  int? _defaultLeafIdForItem(ItemDefinition? item) {
     if (item == null) {
       return null;
     }
-    List<ItemVariationNodeDefinition> propertyOptions = item.topLevelProperties;
-    var branchKey = 'root';
-    while (propertyOptions.isNotEmpty) {
-      ItemVariationNodeDefinition propertyNode;
-      if (propertyOptions.length > 1) {
-        final propertySelection = _selectionState['property:$branchKey'];
-        propertyNode =
-            propertyOptions
-                .where((node) => node.id == propertySelection)
-                .firstOrNull ??
-            propertyOptions.first;
-        if (propertySelection == null) {
-          return null;
-        }
-      } else {
-        propertyNode = propertyOptions.first;
-      }
-      final selectedValueId = _selectionState['value:${propertyNode.id}'];
-      final selectedValue = propertyNode.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.value)
-          .where((node) => node.id == selectedValueId)
-          .firstOrNull;
-      if (selectedValue == null) {
-        return null;
-      }
-      final nextProperties = selectedValue.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.property)
-          .toList(growable: false);
-      if (nextProperties.isEmpty) {
-        return selectedValue;
-      }
-      propertyOptions = nextProperties;
-      branchKey = selectedValue.id.toString();
+    final leaves = item.leafVariationNodes;
+    if (leaves.length == 1) {
+      return leaves.first.id;
     }
     return null;
   }
 
-  List<int> _selectedPathNodeIds(ItemVariationNodeDefinition leaf) {
+  List<int> _pathNodeIdsForLeaf(
+    ItemDefinition item,
+    ItemVariationNodeDefinition leaf,
+  ) {
     final path = <int>[];
 
     void visit(ItemVariationNodeDefinition node, List<int> current) {
@@ -2680,17 +2800,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       }
     }
 
-    final item = _selectedItem(
-      context
-          .read<ItemsProvider>()
-          .items
-          .where((entry) => !entry.isArchived)
-          .toList(growable: false),
-    );
-    if (item != null) {
-      for (final root in item.variationTree) {
-        visit(root, const []);
-      }
+    for (final root in item.variationTree) {
+      visit(root, const []);
     }
     return path;
   }
@@ -2699,7 +2810,12 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return client?.alias.trim() ?? '';
   }
 
-  InputDecoration _inputDecoration({String? hintText, String? errorText}) {
+  InputDecoration _inputDecoration({
+    String? hintText,
+    String? errorText,
+    IconData? suffixIcon,
+    VoidCallback? onSuffixTap,
+  }) {
     return InputDecoration(
       hintText: hintText,
       hintStyle: const TextStyle(
@@ -2710,6 +2826,17 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       filled: true,
       fillColor: SoftErpTheme.cardSurfaceAlt,
       isDense: true,
+      suffixIcon: suffixIcon == null
+          ? null
+          : IconButton(
+              onPressed: onSuffixTap,
+              splashRadius: 18,
+              icon: Icon(
+                suffixIcon,
+                size: 18,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -2746,40 +2873,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
     return '$day-$month-${value.year}';
-  }
-
-  void _applyCompletionShortcut(_CompletionShortcutPreset preset) {
-    final anchorDate = _startDate ?? DateTime.now();
-    final dayOffset = switch (preset.unit) {
-      _CompletionShortcutUnit.days => preset.amount,
-      _CompletionShortcutUnit.weeks => preset.amount * 7,
-    };
-    final estimatedDate = anchorDate.add(Duration(days: dayOffset));
-    setState(() {
-      _endDate = estimatedDate;
-      _endDateController.text = _formatDate(estimatedDate);
-    });
-  }
-
-  Future<void> _openCompletionShortcutEditor() async {
-    final updatedShortcuts = await showDialog<List<_CompletionShortcutPreset>>(
-      context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: _CompletionShortcutEditorDialog(
-            initialShortcuts: _completionShortcuts,
-          ),
-        ),
-      ),
-    );
-    if (updatedShortcuts == null || updatedShortcuts.isEmpty) {
-      return;
-    }
-    setState(() {
-      _completionShortcuts = updatedShortcuts.take(3).toList(growable: false);
-    });
   }
 }
 
@@ -3202,6 +3295,7 @@ class _OrderDetailActionButton extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _OrdersMessageBanner extends StatelessWidget {
   const _OrdersMessageBanner({required this.message});
 
@@ -3235,6 +3329,267 @@ class _OrdersMessageBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _OrderLineDraft {
+  _OrderLineDraft({required this.id})
+    : quantityController = TextEditingController(text: '1'),
+      completionDateController = TextEditingController();
+
+  final int id;
+  int? selectedItemId;
+  int? selectedVariationLeafId;
+  DateTime? completionDate;
+  String? completionDateError;
+  String? variationPathError;
+  final TextEditingController quantityController;
+  final TextEditingController completionDateController;
+
+  void dispose() {
+    quantityController.dispose();
+    completionDateController.dispose();
+  }
+}
+
+class _CompletionDateResolution {
+  const _CompletionDateResolution({
+    this.date,
+    this.formattedText = '',
+    this.error,
+  });
+
+  final DateTime? date;
+  final String formattedText;
+  final String? error;
+}
+
+class _OrderEditorPanel extends StatelessWidget {
+  const _OrderEditorPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(32, 34, 32, 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCFBFF),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _OrderItemsHeader extends StatelessWidget {
+  static const double _columnGap = 14;
+  static const double _actionSlotWidth = 50;
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: SoftErpTheme.textPrimary,
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    );
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3EFFD),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        children: [
+          Expanded(flex: 32, child: Text('Item', style: style)),
+          SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 20, child: Text('Order Quantity', style: style)),
+          SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 18, child: Text('Unit', style: style)),
+          SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 24, child: Text('Completion Date', style: style)),
+          SizedBox(width: _OrderItemsHeader._actionSlotWidth),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderItemsRow extends StatelessWidget {
+  const _OrderItemsRow({
+    required this.itemField,
+    required this.quantityField,
+    required this.unitField,
+    required this.completionDateField,
+    this.onDelete,
+  });
+
+  final Widget itemField;
+  final Widget quantityField;
+  final Widget unitField;
+  final Widget completionDateField;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF0EEF8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 32, child: itemField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 20, child: quantityField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 18, child: unitField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 24, child: completionDateField),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 36,
+            height: 52,
+            child: IconButton(
+              tooltip: 'Remove item',
+              padding: EdgeInsets.zero,
+              onPressed: onDelete,
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                size: 18,
+                color: Color(0xFFEF4444),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemWiseCompletionToggle extends StatelessWidget {
+  const _ItemWiseCompletionToggle({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final ValueChanged<bool?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: Checkbox(
+              value: value,
+              onChanged: onChanged,
+              activeColor: SoftErpTheme.accent,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              side: const BorderSide(color: Color(0xFFD4CEFA)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Enable Item Wise Completion Date',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 11,
+                height: 1.25,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddOrderItemButton extends StatelessWidget {
+  const _AddOrderItemButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.add_rounded, size: 16),
+      label: const Text('Add More Items'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: SoftErpTheme.accent,
+        backgroundColor: Colors.white,
+        side: const BorderSide(color: Color(0xFFD4CEFA)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _OrderEditorFooterButton extends StatelessWidget {
+  const _OrderEditorFooterButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.isPrimary = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = switch (label) {
+      'Save Draft' => 124.0,
+      'Cancel' || 'Save' => 96.0,
+      _ => 112.0,
+    };
+    return SizedBox(
+      width: width,
+      height: 44,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          backgroundColor: isPrimary ? SoftErpTheme.accent : Colors.white,
+          disabledBackgroundColor: isPrimary
+              ? SoftErpTheme.accent.withValues(alpha: 0.45)
+              : Colors.white,
+          foregroundColor: isPrimary ? Colors.white : SoftErpTheme.textPrimary,
+          disabledForegroundColor: isPrimary
+              ? Colors.white70
+              : SoftErpTheme.textSecondary,
+          side: BorderSide(
+            color: isPrimary ? SoftErpTheme.accent : SoftErpTheme.borderStrong,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.visible,
+        ),
       ),
     );
   }
@@ -3323,402 +3678,6 @@ class _DateField extends StatelessWidget {
   }
 }
 
-class _CompletionShortcutButton extends StatelessWidget {
-  const _CompletionShortcutButton({
-    super.key,
-    required this.label,
-    required this.onTap,
-    this.isGhost = false,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final bool isGhost;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        decoration: BoxDecoration(
-          color: isGhost ? SoftErpTheme.cardSurface : const Color(0xFFF1EEFF),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: isGhost ? SoftErpTheme.border : const Color(0xFFD9D2FF),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isGhost ? SoftErpTheme.textSecondary : SoftErpTheme.accent,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CompletionShortcutEditorDialog extends StatefulWidget {
-  const _CompletionShortcutEditorDialog({required this.initialShortcuts});
-
-  final List<_CompletionShortcutPreset> initialShortcuts;
-
-  @override
-  State<_CompletionShortcutEditorDialog> createState() =>
-      _CompletionShortcutEditorDialogState();
-}
-
-class _CompletionShortcutEditorDialogState
-    extends State<_CompletionShortcutEditorDialog> {
-  late final List<TextEditingController> _amountControllers;
-  late final List<_CompletionShortcutUnit> _units;
-  late bool _showThirdShortcut;
-
-  @override
-  void initState() {
-    super.initState();
-    final drafts = List<_CompletionShortcutDraft>.generate(3, (index) {
-      if (index < widget.initialShortcuts.length) {
-        final shortcut = widget.initialShortcuts[index];
-        return _CompletionShortcutDraft(
-          amountText: shortcut.amount.toString(),
-          unit: shortcut.unit,
-        );
-      }
-      return const _CompletionShortcutDraft(
-        amountText: '',
-        unit: _CompletionShortcutUnit.days,
-      );
-    });
-    _amountControllers = drafts
-        .map((draft) => TextEditingController(text: draft.amountText))
-        .toList(growable: false);
-    _units = drafts.map((draft) => draft.unit).toList(growable: false);
-    _showThirdShortcut = widget.initialShortcuts.length > 2;
-  }
-
-  @override
-  void dispose() {
-    for (final controller in _amountControllers) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final visibleCount = _showThirdShortcut ? 3 : 2;
-    return CallbackShortcuts(
-      bindings: _submitShortcutBindings(() => _save(context, visibleCount)),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: SoftErpTheme.cardSurface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: SoftErpTheme.border),
-          boxShadow: SoftErpTheme.raisedShadow,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Edit Completion Buttons',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF2F3441),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Set quick completion presets for common lead times. People can still enter a date manually when the job runs longer.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: SoftErpTheme.textSecondary,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 10),
-            for (var index = 0; index < visibleCount; index++) ...[
-              _buildShortcutCard(index),
-              if (index != visibleCount - 1) const SizedBox(height: 8),
-            ],
-            if (!_showThirdShortcut) ...[
-              const SizedBox(height: 8),
-              InkWell(
-                key: const ValueKey<String>('orders-editor-add-third-shortcut'),
-                onTap: () {
-                  setState(() {
-                    _showThirdShortcut = true;
-                  });
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: SoftErpTheme.cardSurfaceAlt,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: SoftErpTheme.border),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.add_circle_outline_rounded,
-                        size: 18,
-                        color: Color(0xFF6049E3),
-                      ),
-                      SizedBox(width: 10),
-                      Text(
-                        'Add third shortcut',
-                        style: TextStyle(
-                          color: Color(0xFF374151),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                AppButton(
-                  label: 'Cancel',
-                  variant: AppButtonVariant.secondary,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                AppButton(
-                  label: 'Save',
-                  onPressed: () => _save(context, visibleCount),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _save(BuildContext context, int visibleCount) {
-    final shortcuts = <_CompletionShortcutPreset>[];
-    for (var index = 0; index < visibleCount; index++) {
-      final amount = int.tryParse(_amountControllers[index].text.trim());
-      if (amount == null || amount <= 0) {
-        continue;
-      }
-      shortcuts.add(
-        _CompletionShortcutPreset(amount: amount, unit: _units[index]),
-      );
-    }
-    Navigator.of(context).pop(shortcuts);
-  }
-
-  Widget _buildShortcutCard(int index) {
-    final amountController = _amountControllers[index];
-    final previewAmount = int.tryParse(amountController.text.trim());
-    final previewLabel = previewAmount == null || previewAmount <= 0
-        ? 'Not set'
-        : '$previewAmount ${_units[index].label}';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurfaceAlt,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                index == 0
-                    ? 'Primary Button'
-                    : index == 1
-                    ? 'Secondary Button'
-                    : 'Extra Button',
-                style: const TextStyle(
-                  color: Color(0xFF2F3441),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF2EEFF),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  previewLabel,
-                  style: const TextStyle(
-                    color: Color(0xFF6049E3),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              if (index == 2) ...[
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      _showThirdShortcut = false;
-                      _amountControllers[index].clear();
-                      _units[index] = _CompletionShortcutUnit.days;
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(999),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: 18,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              SizedBox(
-                width: 84,
-                child: TextFormField(
-                  key: ValueKey<String>('orders-editor-shortcut-amount-$index'),
-                  controller: amountController,
-                  keyboardType: TextInputType.number,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    labelText: 'Days',
-                    hintText: index == 0
-                        ? '3'
-                        : index == 1
-                        ? '3'
-                        : '7',
-                    isDense: true,
-                    filled: true,
-                    fillColor: SoftErpTheme.cardSurface,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: SoftErpTheme.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: SoftErpTheme.border),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _CompletionShortcutUnit.values
-                      .map((unit) {
-                        final isSelected = _units[index] == unit;
-                        return InkWell(
-                          key: unit == _CompletionShortcutUnit.days
-                              ? ValueKey<String>(
-                                  'orders-editor-shortcut-unit-$index',
-                                )
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              _units[index] = unit;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(999),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 11,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? SoftErpTheme.accent
-                                  : SoftErpTheme.cardSurface,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: isSelected
-                                    ? SoftErpTheme.accent
-                                    : SoftErpTheme.border,
-                              ),
-                            ),
-                            child: Text(
-                              unit.label,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? Colors.white
-                                    : SoftErpTheme.textSecondary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        );
-                      })
-                      .toList(growable: false),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CompletionShortcutPreset {
-  const _CompletionShortcutPreset({required this.amount, required this.unit});
-
-  final int amount;
-  final _CompletionShortcutUnit unit;
-
-  String get label => '$amount ${unit.label}';
-}
-
-class _CompletionShortcutDraft {
-  const _CompletionShortcutDraft({
-    required this.amountText,
-    required this.unit,
-  });
-
-  final String amountText;
-  final _CompletionShortcutUnit unit;
-}
-
-enum _CompletionShortcutUnit {
-  days('days'),
-  weeks('weeks');
-
-  const _CompletionShortcutUnit(this.label);
-
-  final String label;
-}
-
 class _DependencyMessage extends StatelessWidget {
   const _DependencyMessage({required this.hasClients, required this.hasItems});
 
@@ -3748,22 +3707,6 @@ class _DependencyMessage extends StatelessWidget {
       ),
     );
   }
-}
-
-class _OrderSelectionStep {
-  const _OrderSelectionStep({
-    required this.label,
-    required this.stateKey,
-    required this.selectedId,
-    required this.options,
-    required this.required,
-  });
-
-  final String label;
-  final String stateKey;
-  final int? selectedId;
-  final List<ItemVariationNodeDefinition> options;
-  final bool required;
 }
 
 class _OrderSummary {

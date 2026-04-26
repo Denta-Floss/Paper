@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_button.dart';
@@ -14,6 +16,12 @@ class PMScreen extends StatefulWidget {
 }
 
 class _PMScreenState extends State<PMScreen> {
+  static const List<PMFigmaSegmentOption> _groupItemSegments =
+      <PMFigmaSegmentOption>[
+        PMFigmaSegmentOption(key: 'group', label: 'Groups'),
+        PMFigmaSegmentOption(key: 'item', label: 'Items'),
+      ];
+
   final _sandboxNameController = TextEditingController(text: 'Paper Cone');
   final _sandboxPropertyController = TextEditingController();
   String _selectedSegment = 'group';
@@ -652,6 +660,7 @@ class _FigmaPreviewPanel extends StatelessWidget {
             child: PMFigmaSegmentedControl(
               value: selectedValue,
               onChanged: onChanged,
+              segments: _PMScreenState._groupItemSegments,
               variant: PMFigmaSegmentedControlVariant.gradient,
             ),
           ),
@@ -720,6 +729,7 @@ class _FigmaSoftSegmentSection extends StatelessWidget {
                             child: PMFigmaSegmentedControl(
                               value: selectedValue,
                               onChanged: onChanged,
+                              segments: _PMScreenState._groupItemSegments,
                               variant: PMFigmaSegmentedControlVariant.soft,
                             ),
                           ),
@@ -2390,18 +2400,27 @@ class PMFigmaSegmentedControl extends StatelessWidget {
     super.key,
     required this.value,
     required this.onChanged,
+    required this.segments,
     this.variant = PMFigmaSegmentedControlVariant.gradient,
+    this.segmentWidth = 108,
+    this.segmentHeight = 42,
+    this.shellPadding = 4,
+    this.labelFontSize = 16,
+    this.semanticLabel,
   });
 
   final String value;
   final ValueChanged<String> onChanged;
+  final List<PMFigmaSegmentOption> segments;
   final PMFigmaSegmentedControlVariant variant;
+  final double segmentWidth;
+  final double segmentHeight;
+  final double shellPadding;
+  final double labelFontSize;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
-    const segmentWidth = 108.0;
-    const segmentHeight = 42.0;
-    const shellPadding = 4.0;
     const gradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -2409,26 +2428,35 @@ class PMFigmaSegmentedControl extends StatelessWidget {
       stops: [0, 1],
     );
     final usesGradient = variant == PMFigmaSegmentedControlVariant.gradient;
+    final effectiveSegments = segments.isEmpty
+        ? const <PMFigmaSegmentOption>[
+            PMFigmaSegmentOption(key: 'group', label: 'Groups'),
+            PMFigmaSegmentOption(key: 'item', label: 'Items'),
+          ]
+        : segments;
+    final selectedIndex = math.max(
+      0,
+      effectiveSegments.indexWhere((segment) => segment.key == value),
+    );
 
     return Semantics(
       container: true,
-      label: 'PM group and item segmented control',
+      label: semanticLabel ?? 'Segmented control',
       child: Container(
-        width: (segmentWidth * 2) + (shellPadding * 2),
+        width: (segmentWidth * effectiveSegments.length) + (shellPadding * 2),
         height: segmentHeight + (shellPadding * 2),
-        padding: const EdgeInsets.all(4),
+        padding: EdgeInsets.all(shellPadding),
         decoration: BoxDecoration(
           color: const Color(0xFFF5F7F9),
           borderRadius: BorderRadius.circular(999),
         ),
         child: Stack(
           children: [
-            AnimatedAlign(
+            AnimatedPositionedDirectional(
               duration: const Duration(milliseconds: 320),
               curve: Curves.easeInOutCubicEmphasized,
-              alignment: value == 'group'
-                  ? Alignment.centerLeft
-                  : Alignment.centerRight,
+              start: selectedIndex * segmentWidth,
+              top: 0,
               child: Container(
                 width: segmentWidth,
                 height: segmentHeight,
@@ -2448,24 +2476,20 @@ class PMFigmaSegmentedControl extends StatelessWidget {
             ),
             Row(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                _PMFigmaSegmentChip(
-                  width: segmentWidth,
-                  height: segmentHeight,
-                  label: 'Groups',
-                  isSelected: value == 'group',
-                  onTap: () => onChanged('group'),
-                  variant: variant,
-                ),
-                _PMFigmaSegmentChip(
-                  width: segmentWidth,
-                  height: segmentHeight,
-                  label: 'Items',
-                  isSelected: value == 'item',
-                  onTap: () => onChanged('item'),
-                  variant: variant,
-                ),
-              ],
+              children: effectiveSegments
+                  .map(
+                    (segment) => _PMFigmaSegmentChip(
+                      width: segmentWidth,
+                      height: segmentHeight,
+                      label: segment.label,
+                      count: segment.count,
+                      isSelected: value == segment.key,
+                      onTap: () => onChanged(segment.key),
+                      variant: variant,
+                      labelFontSize: labelFontSize,
+                    ),
+                  )
+                  .toList(growable: false),
             ),
           ],
         ),
@@ -2474,22 +2498,38 @@ class PMFigmaSegmentedControl extends StatelessWidget {
   }
 }
 
+class PMFigmaSegmentOption {
+  const PMFigmaSegmentOption({
+    required this.key,
+    required this.label,
+    this.count,
+  });
+
+  final String key;
+  final String label;
+  final int? count;
+}
+
 class _PMFigmaSegmentChip extends StatelessWidget {
   const _PMFigmaSegmentChip({
     required this.width,
     required this.height,
     required this.label,
+    this.count,
     required this.isSelected,
     required this.onTap,
     required this.variant,
+    required this.labelFontSize,
   });
 
   final double width;
   final double height;
   final String label;
+  final int? count;
   final bool isSelected;
   final VoidCallback onTap;
   final PMFigmaSegmentedControlVariant variant;
+  final double labelFontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -2497,6 +2537,12 @@ class _PMFigmaSegmentChip extends StatelessWidget {
     final activeTextColor = usesGradient
         ? Colors.white
         : const Color(0xFF1100FF);
+    final inactiveTextColor = const Color(0xFF1C2632);
+    final hasCount = count != null;
+    final countBackground = isSelected
+        ? (usesGradient ? const Color(0x24FFFFFF) : const Color(0xFFE8E7FF))
+        : const Color(0xFFF0F2F8);
+    final countForeground = isSelected ? activeTextColor : inactiveTextColor;
 
     return Material(
       color: Colors.transparent,
@@ -2507,17 +2553,47 @@ class _PMFigmaSegmentChip extends StatelessWidget {
           width: width,
           height: height,
           child: Center(
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              style: TextStyle(
-                color: isSelected ? activeTextColor : const Color(0xFF1C2632),
-                fontSize: 16,
-                height: 1,
-                letterSpacing: 0,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                style: TextStyle(
+                  color: isSelected ? activeTextColor : inactiveTextColor,
+                  fontSize: labelFontSize,
+                  height: 1,
+                  letterSpacing: 0,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label),
+                    if (hasCount) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: countBackground,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            color: countForeground,
+                            fontSize: math.max(10, labelFontSize - 2),
+                            fontWeight: FontWeight.w600,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              child: Text(label),
             ),
           ),
         ),

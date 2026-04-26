@@ -62,7 +62,8 @@ class _AppShellState extends State<AppShell> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isMobile = constraints.maxWidth < 900;
-          final sidebarWidth = constraints.maxWidth < 1280 ? 270.0 : 286.0;
+          final compact = constraints.maxWidth < 1240;
+          final sidebarWidth = compact ? 250.0 : 286.0;
 
           return Scaffold(
             backgroundColor: Colors.transparent,
@@ -88,13 +89,31 @@ class _AppShellState extends State<AppShell> {
                 ),
                 child: Column(
                   children: [
-                    if (!isMobile) const AppTopBar(),
+                    if (!isMobile)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: sidebarWidth + 40,
+                            child: const Padding(
+                              padding: EdgeInsets.fromLTRB(20, 21.5, 0, 0),
+                              child: _ShellCompanyBrand(),
+                            ),
+                          ),
+                          const Expanded(child: AppTopBar()),
+                        ],
+                      ),
                     Expanded(
                       child: Row(
                         children: [
                           if (!isMobile)
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(30, 10, 10, 22),
+                              padding: const EdgeInsets.fromLTRB(
+                                30,
+                                10,
+                                10,
+                                22,
+                              ),
                               child: SizedBox(
                                 width: sidebarWidth,
                                 child: const AppSidebar(compact: false),
@@ -164,6 +183,53 @@ class _AppShellState extends State<AppShell> {
     OrdersScreen.openEditor(context).whenComplete(() {
       _isOpeningNewOrder = false;
     });
+  }
+}
+
+class _ShellCompanyBrand extends StatelessWidget {
+  const _ShellCompanyBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 49,
+      child: Row(
+        children: [
+          Container(
+            width: 49,
+            height: 49,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SoftErpTheme.accentGradient,
+            ),
+            child: Center(
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFF3F5FE),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Text(
+              'Shree Ganesh Metal Works',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: SoftErpTheme.textPrimary,
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+                height: 1.0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

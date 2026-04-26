@@ -166,18 +166,7 @@ class _AppSidebarState extends State<AppSidebar> {
     final canManageUsers = context.select<AuthProvider, bool>(
       (auth) => auth.canAccessUserManagement,
     );
-    final isConfiguratorSelected =
-        selectedKey == 'configurator' ||
-        const {
-          'configurator_clients',
-          'configurator_vendors',
-          'configurator_items',
-          'configurator_groups',
-          'configurator_units',
-        }.contains(selectedKey);
-    final isConfiguratorExpanded =
-        _isConfiguratorExpanded ||
-        kConfiguratorNavigationKeys.contains(selectedKey);
+    final isConfiguratorExpanded = _isConfiguratorExpanded;
 
     return FocusScope(
       node: _focusScopeNode,
@@ -225,16 +214,12 @@ class _AppSidebarState extends State<AppSidebar> {
                               selectedKey: selectedKey,
                               isExpandable: true,
                               isExpanded: isConfiguratorExpanded,
-                              isParentSelected: isConfiguratorSelected,
+                              isParentSelected: false,
                               onExpansionToggle: () {
                                 setState(() {
                                   _isConfiguratorExpanded =
                                       !_isConfiguratorExpanded;
                                 });
-                              },
-                              onHeaderTap: () {
-                                _selectKey('configurator');
-                                _requestFocus('configurator');
                               },
                               onSelected: _selectKey,
                               focusNodeForKey: _focusNodeFor,
@@ -300,7 +285,6 @@ class _SidebarSection extends StatelessWidget {
     this.isExpanded = true,
     this.isParentSelected = false,
     this.onExpansionToggle,
-    this.onHeaderTap,
     required this.focusNodeForKey,
   });
 
@@ -313,12 +297,121 @@ class _SidebarSection extends StatelessWidget {
   final bool isExpanded;
   final bool isParentSelected;
   final VoidCallback? onExpansionToggle;
-  final VoidCallback? onHeaderTap;
   final FocusNode Function(String key) focusNodeForKey;
+
+  static const Color _drawerColor = Color(0xFFEFEFF2);
+  static const Color _drawerTabColor = Colors.white;
 
   @override
   Widget build(BuildContext context) {
     final tileSpacing = compact ? 7.0 : 11.0;
+    if (isExpandable) {
+      final drawerRadius = BorderRadius.circular(compact ? 18 : 29);
+
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.all(isExpanded ? (compact ? 6 : 8) : 0),
+        decoration: BoxDecoration(
+          color: isExpanded ? _drawerColor : Colors.transparent,
+          borderRadius: drawerRadius,
+          boxShadow: isExpanded
+              ? const [
+                  BoxShadow(
+                    color: Color(0x10201C32),
+                    blurRadius: 18,
+                    offset: Offset(0, 8),
+                  ),
+                ]
+              : const [],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SidebarExpandableHeader(
+              title: title,
+              compact: compact,
+              isExpanded: isExpanded,
+              isSelected: isParentSelected,
+              focusNode: focusNodeForKey('configurator'),
+              onTap: onExpansionToggle ?? () {},
+              onChevronTap: onExpansionToggle ?? () {},
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 320),
+              reverseDuration: const Duration(milliseconds: 240),
+              transitionBuilder: (child, animation) {
+                final heightAnimation = animation.drive(
+                  CurveTween(curve: Curves.easeInOutCubic),
+                );
+                final fadeAnimation = animation.drive(
+                  CurveTween(
+                    curve: const Interval(
+                      0.18,
+                      1.0,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                );
+                final slideAnimation = animation.drive(
+                  Tween<Offset>(
+                    begin: const Offset(0, -0.035),
+                    end: Offset.zero,
+                  ).chain(CurveTween(curve: Curves.easeOutCubic)),
+                );
+
+                return ClipRect(
+                  child: SizeTransition(
+                    sizeFactor: heightAnimation,
+                    axisAlignment: -1,
+                    child: FadeTransition(
+                      opacity: fadeAnimation,
+                      child: SlideTransition(
+                        position: slideAnimation,
+                        child: child,
+                      ),
+                    ),
+                  ),
+                );
+              },
+              child: isExpanded
+                  ? Padding(
+                      key: ValueKey<String>('sidebar_${title}_expanded'),
+                      padding: EdgeInsets.only(top: compact ? 6 : 8),
+                      child: Column(
+                        children: children
+                            .asMap()
+                            .entries
+                            .map(
+                              (entry) => Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: entry.key == children.length - 1
+                                      ? 0
+                                      : tileSpacing,
+                                ),
+                                child: _SidebarTile(
+                                  item: entry.value,
+                                  compact: compact,
+                                  isSelected: entry.value.key == selectedKey,
+                                  inactiveColor: _drawerTabColor,
+                                  focusNode: focusNodeForKey(entry.value.key),
+                                  onTap: () => onSelected(entry.value.key),
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    )
+                  : const SizedBox(
+                      key: ValueKey<String>('sidebar_expandable_collapsed'),
+                      width: double.infinity,
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -334,35 +427,18 @@ class _SidebarSection extends StatelessWidget {
               ),
             ),
           ),
-        if (isExpandable)
-          Padding(
+        ...children.map(
+          (item) => Padding(
             padding: EdgeInsets.only(bottom: tileSpacing),
-            child: _SidebarExpandableHeader(
-              title: title,
+            child: _SidebarTile(
+              item: item,
               compact: compact,
-              isExpanded: isExpanded,
-              isSelected: isParentSelected,
-              focusNode: focusNodeForKey('configurator'),
-              onTap: onHeaderTap ?? onExpansionToggle ?? () {},
-              onChevronTap: onExpansionToggle ?? () {},
+              isSelected: item.key == selectedKey,
+              focusNode: focusNodeForKey(item.key),
+              onTap: () => onSelected(item.key),
             ),
           ),
-        if (!isExpandable || isExpanded)
-          ...children.map(
-            (item) => Padding(
-              padding: EdgeInsets.only(
-                bottom: tileSpacing,
-                left: isExpandable && !compact ? 6 : 0,
-              ),
-              child: _SidebarTile(
-                item: item,
-                compact: compact,
-                isSelected: item.key == selectedKey,
-                focusNode: focusNodeForKey(item.key),
-                onTap: () => onSelected(item.key),
-              ),
-            ),
-          ),
+        ),
       ],
     );
   }
@@ -398,10 +474,7 @@ class _SidebarExpandableHeader extends StatelessWidget {
             : viewportWidth < 1240
             ? 14.5
             : 16.0;
-        final hasFocus = focusNode.hasFocus;
-        final foreground = isSelected || hasFocus
-            ? Colors.white
-            : SoftErpTheme.textPrimary;
+        final foreground = isSelected ? Colors.white : SoftErpTheme.textPrimary;
 
         return Material(
           color: Colors.transparent,
@@ -439,6 +512,9 @@ class _SidebarExpandableHeader extends StatelessWidget {
                       ),
                     ),
                     GestureDetector(
+                      key: const ValueKey<String>(
+                        'sidebar_configurator_chevron',
+                      ),
                       behavior: HitTestBehavior.opaque,
                       onTap: onChevronTap,
                       child: Container(
@@ -450,10 +526,15 @@ class _SidebarExpandableHeader extends StatelessWidget {
                               : const Color(0xFFE3E6FB),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          isExpanded ? Icons.expand_less : Icons.expand_more,
-                          color: foreground,
-                          size: 15,
+                        child: AnimatedRotation(
+                          turns: isExpanded ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          child: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: foreground,
+                            size: 17,
+                          ),
                         ),
                       ),
                     ),
@@ -475,6 +556,7 @@ class _SidebarTile extends StatelessWidget {
     required this.focusNode,
     required this.onTap,
     required this.compact,
+    this.inactiveColor = const Color(0xFFEFEFF2),
   });
 
   final _SidebarItemData item;
@@ -482,6 +564,7 @@ class _SidebarTile extends StatelessWidget {
   final FocusNode focusNode;
   final VoidCallback onTap;
   final bool compact;
+  final Color inactiveColor;
 
   @override
   Widget build(BuildContext context) {
@@ -514,7 +597,7 @@ class _SidebarTile extends StatelessWidget {
               height: compact ? 42 : 56,
               padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 20),
               decoration: BoxDecoration(
-                color: isSelected ? null : const Color(0xFFEFEFF2),
+                color: isSelected ? null : inactiveColor,
                 gradient: isSelected ? SoftErpTheme.accentGradient : null,
                 borderRadius: BorderRadius.circular(compact ? 16 : 34),
                 boxShadow: isSelected ? SoftErpTheme.subtleShadow : const [],
