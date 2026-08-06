@@ -8801,6 +8801,17 @@ function normalizeDeliveryChallanItems(items = []) {
       ),
       quantityPcs: String(item.quantityPcs ?? item.quantity_pcs ?? '').trim(),
       weight: String(item.weight || '').trim(),
+      // Per-sheet weights are sent by the mobile purchase wizard, and
+      // normalizeChallanSheetWeights already validates them (they must sum to
+      // the line weight). They were simply never carried across this
+      // normalization boundary, so sheet_weights_json was written as '[]' on
+      // every save and the feature was silently inert.
+      //
+      // pieceBarcodes are deliberately NOT carried here: they are owned by
+      // POST /api/challans/:id/piece-barcodes, which is what the client calls
+      // and which deletes-then-inserts with the per-sheet weight. Writing them
+      // from here too would collide on piece_barcodes.parent_code (UNIQUE).
+      sheetWeights: parseJsonOrArray(item.sheetWeights ?? item.sheet_weights, []),
     }))
     .filter(
       (item) =>
@@ -11156,15 +11167,14 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       
       const newChallanItemId = itemResult.lastID;
       
-      const pieceBarcodes = item.pieceBarcodes || item.piece_barcodes || [];
-      for (const pb of pieceBarcodes) {
-        if (pb.parentCode && pb.childCode) {
-          await run(
-            `INSERT INTO piece_barcodes (challan_item_id, parent_code, child_code, created_at) VALUES (?, ?, ?, ?)`,
-            [newChallanItemId, pb.parentCode, pb.childCode, now]
-          );
-        }
-      }
+      // Piece barcodes are NOT written here. POST /api/challans/:id/piece-barcodes
+      // owns them: it validates each barcode belongs to this challan, deletes
+      // the item's existing rows first (so re-submitting is idempotent) and
+      // stores the per-sheet weight. This loop was a vestigial duplicate that
+      // never ran (normalization dropped the field) and lacked both the weight
+      // column and the delete-first step — activating it would collide with the
+      // real path on piece_barcodes.parent_code (UNIQUE).
+      void newChallanItemId;
     }
 
     await logDeliveryChallanActivity(challanId, existing ? 'challan_edited' : 'challan_created', actor, {
