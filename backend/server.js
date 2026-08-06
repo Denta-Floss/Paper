@@ -170,6 +170,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
   // deletes. Admins grant specific create/update/delete per staff via the grid.
   user: Object.fromEntries(
     PERMISSION_KEYS.map((key) => {
+      // Sensitive modules (payroll) are need-to-know: not even read is granted
+      // by default. An admin turns it on per person via the grid.
+      if (kernelRegistry.SENSITIVE_MODULE_PERMISSION_SET.has(key)) return [key, false];
       if (MODULE_PERMISSION_SET.has(key)) return [key, key.endsWith('.read')];
       const staffCaps = new Set([
         'inventory.request_delete',

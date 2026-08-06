@@ -79,7 +79,7 @@ const MODULES = {
   },
   production: {
     label: 'Production',
-    pathSegments: ['production', 'production-runs', 'pipeline-runs', 'telemetry'],
+    pathSegments: ['production', 'production-runs', 'pipeline-runs', 'telemetry', 'production-scrap'],
     tables: ['production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap', 'piece_barcodes'],
     evacuated: false,
   },
@@ -96,6 +96,19 @@ const MODULES = {
     label: 'Action Center',
     pathSegments: ['action-center', 'trash'],
     tables: ['delete_requests', 'deleted_records'],
+    evacuated: false,
+  },
+  payroll: {
+    label: 'Payroll',
+    pathSegments: ['payroll'],
+    // `sensitive` opts a module OUT of the staff read-by-default rule. Salary
+    // structures, runs and payslips are need-to-know: an admin grants
+    // payroll.read explicitly. Before this module existed, /api/payroll was
+    // unclaimed territory — its routes' requirePermission('config.read') is a
+    // documented no-op, so with no manifest to gate them centrally, ANY
+    // authenticated user could read salary data.
+    sensitive: true,
+    tables: ['payroll_components', 'payroll_runs', 'payroll_run_details'],
     evacuated: false,
   },
   // Masters sub-entities (grouped under "Masters" in the UI tree):
@@ -143,7 +156,7 @@ const MODULES = {
   units: {
     label: 'Units',
     group: 'Masters',
-    pathSegments: ['units'],
+    pathSegments: ['units', 'unit-groups'],
     recordSource: { table: 'units', idCol: 'id', label: 'name' },
     trackTables: { units: 'Unit' },
     tables: ['units', 'unit_groups'],
@@ -348,6 +361,15 @@ const MODULE_PERMISSION_KEYS = CRUD_MODULES.flatMap((m) =>
 );
 const MODULE_PERMISSION_SET = new Set(MODULE_PERMISSION_KEYS);
 
+// Modules whose data is need-to-know: staff do NOT get `.read` by default the
+// way they do for every other module. An admin must grant it explicitly.
+const SENSITIVE_MODULES = new Set(
+  CRUD_MODULES.filter((m) => MODULES[m].sensitive),
+);
+const SENSITIVE_MODULE_PERMISSION_SET = new Set(
+  [...SENSITIVE_MODULES].flatMap((m) => CRUD_OPS.map((op) => `${m}.${op}`)),
+);
+
 const FINE_PERMISSION_KEYS = Object.keys(FINE_PERMISSION_DESCRIPTORS);
 const FINE_KEY_TO_COARSE_MAP = Object.fromEntries(
   Object.entries(FINE_PERMISSION_DESCRIPTORS).map(([key, info]) => [
@@ -400,6 +422,8 @@ module.exports = {
   MODULE_GROUPS,
   MODULE_PERMISSION_KEYS,
   MODULE_PERMISSION_SET,
+  SENSITIVE_MODULES,
+  SENSITIVE_MODULE_PERMISSION_SET,
   CAPABILITY_DESCRIPTORS,
   CAPABILITY_PERMISSION_KEYS,
   FINE_PERMISSION_DESCRIPTORS,
