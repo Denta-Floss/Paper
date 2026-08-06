@@ -50,6 +50,59 @@
 > INSERTs (H2), delete-requests raw DELETEs (H1), name-based production
 > matching (H3), then enforcement flip + constraints migration.
 >
+> **Work item 7 (reconciler v0) + border repair, 2026-07-29.** A 27-agent
+> adversarial audit of the border found that several walls were declared but
+> not standing. Repaired:
+> - **The registry governed nothing.** `kernel/registry.js` was required by
+>   nothing except territory.js; server.js had re-declared all seven maps
+>   inline plus a hand-written path→module chain. So the *meter* read manifests
+>   while the *gate* read duplicates. Proved the two were key-and-value
+>   identical, then rewired server.js onto the registry (−11.7k bytes) and
+>   replaced the if-chain with `PATH_SEGMENT_TO_MODULE` (all 31 segments verified
+>   to map identically). K1 restored.
+> - **Two contract engines.** The tested `kernel/contracts.js` was orphaned; a
+>   stricter inline `validateContract` did the actual gating, untested, in
+>   **reject (400) mode** while every doc said log-only. Unified onto the kernel
+>   engine; enforcement is now an explicit opt-in (`PAPER_CONTRACT_ENFORCE=1`),
+>   and both modes are pinned by tests.
+> - **The strict guard was bricking records.** `inputType` was declared as an
+>   enum, but the backend stores it as free text and the desktop group editor
+>   infers `'Dropdown'` for any property with children, which the item screen
+>   echoes back on save — so such an item 400'd on every PATCH and became
+>   permanently un-editable. Enum dropped; regression test pins it. Lesson: a
+>   contract must describe the system that exists.
+> - **Guard alerts were amnesiac and ungated** — an unbounded in-memory array on
+>   a route any authenticated user could read. Now persisted to
+>   `entity_activity_log` (entity_type `kernel_guard`) and admin-gated, as are
+>   `/api/kernel/territory` and `/api/kernel/reconcile`.
+> - **Ports repaired**: `stock.applyDelta` was wired to `applyInventoryMovement`
+>   (a different, movement-ledger API — silently wrong on the documented
+>   payload); `bom.lines` was a `return []` stub; `describe` was the full
+>   8-query `rowToItemDto` called per row inside the inventory-stock loop.
+>   All three fixed (real delta fn, real BOM query, one-query identity card).
+> - **A permission hole**: the jobs manifest declared `pathSegments: ['jobs']`,
+>   which nothing serves — its five real routes at `/api/freelancer-jobs` were
+>   unclaimed, so `jobs.*` CRUD keys could never gate them. Declaration
+>   corrected to match reality.
+>
+> **Reconciler v0 shipped**: `kernel/reconcile.js` + `GET /api/kernel/reconcile`
+> (admin-gated), with 8 unit tests driving it off injected fakes. It compares
+> four declarations against four actual states — manifests vs mounted routes and
+> present tables, evacuation claims vs module packages on disk, migrations on
+> disk vs `_migrations` rows, and deployment config flags vs the registry's
+> module vocabulary (`CONFIG_MODULE_ALIASES` translates the coarser legacy
+> `modules.*` flags; `pm` maps to nothing and is reported). First live run:
+> 275 routes — 176 module-claimed / 69 kernel / **30 unclaimed**; and it
+> automatically surfaces the bootstrap-vs-migrations parity gap that broke main
+> (fresh DBs seed schema directly and never run the migration runner).
+> Suite: **48/48**.
+>
+> Still open on the items front: ~59 K5 violations remain (inventory 20,
+> challans 7, production 6, action-center 6, search 4, reconciliation 4) —
+> notably challans still writes stock directly instead of through
+> `stock.applyDelta`; domain logic (saveItem/saveGroup/DTOs) still lives in
+> legacy behind the ctx seam; 8 of 11 ports remain dormant.
+>
 > Companion to the architecture discussion: the monolith dissolves into module
 > packages behind a thin kernel; expansion/collapse and fleet replication are
 > reconciler operations over git-versioned client manifests.

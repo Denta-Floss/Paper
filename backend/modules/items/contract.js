@@ -25,7 +25,14 @@ const variationNode = {
     name: { type: 'string', required: true, nonEmpty: true },
     code: { type: 'string' },
     displayName: { type: 'string' },
-    inputType: { type: 'string', enum: ['Text', 'Numeric', 'Gauge'] },
+    // FREE TEXT, deliberately not an enum. The backend stores whatever arrives
+    // (`String(node.inputType || 'Text')`), and the desktop group editor infers
+    // additional values the item screen then echoes back — e.g. 'Dropdown' for
+    // any property that has children. An enum here rejected those on PATCH and
+    // made such items permanently un-editable. A contract must describe the
+    // system that exists, not the one we wish existed; known values today are
+    // Text | Numeric | Gauge | Dropdown.
+    inputType: { type: 'string' },
     nameJoin: { type: 'string' },
     position: { type: 'integer', min: 0 },
     children: { type: 'array', items: () => variationNode },

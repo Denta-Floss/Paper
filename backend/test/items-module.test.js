@@ -176,24 +176,55 @@ test('items module routes work end-to-end after evacuation', async () => {
       assert.equal(relocate.body.item.groupId, otherGroup.id);
     }
 
-    // --- log-only contract guard: bad payload passes, alert is filed ---
+    // --- contract guard, default (log-only) mode ---------------------------
+    // The request proceeds; the violation is filed as a persistent guard alert.
+    // Refusal is opt-in via PAPER_CONTRACT_ENFORCE (see contract-enforcement
+    // test) precisely so a too-strict rule cannot brick a record before the
+    // alert feed has shown what clients really send.
     const guarded = await sendJson('POST', '/api/items', {
       name: 'Guarded Item',
       groupId,
       unitId,
       quantity: 'not-a-number',
     });
-    assert.equal(guarded.status, 400, 'contract guard must reject bad payload');
+    assert.equal(guarded.status, 201, 'default mode must be log-only, not refusal');
     const alerts = await getJson('/api/kernel/guard-alerts');
     assert.equal(alerts.status, 200);
+    assert.equal(alerts.body.enforcing, false);
     assert.ok(
       alerts.body.alerts.some(
         (a) =>
           a.route === 'POST /api/items' &&
           (a.details.problems || []).some((p) => p.path === 'item.quantity'),
       ),
-      'expected a guard alert for the malformed quantity',
+      'expected a persisted guard alert for the malformed quantity',
     );
+
+    // Regression: a variation property carrying an inputType the group editor
+    // infers ('Dropdown') must NOT be refused. An enum here previously made
+    // such items permanently un-editable — the backend itself stores
+    // inputType as free text.
+    const dropdownItem = await sendJson('POST', '/api/items', {
+      name: 'Dropdown Property Item',
+      groupId,
+      unitId,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Finish',
+          inputType: 'Dropdown',
+          children: [{ kind: 'value', name: 'Matte', children: [] }],
+        },
+      ],
+    });
+    assert.equal(dropdownItem.status, 201, 'Dropdown inputType must be accepted');
+    const dropdownPatch = await sendJson('PATCH', `/api/items/${dropdownItem.body.item.id}`, {
+      name: 'Dropdown Property Item',
+      groupId,
+      unitId,
+      variationTree: dropdownItem.body.item.variationTree,
+    });
+    assert.equal(dropdownPatch.status, 200, 'such an item must stay editable');
 
     // --- territory report exposes items port metering ---
     const territory = await getJson('/api/kernel/territory');

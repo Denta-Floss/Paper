@@ -28,6 +28,10 @@ try {
   console.warn("Sentry CPU Profiler not supported on this Node version. Skipping profiling integration.");
 }
 const { runMigrations } = require('./migrate');
+// Kernel: module identity (registry), contract engine, territory meter and
+// drift reconciler. The registry is the single source of module truth — the
+// permission gate, the Track feed, the asset guards and the meter all read it.
+const kernelRegistry = require('./kernel/registry');
 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
@@ -132,201 +136,29 @@ const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
 // are enforced centrally by requireApiModulePermission (request path -> module,
 // HTTP method -> op). The `login.*` and account-management keys below are
 // capabilities, not module CRUD, and are shown/managed separately.
-const CRUD_MODULES = [
-  'orders',
-  'inventory',
-  'challans',
-  'production',
-  'jobs',
-  'action_center',
-  // Masters sub-entities (grouped under "Masters" in the UI tree):
-  'people',
-  'clients',
-  'vendors',
-  'items',
-  'units',
-  'machines',
-  'dies',
-  'pipelines',
-];
-const CRUD_OPS = ['create', 'read', 'update', 'delete'];
-const MODULE_LABELS = {
-  orders: 'Orders',
-  inventory: 'Inventory',
-  challans: 'Delivery Challans',
-  production: 'Production',
-  jobs: 'Jobs',
-  action_center: 'Action Center',
-  people: 'People',
-  clients: 'Clients',
-  vendors: 'Vendors',
-  items: 'Items',
-  units: 'Units',
-  machines: 'Machines',
-  dies: 'Dies',
-  pipelines: 'Pipelines',
-};
-// UI tree grouping: these modules render under a collapsible "Masters" parent.
-const MODULE_GROUPS = {
-  people: 'Masters',
-  clients: 'Masters',
-  vendors: 'Masters',
-  items: 'Masters',
-  units: 'Masters',
-  machines: 'Masters',
-  dies: 'Masters',
-  pipelines: 'Masters',
-};
-const OP_LABELS = {
-  create: 'Create',
-  read: 'View',
-  update: 'Update',
-  delete: 'Delete',
-};
-const MODULE_PERMISSION_KEYS = CRUD_MODULES.flatMap((m) =>
-  CRUD_OPS.map((op) => `${m}.${op}`),
-);
-const MODULE_PERMISSION_SET = new Set(MODULE_PERMISSION_KEYS);
-
-// Capability keys — signed off individually, NOT part of the module CRUD grid.
-const CAPABILITY_DESCRIPTORS = {
-  'challans.reconcile': {
-    label: 'In-use reconciliation',
-    description: 'Settle internal-use (in-use) challans back into inventory.',
-  },
-  'inventory.request_delete': {
-    label: 'Request inventory deletion',
-    description: 'Create delete requests for inventory records.',
-  },
-  'delete_requests.review': {
-    label: 'Review delete requests',
-    description: 'Approve or reject pending delete requests.',
-  },
-  'users.read': {
-    label: 'View accounts',
-    description: 'Read the account directory.',
-  },
-  'users.create_user': {
-    label: 'Create staff logins',
-    description: 'Create staff login accounts.',
-  },
-  'users.create_admin': {
-    label: 'Create admins',
-    description: 'Create admin accounts (super admin only).',
-  },
-  'users.update_status': {
-    label: 'Activate / deactivate accounts',
-    description: 'Enable or disable login accounts.',
-  },
-  'users.reset_password': {
-    label: 'Reset passwords',
-    description: 'Reset passwords for managed accounts.',
-  },
-  'users.manage_permissions': {
-    label: 'Manage permissions',
-    description: "Edit other users' permissions and roles.",
-  },
-  'sessions.manage': {
-    label: 'Manage sessions',
-    description: 'View and revoke user sessions.',
-  },
-  'audit.read': {
-    label: 'View Track / activity',
-    description: 'Read activity and security events.',
-  },
-  'config.read': {
-    label: 'Legacy config read',
-    description: 'Internal legacy key (superseded by per-module View).',
-  },
-  'config.write': {
-    label: 'Legacy config write',
-    description: 'Internal legacy key (superseded by module Create/Update/Delete).',
-  },
-  'login.mobile': {
-    label: 'Mobile login access',
-    description: 'Allow the user to sign in from the mobile app.',
-  },
-  'login.desktop': {
-    label: 'Desktop login access',
-    description: 'Allow the user to sign in from the desktop/web app.',
-  },
-};
-const FINE_PERMISSION_DESCRIPTORS = {
-  'orders.status_change': { module: 'orders', parentOp: 'update', label: 'Change order status', description: 'Change order status across workflow stages.' },
-  'orders.po_upload': { module: 'orders', parentOp: 'update', label: 'Upload PO documents', description: 'Attach PO documents to an order.' },
-  'orders.po_download': { module: 'orders', parentOp: 'read', label: 'Download PO documents', description: 'Download attached PO documents.' },
-  'orders.report.view': { module: 'orders', parentOp: 'read', label: 'View production reports', description: 'View order production summary reports.' },
-  'orders.report.export': { module: 'orders', parentOp: 'read', label: 'Export production reports', description: 'Export order production reports to PDF/CSV.' },
-  'orders.item_history.read': { module: 'orders', parentOp: 'read', label: 'View item history', description: 'View historical variation line changes.' },
-  'orders.production.read': { module: 'orders', parentOp: 'read', label: 'View order pipeline runs', description: 'View linked production runs for an order.' },
-
-  'challans.issue': { module: 'challans', parentOp: 'update', label: 'Issue delivery challan', description: 'Transition draft challans to issued state.' },
-  'challans.cancel': { module: 'challans', parentOp: 'update', label: 'Cancel delivery challan', description: 'Cancel issued delivery challans.' },
-  'challans.assign_report_group': { module: 'challans', parentOp: 'update', label: 'Assign report group', description: 'Assign report group tags to challans.' },
-  'challans.print': { module: 'challans', parentOp: 'read', label: 'Print delivery challan', description: 'Print or preview delivery challans.' },
-  'challans.asset.upload': { module: 'challans', parentOp: 'update', label: 'Upload challan assets', description: 'Attach signatures or files to a challan.' },
-
-  'inventory.stock.read': { module: 'inventory', parentOp: 'read', label: 'View stock overview', description: 'View aggregate inventory stock balances.' },
-  'inventory.health.read': { module: 'inventory', parentOp: 'read', label: 'View inventory health KPIs', description: 'View health indicators and alerts.' },
-  'inventory.material.read': { module: 'inventory', parentOp: 'read', label: 'View material details', description: 'View material master details.' },
-  'inventory.material.activity.read': { module: 'inventory', parentOp: 'read', label: 'View material activity', description: 'View audit activity log for materials.' },
-  'inventory.barcode.lookup': { module: 'inventory', parentOp: 'read', label: 'Lookup barcodes', description: 'Scan and resolve material barcodes.' },
-  'inventory.material.create': { module: 'inventory', parentOp: 'create', label: 'Create materials', description: 'Add new material master records.' },
-  'inventory.material.update': { module: 'inventory', parentOp: 'update', label: 'Update materials', description: 'Edit existing material properties.' },
-  'inventory.material.delete': { module: 'inventory', parentOp: 'delete', label: 'Delete materials', description: 'Hard delete material records.' },
-  'inventory.material.scan': { module: 'inventory', parentOp: 'update', label: 'Scan material stock', description: 'Perform material barcode scans.' },
-  'inventory.material.link': { module: 'inventory', parentOp: 'update', label: 'Link materials', description: 'Link parent/child material relationships.' },
-  'inventory.material.unlink': { module: 'inventory', parentOp: 'update', label: 'Unlink materials', description: 'Remove material linkages.' },
-  'inventory.movement.create': { module: 'inventory', parentOp: 'create', label: 'Create stock movements', description: 'Log manual inventory transfers/movements.' },
-  'inventory.set.read': { module: 'inventory', parentOp: 'read', label: 'View inventory sets', description: 'View material sets.' },
-  'inventory.set.create': { module: 'inventory', parentOp: 'create', label: 'Create inventory sets', description: 'Create new material sets.' },
-  'inventory.set.update': { module: 'inventory', parentOp: 'update', label: 'Update inventory sets', description: 'Modify material set definitions.' },
-  'inventory.set.delete': { module: 'inventory', parentOp: 'delete', label: 'Delete inventory sets', description: 'Delete material sets.' },
-
-  'items.short_code.set': { module: 'items', parentOp: 'update', label: 'Set item short code', description: 'Assign or update item short codes.' },
-  'items.group.reassign': { module: 'items', parentOp: 'update', label: 'Reassign item group', description: 'Change item group assignments.' },
-  'items.variation.manage': { module: 'items', parentOp: 'update', label: 'Manage variation nodes', description: 'Configure item variation trees.' },
-  'items.unit.manage': { module: 'items', parentOp: 'update', label: 'Manage item units', description: 'Set primary/secondary units for items.' },
-  'items.available_for_purchase.toggle': { module: 'items', parentOp: 'update', label: 'Toggle purchase status', description: 'Mark items available for purchase.' },
-  'items.asset.upload': { module: 'items', parentOp: 'update', label: 'Upload item images/assets', description: 'Attach images or files to items.' },
-  'items.asset.list': { module: 'items', parentOp: 'read', label: 'View item assets', description: 'List attached item images and files.' },
-  'items.track.read': { module: 'items', parentOp: 'read', label: 'View item track history', description: 'View audit log for items.' },
-
-  'people.employee.read': { module: 'people', parentOp: 'read', label: 'View employee directory', description: 'List employee staff records.' },
-  'people.employee.create': { module: 'people', parentOp: 'create', label: 'Create employees', description: 'Add new staff employee records.' },
-  'people.employee.update': { module: 'people', parentOp: 'update', label: 'Update employees', description: 'Edit employee staff details.' },
-  'people.employee.delete': { module: 'people', parentOp: 'delete', label: 'Delete employees', description: 'Remove employee staff records.' },
-  'people.department.read': { module: 'people', parentOp: 'read', label: 'View departments', description: 'View department structure.' },
-  'people.department.create': { module: 'people', parentOp: 'create', label: 'Create departments', description: 'Add new department units.' },
-  'people.department.update': { module: 'people', parentOp: 'update', label: 'Update departments', description: 'Edit department details.' },
-  'people.department.delete': { module: 'people', parentOp: 'delete', label: 'Delete departments', description: 'Delete department units.' },
-
-  'users.delete': { module: 'people', parentOp: 'delete', label: 'Delete user login accounts', description: 'Permanently remove login accounts.' },
-  'users.link_login': { module: 'people', parentOp: 'update', label: 'Link employee login', description: 'Link staff employee to a login account.' },
-  'users.unlink_login': { module: 'people', parentOp: 'update', label: 'Unlink employee login', description: 'Unlink employee staff from a login account.' },
-
-  'audit.export': { module: 'action_center', parentOp: 'read', label: 'Export audit logs', description: 'Download Track/Audit logs as CSV.' },
-};
-const FINE_PERMISSION_KEYS = Object.keys(FINE_PERMISSION_DESCRIPTORS);
-const FINE_KEY_TO_COARSE_MAP = Object.fromEntries(
-  Object.entries(FINE_PERMISSION_DESCRIPTORS).map(([key, info]) => [
-    key,
-    `${info.module}.${info.parentOp}`,
-  ]),
-);
-
-const CAPABILITY_PERMISSION_KEYS = Object.keys(CAPABILITY_DESCRIPTORS);
-
-const PERMISSION_KEYS = [
-  ...MODULE_PERMISSION_KEYS,
-  ...CAPABILITY_PERMISSION_KEYS,
-  ...FINE_PERMISSION_KEYS,
-];
-
-// Legacy route-guard keys whose per-route requirePermission() is now a no-op:
-// enforcement moved to the central per-module CRUD middleware. The keys remain
-// valid so hasPermission()/role defaults keep working.
-const LEGACY_GUARD_PASSTHROUGH = new Set(['config.read', 'config.write']);
+//
+// SINGLE SOURCE OF TRUTH: these are no longer declared here. Every module's
+// identity — labels, UI grouping, path segments, CRUD/capability/fine keys,
+// per-record grant sources, Track labels, asset-entity guards — is declared
+// once in kernel/registry.js and merely bound to local names below, so the
+// enforcement path and the territory meter read the SAME declaration.
+// Adding a module = one manifest entry there (kernel rule K1).
+const {
+  CRUD_MODULES,
+  CRUD_OPS,
+  OP_LABELS,
+  MODULE_LABELS,
+  MODULE_GROUPS,
+  MODULE_PERMISSION_KEYS,
+  MODULE_PERMISSION_SET,
+  CAPABILITY_DESCRIPTORS,
+  CAPABILITY_PERMISSION_KEYS,
+  FINE_PERMISSION_DESCRIPTORS,
+  FINE_PERMISSION_KEYS,
+  FINE_KEY_TO_COARSE_MAP,
+  PERMISSION_KEYS,
+  LEGACY_GUARD_PASSTHROUGH,
+} = kernelRegistry;
 
 const DEFAULT_ROLE_PERMISSIONS = {
   super_admin: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true])),
@@ -1149,16 +981,8 @@ async function logGlobalAudit({
 // ---------------------------------------------------------------------------
 
 // Human label per tracked entity type (table name -> singular noun).
-const TRACK_ENTITY_LABELS = {
-  items: 'Item',
-  clients: 'Client',
-  vendors: 'Vendor',
-  units: 'Unit',
-  machines: 'Machine',
-  dies: 'Die',
-  pipeline_templates: 'Pipeline',
-  employees: 'Person',
-};
+// Declared per-module in kernel/registry.js (`trackTables`).
+const { TRACK_ENTITY_LABELS } = kernelRegistry;
 
 // Columns never worth surfacing in a diff.
 const TRACK_SKIP_FIELDS = new Set(['id', 'created_at', 'updated_at']);
@@ -1770,13 +1594,8 @@ function requirePermission(permissionKey) {
 function moduleOpForRequest(req) {
   const path = req.path || '';
   const seg = path.split('/')[1] || '';
-  const EXCLUDED = new Set([
-    '', 'auth', 'me', 'users', 'admins', 'permissions', 'permission-templates',
-    'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
-    'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
-    'record-options',
-  ]);
-  if (EXCLUDED.has(seg)) return null;
+  // Excluded segments are declared once in kernel/registry.js.
+  if (kernelRegistry.MODULE_GATE_EXCLUDED_SEGMENTS.has(seg)) return null;
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
   if (seg === 'employees' && /\/(create-login|link-login|unlink-login)/.test(path)) {
     return null;
@@ -1786,36 +1605,11 @@ function moduleOpForRequest(req) {
     return { module: 'challans', op: 'reconcile', key: 'challans.reconcile' };
   }
 
-  let module = null;
-  if (['orders', 'order-items', 'order-po-uploads', 'order-po-documents'].includes(seg)) {
-    module = 'orders';
-  } else if (['inventory', 'materials', 'barcode'].includes(seg)) {
-    module = 'inventory';
-  } else if (seg === 'production' && /^\/production\/pipeline-templates/.test(path)) {
-    module = 'pipelines'; // the pipeline designer is a master
-  } else if (['production', 'production-runs', 'pipeline-runs', 'telemetry'].includes(seg)) {
-    module = 'production';
-  } else if (['items', 'groups'].includes(seg)) {
-    module = 'items';
-  } else if (['clients', 'sub-contractors'].includes(seg)) {
-    module = 'clients';
-  } else if (seg === 'vendors') {
-    module = 'vendors';
-  } else if (seg === 'units') {
-    module = 'units';
-  } else if (seg === 'machines') {
-    module = 'machines';
-  } else if (seg === 'dies') {
-    module = 'dies';
-  } else if (seg === 'jobs') {
-    module = 'jobs';
-  } else if (['challans', 'delivery-challans', 'invoices', 'reconciliation', 'challan-templates', 'reports', 'templates'].includes(seg)) {
-    module = 'challans';
-  } else if (['employees', 'departments'].includes(seg)) {
-    module = 'people';
-  } else if (['action-center', 'trash'].includes(seg)) {
-    module = 'action_center';
-  }
+  // The pipeline designer lives under /production/ but is its own master, so
+  // it is matched by prefix before the flat segment map.
+  let module = /^\/production\/pipeline-templates/.test(path)
+    ? 'pipelines'
+    : kernelRegistry.PATH_SEGMENT_TO_MODULE[seg] || null;
   // company-profile + any unmapped path -> null -> legacy write gate.
   if (!module) return null;
 
@@ -1835,19 +1629,8 @@ function moduleOpForRequest(req) {
 // legacy write gate doesn't double-check it.
 // Modules that support per-record (row-level) grants, and how to list/label
 // their records for the picker. entity_type == the module key.
-const RECORD_OPTION_SOURCES = {
-  items: { table: 'items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(display_name), ''), name)" },
-  clients: { table: 'clients', idCol: 'id', label: 'name' },
-  vendors: { table: 'vendors', idCol: 'id', label: 'name' },
-  units: { table: 'units', idCol: 'id', label: 'name' },
-  machines: { table: 'machines', idCol: 'id', label: 'name' },
-  dies: { table: 'dies', idCol: 'id', label: "COALESCE(NULLIF(TRIM(tool_code), ''), 'Die ' || id)" },
-  people: { table: 'employees', idCol: 'id', label: 'name' },
-  orders: { table: 'order_items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(order_no), ''), 'Order ' || id)" },
-  challans: { table: 'delivery_challans', idCol: 'id', label: "COALESCE(NULLIF(TRIM(challan_no), ''), 'Challan ' || id)" },
-  inventory: { table: 'materials', idCol: 'barcode', label: "COALESCE(NULLIF(TRIM(name), ''), barcode)" },
-  pipelines: { table: 'pipeline_templates', idCol: 'id', label: 'name' },
-};
+// Declared per-module in kernel/registry.js (`recordSource`).
+const { RECORD_OPTION_SOURCES } = kernelRegistry;
 const RECORD_PERMISSION_OPS = new Set(['read', 'update', 'delete']);
 
 // The record id targeted by a request. Usually the segment right after the
@@ -1956,12 +1739,8 @@ function requireApiWritePermission(req, res, next) {
 // depends on the request body or the stored asset row, not the path. The fine
 // asset capabilities fall back to the coarse module right via
 // FINE_KEY_TO_COARSE_MAP (e.g. items.asset.upload -> items.update).
-const ASSET_ENTITY_PERMISSIONS = {
-  item: { write: 'items.asset.upload', read: 'items.asset.list' },
-  delivery_challan: { write: 'challans.asset.upload', read: 'challans.read' },
-  machine: { write: 'machines.update', read: 'machines.read' },
-  die: { write: 'dies.update', read: 'dies.read' },
-};
+// Declared in kernel/registry.js (entity_type -> asset permission keys).
+const { ASSET_ENTITY_PERMISSIONS } = kernelRegistry;
 
 function requireAssetEntityPermission(op, resolveEntityType) {
   return async (req, res, next) => {
@@ -27484,81 +27263,128 @@ app.post('/api/delete-s3-object', requirePermission('config.write'), async (req,
 });
 
 
-const guardAlerts = [];
-
-function validateContract(value, contract, path = "root", alerts = []) {
-  if (value === undefined || value === null) {
-    if (contract.required) alerts.push({ path, message: "Missing required field" });
-    else if (!contract.nullable && value === null) alerts.push({ path, message: "Cannot be null" });
-    return alerts;
-  }
-
-  if (contract.type === "string") {
-    if (typeof value !== "string") alerts.push({ path, message: "Must be a string" });
-    else {
-      if (contract.nonEmpty && value.trim() === "") alerts.push({ path, message: "Cannot be empty" });
-      if (contract.enum && !contract.enum.includes(value)) alerts.push({ path, message: "Must be one of: " + contract.enum.join(", ") });
-    }
-  } else if (contract.type === "number" || contract.type === "integer") {
-    if (typeof value !== "number") alerts.push({ path, message: "Must be a number" });
-    else {
-      if (contract.type === "integer" && !Number.isInteger(value)) alerts.push({ path, message: "Must be an integer" });
-      if (contract.min !== undefined && value < contract.min) alerts.push({ path, message: "Must be >= " + contract.min });
-      if (contract.gt !== undefined && value <= contract.gt) alerts.push({ path, message: "Must be > " + contract.gt });
-    }
-  } else if (contract.type === "boolean") {
-    if (typeof value !== "boolean") alerts.push({ path, message: "Must be a boolean" });
-  } else if (contract.type === "array") {
-    if (!Array.isArray(value)) alerts.push({ path, message: "Must be an array" });
-    else if (contract.items) {
-      const itemContract = typeof contract.items === "function" ? contract.items() : contract.items;
-      value.forEach((item, index) => validateContract(item, itemContract, `${path}[${index}]`, alerts));
-    }
-  } else if (contract.type === "object" || contract.fields) {
-    if (typeof value !== "object" || Array.isArray(value)) alerts.push({ path, message: "Must be an object" });
-    else {
-      if (contract.fields) {
-        for (const [key, rules] of Object.entries(contract.fields)) {
-          validateContract(value[key], rules, `${path}.${key}`, alerts);
-        }
-      }
-    }
-  }
-  return alerts;
-}
+// --- Contract guards (kernel rule K4) -------------------------------------
+// ONE engine: kernel/contracts.js. It is representation-tolerant on purpose —
+// numeric strings, 0/1 booleans and null-on-optional are how these handlers
+// have always been fed, and they Number()/Boolean() them anyway. Guards exist
+// to catch STRUCTURAL impossibilities (a missing owner, a negative node id),
+// not to relitigate JSON spelling.
+//
+// MODE: log-only by default. A contract that rejects is only safe once the
+// alert feed shows real clients are clean; enforcing on a guess is how a too-
+// strict inputType enum made items with 'Dropdown' properties permanently
+// un-editable. Set PAPER_CONTRACT_ENFORCE=1 to turn refusal on deliberately.
+const kernelContracts = require('./kernel/contracts');
+const CONTRACT_ENFORCE = String(process.env.PAPER_CONTRACT_ENFORCE || '') === '1';
 
 function guardContract(contract) {
   return (req, res, next) => {
-    const alerts = validateContract(req.body, contract, contract.entity || "body");
-    
-    if (alerts.length > 0) {
-      guardAlerts.push({
-        route: req.method + " " + req.route.path,
-        details: { problems: alerts }
+    let problems = [];
+    try {
+      problems = kernelContracts.checkPayload(contract, req.body || {});
+    } catch (error) {
+      console.error('[Guard] contract check failed:', error.message);
+      next();
+      return;
+    }
+    if (!problems.length) {
+      next();
+      return;
+    }
+    // Persist: a guard alert is word sent to the capital, not a note that dies
+    // with the process. Track already stores per-entity activity, so alerts
+    // land there under a reserved entity_type and survive restarts.
+    logEntityActivity({
+      entityType: 'kernel_guard',
+      entityId: `${req.method} ${req.route ? req.route.path : req.path}`,
+      action: 'guard_alert',
+      req,
+      details: { entity: contract.entity, enforced: CONTRACT_ENFORCE, problems },
+    });
+    if (CONTRACT_ENFORCE) {
+      res.status(400).json({
+        success: false,
+        error: 'Contract violation',
+        alerts: problems,
       });
-      return res.status(400).json({ success: false, error: "Contract violation", alerts });
+      return;
     }
     next();
   };
 }
 
-app.get("/api/kernel/guard-alerts", (req, res) => {
-  res.json({ success: true, alerts: guardAlerts });
+// Guard alert feed. Admin-gated: it exposes payload shapes and actor identity.
+app.get('/api/kernel/guard-alerts', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const rows = await all(
+      "SELECT id, entity_id, actor_name, actor_role, details_json, created_at FROM entity_activity_log WHERE entity_type = 'kernel_guard' ORDER BY id DESC LIMIT ?",
+      [limit],
+    );
+    res.json({
+      success: true,
+      enforcing: CONTRACT_ENFORCE,
+      alerts: rows.map((row) => ({
+        id: row.id,
+        route: row.entity_id,
+        actorName: row.actor_name,
+        actorRole: row.actor_role,
+        details: parseJson(row.details_json, {}),
+        createdAt: row.created_at,
+      })),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, alerts: [], error: error.message });
+  }
 });
 
 
 
 const { createItemsPorts } = require('./modules/items/ports');
 const itemsPorts = createItemsPorts({
+  // Identity card: ONE query, scalar fields only. It is called per row inside
+  // loops (e.g. every variation_stock row in GET /api/inventory/stock), so it
+  // must not be the full rowToItemDto — that fans out into the variation tree,
+  // property schema, conversions and combination groups on every call.
   describe: async (id) => {
-    const row = await get('SELECT * FROM items WHERE id = ?', [id]);
-    return rowToItemDto ? await rowToItemDto(row) : row;
+    const row = await get(
+      `SELECT items.id, items.name, items.alias, items.display_name, items.short_code,
+              items.group_id, items.unit_id, items.naming_format, items.is_archived,
+              items.available_for_purchase,
+              units.name AS unit_name, units.symbol AS unit_symbol
+         FROM items
+         LEFT JOIN units ON units.id = items.unit_id
+        WHERE items.id = ?`,
+      [Number(id || 0)],
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name || '',
+      alias: row.alias || '',
+      displayName: row.display_name || '',
+      shortCode: row.short_code || '',
+      groupId: row.group_id || null,
+      unitId: row.unit_id || null,
+      unitName: row.unit_name || '',
+      unitSymbol: row.unit_symbol || '',
+      namingFormat: parseJson(row.naming_format, []),
+      isArchived: Boolean(row.is_archived),
+      availableForPurchase: Boolean(row.available_for_purchase),
+    };
   },
   resolveSelection: resolveOrderVariationSelection,
   selectionSnapshot: getItemSelectionSnapshot,
   stockAssertLeaf: assertValidStockVariationLeaf,
-  stockApplyDelta: applyInventoryMovement,
-  bomLines: async (itemId) => { return []; },
+  // THE single write path into variation_stock. Must be applyVariationStockDelta
+  // — applyInventoryMovement is a different, movement-ledger-shaped API and
+  // silently does the wrong thing when handed a stock-delta payload.
+  stockApplyDelta: applyVariationStockDelta,
+  bomLines: (itemId) =>
+    all('SELECT * FROM item_bom_lines WHERE item_id = ? ORDER BY sort_order ASC, id ASC', [
+      Number(itemId || 0),
+    ]),
   lookupByName: async (name) => {
     return await get('SELECT * FROM items WHERE name = ? COLLATE NOCASE', [name]);
   },
@@ -27609,7 +27435,10 @@ registerItemsModuleRoutes({
 });
 
 const { computeTerritory } = require("./kernel/territory");
-app.get("/api/kernel/territory", async (req, res) => {
+// Kernel introspection is infrastructure, not business data: it exposes the
+// deployment's internal shape, so it is admin-gated rather than merely
+// authenticated (/api/kernel/* is otherwise unmapped by the module gate).
+app.get("/api/kernel/territory", requireRoles('super_admin', 'admin'), async (req, res) => {
   try {
     const result = await computeTerritory({
       app,
@@ -27623,6 +27452,38 @@ app.get("/api/kernel/territory", async (req, res) => {
     res.json({ success: true, territory: result });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Reconciler v0 — DRIFT REPORT. Answers "does reality match what we declared?"
+// across four axes: manifests vs mounted routes/present tables, evacuation
+// claims vs module packages on disk, migrations on disk vs applied, and
+// deployment config flags vs the registry's module vocabulary. Read-only:
+// converging (plan/apply) is v1.
+const { reconcile } = require('./kernel/reconcile');
+app.get('/api/kernel/reconcile', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const migrationsDir = path.join(__dirname, 'migrations');
+    const modulesDir = path.join(__dirname, 'modules');
+    const migrationFiles = fs.existsSync(migrationsDir)
+      ? fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql') || f.endsWith('.js')).sort()
+      : [];
+    const moduleDirs = fs.existsSync(modulesDir)
+      ? fs.readdirSync(modulesDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+      : [];
+    const report = await reconcile({
+      app,
+      allRows: all,
+      getRow: get,
+      migrationFiles,
+      moduleDirs,
+      clientId: String(req.query.clientId || 'default'),
+    });
+    res.json({ success: true, reconcile: report, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, reconcile: null, error: error.message });
   }
 });
 

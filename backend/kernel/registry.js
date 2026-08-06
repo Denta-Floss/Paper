@@ -85,7 +85,10 @@ const MODULES = {
   },
   jobs: {
     label: 'Jobs',
-    pathSegments: ['jobs'],
+    // The routes actually answer at /api/freelancer-jobs; declaring only
+    // 'jobs' (which nothing serves) left all five of them unclaimed by the
+    // central gate, so the jobs.* CRUD keys could never gate anything.
+    pathSegments: ['jobs', 'freelancer-jobs'],
     tables: ['freelancer_jobs', 'freelancer_job_batches', 'freelancer_job_tasks'],
     evacuated: false,
   },
