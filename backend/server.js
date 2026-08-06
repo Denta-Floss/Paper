@@ -8748,6 +8748,25 @@ function normalizeChallanSheetWeights(item, itemWeight) {
   return weights;
 }
 
+// A stock leaf must be a REAL variation node. The client selector mints
+// synthetic negative ids for typed Gauge/Numeric values (they ride along in
+// customVariationValues and never become nodes), so fall back to the deepest
+// real value in the selected path — the same convention orders use. Returns 0
+// when there is no real node, which callers treat as "no variation".
+function resolveStockLeafNodeId(item) {
+  const declared = Number(item.variationLeafNodeId ?? item.variation_leaf_node_id ?? 0) || 0;
+  if (declared > 0) {
+    return declared;
+  }
+  const pathIds = parseJsonOrArray(
+    item.variationPathNodeIds ?? item.variation_path_node_ids ?? item.variation_path_node_ids_json,
+    [],
+  )
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  return pathIds.length ? pathIds[pathIds.length - 1] : 0;
+}
+
 function normalizeDeliveryChallanItems(items = []) {
   if (!Array.isArray(items)) {
     return [];
@@ -8757,8 +8776,13 @@ function normalizeDeliveryChallanItems(items = []) {
       orderItemId: Number(item.orderItemId ?? item.order_item_id ?? 0) || null,
       productionRunId: Number(item.productionRunId ?? item.production_run_id ?? 0) || null,
       itemId: Number(item.itemId ?? item.item_id ?? 0) || null,
-      variationLeafNodeId:
-        Number(item.variationLeafNodeId ?? item.variation_leaf_node_id ?? 0) || 0,
+      // Typed data-entry selections (Gauge/Numeric) arrive with a SYNTHETIC
+      // NEGATIVE leaf id (-propertyId); stock is keyed by real nodes only.
+      // This must be repaired HERE: the downstream snapshot call passes only
+      // (itemId, leafId) and drops the path node ids, so resolveSelection has
+      // nothing to fall back to and rejects the save with a misleading
+      // "Client, item, and variation values are required."
+      variationLeafNodeId: resolveStockLeafNodeId(item),
       lineNo: Number(item.lineNo ?? item.line_no ?? index + 1) || index + 1,
       particulars: String(item.particulars || '').trim(),
       hsnCode: String(item.hsnCode ?? item.hsn_code ?? '').trim(),
