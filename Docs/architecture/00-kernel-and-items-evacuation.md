@@ -97,11 +97,46 @@
 > (fresh DBs seed schema directly and never run the migration runner).
 > Suite: **48/48**.
 >
-> Still open on the items front: ~59 K5 violations remain (inventory 20,
-> challans 7, production 6, action-center 6, search 4, reconciliation 4) —
-> notably challans still writes stock directly instead of through
-> `stock.applyDelta`; domain logic (saveItem/saveGroup/DTOs) still lives in
-> legacy behind the ctx seam; 8 of 11 ports remain dormant.
+> **K5 closed for the stock surface + a security hole the meter found.**
+> Rerouted 12 cross-module reaches through `itemsPorts.*` — challans
+> (save ×2, issue assertLeaf+applyDelta, cancel assertLeaf+applyDelta, template
+> test print), orders (saveOrder resolution), inventory
+> (applyInventoryMovementCore ×4). Every one sits inside a `BEGIN TRANSACTION`;
+> atomicity is preserved because the port wrapper is a pure pass-through to the
+> same function on the same connection — it adds a counter, not an async or
+> connection boundary. Only three direct calls remain, all items-internal
+> (`applyVariationStockDelta`'s own assertLeaf, `getItemSelectionSnapshot`'s own
+> resolver, and the items↔materials bridge whose ownership is still open).
+>
+> New guard-rail suite `test/kernel-k5-borders.test.js` makes the boundary a
+> build-time fact: cross-module calls must go through ports; **`variation_stock`
+> must have exactly ONE writer**; every declared port must have a real
+> implementation (missing impl throws at construction, not at first call from a
+> rare path); server.js must not re-declare registry-owned maps.
+>
+> **SECURITY — payroll was readable by anyone logged in.** The reconciler's
+> unclaimed-routes warning flagged 9 payroll routes; a runtime probe confirmed a
+> plain staff account got HTTP 200 with `"value": 50000`. The trap has two
+> halves that each look fine alone: the routes' `requirePermission('config.read')`
+> is a *documented no-op* (config.* is in LEGACY_GUARD_PASSTHROUGH, since
+> enforcement "moved to the central gate"), and payroll had no manifest, so the
+> central gate returned null and never ran either — leaving
+> `requireApiWritePermission`, which passes every GET. **Rule: an undeclared path
+> segment is ungated, not merely unmetered.** Fixed by declaring payroll plus a
+> new `sensitive: true` manifest flag, which opts a module out of the staff
+> read-everything default (salary data is need-to-know). Pinned by
+> `test/payroll-authorization.test.js`.
+>
+> Territory burn-down: unclaimed routes **30 → 15** (also claimed unit-groups →
+> units, production-scrap → production). The remaining 15 — search (4),
+> mobile (4), portal (4), company-profile (2), freelancer-portal (1) — are
+> genuinely ambiguous and need ownership decisions, not mechanical claims;
+> `/api/portal/login` in particular sits behind `requireAuth`, which looks like a
+> chicken-and-egg problem worth verifying before touching.
+>
+> Still open on the items front: domain logic (saveItem/saveGroup/DTOs) still
+> lives in legacy behind the ctx seam; several ports remain dormant; the
+> challans evacuation (52 routes) has not started.
 >
 > Companion to the architecture discussion: the monolith dissolves into module
 > packages behind a thin kernel; expansion/collapse and fleet replication are
