@@ -10872,7 +10872,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       });
     } else if (challanType === 'delivery') {
       if (item.productionRunId) {
-        const snapshot = await getItemSelectionSnapshot(item.itemId, item.variationLeafNodeId);
+        const snapshot = await itemsPorts.selectionSnapshot(item.itemId, item.variationLeafNodeId);
         const run = await validateProductionRunForChallanLine(item.productionRunId, {
           itemId: snapshot.itemId,
           variationLeafNodeId: snapshot.variationLeafNodeId,
@@ -10941,7 +10941,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         error.statusCode = 400;
         throw error;
       }
-      const snapshot = await getItemSelectionSnapshot(item.itemId, item.variationLeafNodeId);
+      const snapshot = await itemsPorts.selectionSnapshot(item.itemId, item.variationLeafNodeId);
       items.push({
         ...item,
         orderItemId: null,
@@ -11273,7 +11273,7 @@ async function issueDeliveryChallan(id, actor = null) {
         error.statusCode = 400;
         throw error;
       }
-      await assertValidStockVariationLeaf(itemId, leafNodeId);
+      await itemsPorts.stock.assertLeaf(itemId, leafNodeId);
 
       await run(
         `
@@ -11307,7 +11307,7 @@ async function issueDeliveryChallan(id, actor = null) {
       );
 
       const delta = isReception ? movementQty : -movementQty;
-      await applyVariationStockDelta({
+      await itemsPorts.stock.applyDelta({
         itemId,
         variationLeafNodeId: leafNodeId,
         locationId,
@@ -11386,7 +11386,7 @@ async function cancelDeliveryChallan(id, actor = null) {
         }
 
         const stockLocation = movement.to_location_id || existing.location || 'MAIN';
-        await assertValidStockVariationLeaf(movement.item_id, movement.variation_leaf_node_id);
+        await itemsPorts.stock.assertLeaf(movement.item_id, movement.variation_leaf_node_id);
 
         await run(
           `
@@ -11421,7 +11421,7 @@ async function cancelDeliveryChallan(id, actor = null) {
         );
 
         const delta = reverseType === 'receive' ? qty : -qty;
-        await applyVariationStockDelta({
+        await itemsPorts.stock.applyDelta({
           itemId: movement.item_id,
           variationLeafNodeId: movement.variation_leaf_node_id,
           locationId: stockLocation,
@@ -14081,7 +14081,7 @@ async function saveOrder({
     error.statusCode = 400;
     throw error;
   }
-  const variationSelection = await resolveOrderVariationSelection({
+  const variationSelection = await itemsPorts.resolveSelection({
     itemId: normalizedItemId,
     variationLeafNodeId,
     variationPathNodeIds,
@@ -18076,7 +18076,7 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
 
     if (linkedStockItemId != null && linkedStockLeafNodeId != null) {
       if (movementType === 'receive' || (movementType === 'adjust' && qty > 0)) {
-        await applyVariationStockDelta({
+        await itemsPorts.stock.applyDelta({
           itemId: linkedStockItemId,
           variationLeafNodeId: linkedStockLeafNodeId,
           locationId: toLocationId || 'MAIN',
@@ -18084,7 +18084,7 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
           now,
         });
       } else if (movementType === 'issue' || movementType === 'consume') {
-        await applyVariationStockDelta({
+        await itemsPorts.stock.applyDelta({
           itemId: linkedStockItemId,
           variationLeafNodeId: linkedStockLeafNodeId,
           locationId: toLocationId || 'MAIN',
@@ -18092,14 +18092,14 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
           now,
         });
       } else if (movementType === 'transfer') {
-        await applyVariationStockDelta({
+        await itemsPorts.stock.applyDelta({
           itemId: linkedStockItemId,
           variationLeafNodeId: linkedStockLeafNodeId,
           locationId: fromLocationId || 'MAIN',
           delta: -qty,
           now,
         });
-        await applyVariationStockDelta({
+        await itemsPorts.stock.applyDelta({
           itemId: linkedStockItemId,
           variationLeafNodeId: linkedStockLeafNodeId,
           locationId: toLocationId || 'MAIN',
@@ -25032,7 +25032,7 @@ app.put('/runs/:id/node-status', async (req, res) => {
             
             // We use ensureMaterialForItemSelection, but we override barcode to force a fresh lot
             // First get the template/snapshot
-            const snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
+            const snapshot = await itemsPorts.selectionSnapshot(itemId, variationLeafNodeId);
             if (snapshot) {
               const uom = snapshot.item.unit || 'pcs';
               const uomId = snapshot.item.unit_id || null;
