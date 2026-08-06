@@ -14741,6 +14741,11 @@ function buildVariationPathLabel(segments = []) {
     .join(' | ');
 }
 
+// `useTransaction: false` lets a caller that already holds a transaction reuse
+// it — SQLite has no nested transactions, so an unconditional BEGIN here throws
+// "cannot start a transaction within a transaction" and aborts the caller's
+// whole unit of work (this is what broke in-use reconciliation whenever a
+// bucket needed a NEW return item). Mirrors applyInventoryMovementCore.
 async function saveItem({
   name,
   alias = '',
@@ -14766,7 +14771,7 @@ async function saveItem({
   developedForClientId,
   availableForPurchase,
   id = null,
-}) {
+}, { useTransaction = true } = {}) {
   const trimmedName = String(name || '').trim();
   const trimmedAlias = String(alias || '').trim();
   const serializedNamingFormat = JSON.stringify(Array.isArray(namingFormat) ? namingFormat : []);
@@ -14867,7 +14872,9 @@ async function saveItem({
       .sort((a, b) => a.name.localeCompare(b.name));
 
   const now = new Date().toISOString();
-  await run('BEGIN TRANSACTION');
+  if (useTransaction) {
+    await run('BEGIN TRANSACTION');
+  }
   try {
     let itemId = id;
     let structuralChangeDetected = false;
@@ -15166,10 +15173,14 @@ async function saveItem({
     );
 
     await logChange('items', itemId, id == null ? 'INSERT' : 'UPDATE');
-    await run('COMMIT');
+    if (useTransaction) {
+      await run('COMMIT');
+    }
     return getItemRowById(itemId);
   } catch (error) {
-    await run('ROLLBACK');
+    if (useTransaction) {
+      await run('ROLLBACK');
+    }
     throw error;
   }
 }
@@ -22103,7 +22114,9 @@ async function ensureReconcileItem(name, groupId, unitId) {
     groupId,
     unitId,
   };
-  const { id } = await saveItem(dto);
+  // Called from inside handleReconcileChallan's transaction, so saveItem must
+  // NOT open one of its own (SQLite has no nested transactions).
+  const { id } = await saveItem(dto, { useTransaction: false });
   return id;
 }
 
@@ -22252,7 +22265,7 @@ const handleReconcileChallan = async (req, res) => {
     }
 
     const actor = actorFromRequest(req);
-    const primaryGroup = await ensureReconcilePrimaryGroup();
+    const primaryGroup = await itemsPorts.groups.ensureReconcilePrimary();
     const kgUnitId = await ensureKgUnit();
     const dateStr = new Date().toISOString().slice(0, 10);
     const breakdown = [];
@@ -22295,12 +22308,12 @@ const handleReconcileChallan = async (req, res) => {
 
           let subGroupId = subGroupCache.get(bucket.group);
           if (!subGroupId) {
-            subGroupId = await ensureReconcileSubGroup(bucket.group, primaryGroup.id, unitId);
+            subGroupId = await itemsPorts.groups.ensureReconcileSub(bucket.group, primaryGroup.id, unitId);
             subGroupCache.set(bucket.group, subGroupId);
           }
 
           const reconItemName = `${bucket.prefix}_${baseName}_${dateStr}`;
-          const reconItemId = await ensureReconcileItem(reconItemName, subGroupId, unitId);
+          const reconItemId = await itemsPorts.ensureForReconcile(reconItemName, subGroupId, unitId);
           affectedItemIds.add(reconItemId);
 
           const lotBarcode = `LOT-RECON-${challanId}-${bucket.prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -22730,19 +22743,26 @@ app.put('/api/invoices/:id', requirePermission('config.write'), async (req, res)
 
       await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [id]);
       
-      const insertLine = await prepare(`
-        INSERT INTO invoice_lines (
-          invoice_id, order_id, challan_id, challan_item_id, item_id, variation_leaf_node_id,
-          item_name, hsn_code, quantity, unit_price, taxable_value, cgst_rate, sgst_rate, cgst_amount, sgst_amount, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      // There is no `prepare()` in this codebase — the db helper surface is
+      // run/get/all. Referencing it made every invoice edit throw a
+      // ReferenceError after the lines had already been deleted (the
+      // surrounding transaction rolled it back, so no data was lost, but the
+      // endpoint could never succeed).
       for (const line of normalizedLines) {
-        await insertLine.run([
-          id, line.orderId, line.challanId, line.challanItemId, line.itemId, line.variationLeafNodeId,
-          line.itemName, line.hsnCode, line.quantity, line.unitPrice, line.taxableValue, line.cgstRate, line.sgstRate, line.cgstAmount, line.sgstAmount, now, now
-        ]);
+        await run(
+          `
+          INSERT INTO invoice_lines (
+            invoice_id, order_id, challan_id, challan_item_id, item_id, variation_leaf_node_id,
+            item_name, hsn_code, quantity, unit_price, taxable_value, cgst_rate, sgst_rate, cgst_amount, sgst_amount, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            id, line.orderId, line.challanId, line.challanItemId, line.itemId, line.variationLeafNodeId,
+            line.itemName, line.hsnCode, line.quantity, line.unitPrice, line.taxableValue,
+            line.cgstRate, line.sgstRate, line.cgstAmount, line.sgstAmount, now, now,
+          ],
+        );
       }
-      await insertLine.finalize();
       await run('COMMIT');
       
       const invoice = await getInvoiceDtoById(id);
@@ -23528,15 +23548,22 @@ app.post('/api/delivery-challans/:id/assets/upload-complete', requirePermission(
       });
       return;
     }
-    const assetRow = await handleAssetUploadComplete({
-      ...(req.body || {}),
-      entityType: 'delivery_challan',
-      entityId,
-    });
-    const assetDto = await rowToUploadedAssetDto(assetRow);
+    // `handleAssetUploadComplete` does not exist — this route always threw a
+    // ReferenceError. completeAssetUpload() is the real entry point and it
+    // already returns a DTO, so no second conversion is needed. Ownership is
+    // then checked the same way the items variant does it.
+    const asset = await completeAssetUpload(req.body || {});
+    if (asset.entityType !== 'delivery_challan' || Number(asset.entityId) !== entityId) {
+      res.status(400).json({
+        success: false,
+        asset: null,
+        error: 'Completed upload does not belong to the requested challan.',
+      });
+      return;
+    }
     res.status(200).json({
       success: true,
-      asset: assetDto,
+      asset,
       error: null,
     });
   } catch (error) {
