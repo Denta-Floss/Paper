@@ -81,7 +81,7 @@ const MODULES = {
       // lookup). It was declared to production, which never touches it.
       'piece_barcodes',
     ],
-    evacuated: false,
+    evacuated: true,
   },
   production: {
     label: 'Production',
