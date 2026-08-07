@@ -128,6 +128,48 @@ test('every items port has a real implementation wired', () => {
   );
 });
 
+test('an evacuated module reads only its own tables', () => {
+  const registry = require('../kernel/registry');
+  const modulesDir = path.join(__dirname, '../modules');
+  if (!fs.existsSync(modulesDir)) return;
+
+  const ownTables = (moduleKey) => new Set(registry.MODULES[moduleKey]?.tables || []);
+  const violations = [];
+
+  for (const moduleKey of fs.readdirSync(modulesDir)) {
+    const dir = path.join(modulesDir, moduleKey);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    const owned = ownTables(moduleKey);
+    // Every other module's tables are foreign to this one.
+    const foreign = new Map();
+    for (const other of registry.CRUD_MODULES) {
+      if (other === moduleKey) continue;
+      for (const table of registry.MODULES[other].tables || []) {
+        if (!owned.has(table)) foreign.set(table, other);
+      }
+    }
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js'))) {
+      const source = fs.readFileSync(path.join(dir, file), 'utf8');
+      source.split('\n').forEach((line, index) => {
+        if (/^\s*(?:\/\/|\*)/.test(line)) return;
+        for (const [table, owner] of foreign) {
+          if (new RegExp(`(?:FROM|JOIN|INTO|UPDATE)\\s+${table}\\b`, 'i').test(line)) {
+            violations.push(
+              `${moduleKey}/${file}:${index + 1} reads ${table} (owned by ${owner})`,
+            );
+          }
+        }
+      });
+    }
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    `An evacuated module must reach other modules through ports or a kernel seam:\n  ${violations.join('\n  ')}`,
+  );
+});
+
 test('no table is claimed by two modules', () => {
   const registry = require('../kernel/registry');
   const owners = new Map();

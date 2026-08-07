@@ -35,6 +35,8 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     getItemRowById,
     getGroupRowById,
     getEffectiveSchema,
+    getItemUsageCount,
+    getGroupUsageCount,
     getItemVariationTree,
     normalizePropertyKey,
     trackCreate,
@@ -161,21 +163,10 @@ module.exports = function registerItemsModuleRoutes(ctx) {
 
   app.get('/api/items/:id', requirePermission('config.read'), async (req, res) => {
     try {
-      const row = await get(`
-        SELECT
-          items.*,
-          pipeline_templates.name AS default_pipeline_name,
-          (
-            (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
-            (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
-            (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
-            (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
-            (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
-          ) AS usage_count
-        FROM items
-        LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
-        WHERE items.id = ?
-      `, [req.params.id]);
+      // getItemRowById already returns the row WITH usage_count and the
+      // pipeline name; re-querying here duplicated that SQL verbatim and made
+      // the evacuated items module read orders/challans/inventory tables (K5).
+      const row = await getItemRowById(Number(req.params.id));
       if (!row) {
         return res.status(404).json({ success: false, item: null, error: 'Not found' });
       }
@@ -269,15 +260,10 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       if (!item) {
         return res.status(404).json({ success: false, error: 'Not found' });
       }
-      const usage = await get(`
-        SELECT 
-          (SELECT COUNT(*) FROM order_items WHERE item_id = ?) +
-          (SELECT COUNT(*) FROM delivery_challan_items WHERE item_id = ?) +
-          (SELECT COUNT(*) FROM order_material_requirements WHERE item_id = ?) +
-          (SELECT COUNT(*) FROM materials WHERE linked_item_id = ?) +
-          (SELECT COUNT(*) FROM material_group_item_links WHERE item_id = ?) AS count
-      `, [id, id, id, id, id]);
-      if ((usage?.count || 0) > 0) {
+      // Cross-module usage is answered by one kernel-side seam, not by reading
+      // five foreign tables from inside this module.
+      const usageCount = await getItemUsageCount(id);
+      if (usageCount > 0) {
         const error = new Error('Item is in use');
         error.statusCode = 409;
         throw error;
@@ -482,13 +468,9 @@ module.exports = function registerItemsModuleRoutes(ctx) {
       if (!group) {
         return res.status(404).json({ success: false, error: 'Not found' });
       }
-      const usage = await get(`
-        SELECT
-          (SELECT COUNT(*) FROM groups WHERE parent_group_id = ? AND is_archived = 0) +
-          (SELECT COUNT(*) FROM items WHERE group_id = ? AND is_archived = 0) +
-          (SELECT COUNT(*) FROM materials WHERE linked_group_id = ?) AS count
-      `, [id, id, id]);
-      if ((usage?.count || 0) > 0) {
+      // `materials` is inventory territory — asked via the kernel-side seam.
+      const usageCount = await getGroupUsageCount(id);
+      if (usageCount > 0) {
         const error = new Error('Group is in use');
         error.statusCode = 409;
         throw error;

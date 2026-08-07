@@ -7620,6 +7620,43 @@ async function getItemRowById(id) {
   );
 }
 
+// "Who else references this item?" is inherently a cross-module question, so
+// it lives at ONE seam instead of being answered by foreign table reads inside
+// the items module (which is evacuated and must not touch orders/challans/
+// inventory tables — kernel rule K5). As each of those modules evacuates, its
+// term here becomes a port call; callers never change.
+async function getItemUsageCount(itemId) {
+  const id = Number(itemId || 0);
+  const row = await get(
+    `
+    SELECT
+      (SELECT COUNT(*) FROM order_items WHERE item_id = ?) +
+      (SELECT COUNT(*) FROM delivery_challan_items WHERE item_id = ?) +
+      (SELECT COUNT(*) FROM order_material_requirements WHERE item_id = ?) +
+      (SELECT COUNT(*) FROM materials WHERE linked_item_id = ?) +
+      (SELECT COUNT(*) FROM material_group_item_links WHERE item_id = ?) AS count
+    `,
+    [id, id, id, id, id],
+  );
+  return Number(row?.count || 0);
+}
+
+// Same seam for groups: the group's own children/items are items territory,
+// but `materials` belongs to inventory.
+async function getGroupUsageCount(groupId) {
+  const id = Number(groupId || 0);
+  const row = await get(
+    `
+    SELECT
+      (SELECT COUNT(*) FROM groups WHERE parent_group_id = ? AND is_archived = 0) +
+      (SELECT COUNT(*) FROM items WHERE group_id = ? AND is_archived = 0) +
+      (SELECT COUNT(*) FROM materials WHERE linked_group_id = ?) AS count
+    `,
+    [id, id, id],
+  );
+  return Number(row?.count || 0);
+}
+
 async function getItemsWithUsage() {
   return all(`
     SELECT
@@ -27484,6 +27521,8 @@ registerItemsModuleRoutes({
   getItemRowById,
   getGroupRowById,
   getEffectiveSchema,
+  getItemUsageCount,
+  getGroupUsageCount,
   getItemVariationTree,
   normalizePropertyKey,
   trackCreate,
