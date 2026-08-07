@@ -1,7 +1,7 @@
 # Handoff — Kernel, Borders & Module Evacuation
 
-> **Branch:** `infra/reconciler-and-borders` (11 commits ahead of `main`, pushed).
-> **State:** green — `cd backend && npm test` → **65/65**.
+> **Branch:** `infra/reconciler-and-borders` (13 commits ahead of `main`, pushed).
+> **State:** green — `cd backend && npm test` → **67/67**.
 > **Last verified:** 2026-08-07.
 >
 > Read [00-kernel-and-items-evacuation.md](00-kernel-and-items-evacuation.md) for
@@ -21,7 +21,7 @@ The monolith is being dissolved into module packages behind a thin kernel.
 | `backend/modules/` | 1,568 lines — items, challans |
 | Modules evacuated | **2 of 15** (items, challans) |
 | API routes | 188 module-claimed · 64 kernel · **15 unclaimed** |
-| Tests | 26 files, **65 tests, all passing** |
+| Tests | 27 files, **67 tests, all passing** |
 
 "Evacuated" currently means **the route registrations have moved**, not the
 domain logic. Each module's `ctx` object is the precise, enumerated measure of
@@ -76,8 +76,9 @@ Five rules the architecture is built on. They are enforced by tests, not honour.
 
 - `items/` — `contract.js` (ingress + egress declarations), `ports.js` (11 ports,
   metered), `routes.js` (18 routes).
-- `challans/` — `routes.js` (52 routes). **No contract or ports yet** — that is
-  the next increment.
+- `challans/` — `routes.js` (52 routes), `ports.js` (batch-shaped: delivered
+  quantity by order item, challan counts by vendor). **No `contract.js` yet** —
+  that is the next increment.
 
 ### Endpoints for operators (all admin-gated)
 
@@ -192,8 +193,8 @@ These are real traps, each of which has already cost real time.
 ## 7. Open work, roughly by value
 
 **Finish what's started**
-1. **Challans contract + ports.** The module has routes but no `contract.js` or
-   `ports.js`. Note challan payloads are far more polymorphic than items': nearly
+1. **Challans contract.** Ports now exist; the ingress contract does not.
+   Note challan payloads are far more polymorphic than items': nearly
    every field accepts camelCase *and* snake_case *and* falls back to the
    existing row — so almost nothing may be marked `required`, and quantities are
    strings end-to-end.
