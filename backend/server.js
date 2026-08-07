@@ -8026,26 +8026,37 @@ async function ensureDemoClientsPresent() {
 }
 
 async function getVendorRowById(id) {
-  return get(
+  // usage_count comes from challans territory, so it is asked for through the
+  // challans port and merged back onto the row — callers (display AND the
+  // in-use guards) keep seeing the exact same shape.
+  const row = await get(
     `
     SELECT
-      vendors.*,
-      (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
+      vendors.*
     FROM vendors
     WHERE vendors.id = ?
     `,
     [id],
   );
+  if (!row) return row;
+  row.usage_count = await challansPorts.usage.countForVendor(row.id);
+  return row;
 }
 
 async function getVendorsWithUsage() {
-  return all(`
+  const rows = await all(`
     SELECT
-      vendors.*,
-      (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
+      vendors.*
     FROM vendors
     ORDER BY vendors.is_archived ASC, LOWER(vendors.name) ASC, vendors.id ASC
   `);
+  // ONE batched port call for the whole list — a per-row call here would turn
+  // the vendor list into N+1.
+  const counts = await challansPorts.usage.countByVendors(rows.map((r) => r.id));
+  for (const row of rows) {
+    row.usage_count = counts.get(Number(row.id)) || 0;
+  }
+  return rows;
 }
 
 async function findVendorDuplicate({ name, gstNumber = '', excludeId = null }) {
@@ -12919,12 +12930,10 @@ async function buildClientStatementReport(input = {}) {
 }
 
 async function getOrderRowById(id) {
-  return get(`
+  // total_delivered_qty lives in challans territory: asked through the port
+  // and merged back on, so callers see the same row shape as before.
+  const row = await get(`
     SELECT o.*,
-      (SELECT SUM(dci.quantity_pcs) 
-       FROM delivery_challan_items dci 
-       JOIN delivery_challans dc ON dci.challan_id = dc.id 
-       WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
       COALESCE(
         (SELECT 
           CASE 
@@ -12941,15 +12950,14 @@ async function getOrderRowById(id) {
     FROM order_items o 
     WHERE o.id = ?
   `, [id]);
+  if (!row) return row;
+  row.total_delivered_qty = await challansPorts.delivery.qtyForOrderItem(row.id);
+  return row;
 }
 
 async function getOrders() {
-  return all(`
+  const rows = await all(`
     SELECT o.*,
-      (SELECT SUM(dci.quantity_pcs) 
-       FROM delivery_challan_items dci 
-       JOIN delivery_challans dc ON dci.challan_id = dc.id 
-       WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
       COALESCE(
         (SELECT 
           CASE 
@@ -12966,6 +12974,13 @@ async function getOrders() {
     FROM order_items o 
     ORDER BY datetime(o.created_at) DESC, o.id DESC
   `);
+  // ONE batched port call for the whole list — a per-row call here would
+  // turn the orders list into N+1.
+  const delivered = await challansPorts.delivery.qtyByOrderItems(rows.map((r) => r.id));
+  for (const row of rows) {
+    row.total_delivered_qty = delivered.get(Number(row.id)) || 0;
+  }
+  return rows;
 }
 
 const ALLOWED_PO_CONTENT_TYPES = new Set([
@@ -23590,13 +23605,9 @@ app.get('/api/vendors', requirePermission('config.read'), async (_req, res) => {
 
 app.get('/api/vendors/:id', requirePermission('config.read'), async (req, res) => {
   try {
-    const row = await get(`
-      SELECT
-        vendors.*,
-        (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
-      FROM vendors
-      WHERE id = ?
-    `, [req.params.id]);
+    // getVendorRowById already returns the row with usage_count sourced through
+    // the challans port; this route had duplicated that SQL verbatim.
+    const row = await getVendorRowById(Number(req.params.id));
     if (!row) {
       return res.status(404).json({ success: false, vendor: null, error: 'Not found' });
     }
@@ -26846,6 +26857,51 @@ registerItemsModuleRoutes({
   getIo: () => io,
 });
 
+// Challans ports: the only way non-challans code reads challans territory.
+// Batch-shaped on purpose — the queries these replace were sub-SELECTs inside
+// other modules' list statements, so a per-row port would have made them N+1.
+const { createChallansPorts, normalizeIds: challansPortIds } = require('./modules/challans/ports');
+const challansPorts = createChallansPorts({
+  qtyByOrderItems: async (orderItemIds) => {
+    const ids = challansPortIds(orderItemIds);
+    const result = new Map();
+    if (!ids.length) return result;
+    const rows = await all(
+      `
+      SELECT dci.order_item_id AS order_item_id, SUM(dci.quantity_pcs) AS qty
+      FROM delivery_challan_items dci
+      JOIN delivery_challans dc ON dci.challan_id = dc.id
+      WHERE dc.status != 'cancelled'
+        AND dci.order_item_id IN (${ids.map(() => '?').join(', ')})
+      GROUP BY dci.order_item_id
+      `,
+      ids,
+    );
+    for (const row of rows) {
+      result.set(Number(row.order_item_id), Number(row.qty || 0));
+    }
+    return result;
+  },
+  countByVendors: async (vendorIds) => {
+    const ids = challansPortIds(vendorIds);
+    const result = new Map();
+    if (!ids.length) return result;
+    const rows = await all(
+      `
+      SELECT vendor_id, COUNT(*) AS count
+      FROM delivery_challans
+      WHERE vendor_id IN (${ids.map(() => '?').join(', ')})
+      GROUP BY vendor_id
+      `,
+      ids,
+    );
+    for (const row of rows) {
+      result.set(Number(row.vendor_id), Number(row.count || 0));
+    }
+    return result;
+  },
+});
+
 // Challans module routes (evacuated to modules/challans/routes.js). Domain
 // logic still lives here in legacy and is handed over via this ctx; it shrinks
 // as the evacuation proceeds — never grows (kernel rule K2).
@@ -26908,6 +26964,9 @@ app.get("/api/kernel/territory", requireRoles('super_admin', 'admin'), async (re
       runtime: {
         items: {
           portCalls: itemsPorts.stats()
+        },
+        challans: {
+          portCalls: challansPorts.stats()
         }
       }
     });
@@ -27590,6 +27649,7 @@ module.exports = {
   getGroupsWithUsage,
   getClientsWithUsage,
   getVendorsWithUsage,
+  getVendorRowById,
   getItemsWithUsage,
   createParentWithChildren,
   getMaterialRowByBarcode,
