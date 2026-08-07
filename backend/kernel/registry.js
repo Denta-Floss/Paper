@@ -73,14 +73,25 @@ const MODULES = {
       'delivery_challan_report_groups', 'delivery_challan_activity_log',
       'challan_templates', 'challan_template_mappings', 'challan_template_upload_sessions',
       'report_groups', 'invoice_headers', 'invoice_lines',
-      'stage_reconciliations', 'reconciliation_conversion_overrides', 'reconciliation_waste_audit',
+      'reconciliation_conversion_overrides', 'reconciliation_waste_audit',
+      // piece_barcodes is written only by POST /api/challans/:id/piece-barcodes
+      // and read by getDeliveryChallanItems (plus one inventory barcode
+      // lookup). It was declared to production, which never touches it.
+      'piece_barcodes',
     ],
     evacuated: false,
   },
   production: {
     label: 'Production',
     pathSegments: ['production', 'production-runs', 'pipeline-runs', 'telemetry', 'production-scrap'],
-    tables: ['production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap', 'piece_barcodes'],
+    // stage_reconciliations holds per-run/per-node pipeline metrics: its only
+    // writers are upsertStageReconciliation/backfillStageReconciliations and
+    // its readers are getMergedNodeMetrics + the material control tower. No
+    // challans code touches it, despite it having been declared there.
+    tables: [
+      'production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap',
+      'stage_reconciliations',
+    ],
     evacuated: false,
   },
   jobs: {

@@ -128,6 +128,25 @@ test('every items port has a real implementation wired', () => {
   );
 });
 
+test('no table is claimed by two modules', () => {
+  const registry = require('../kernel/registry');
+  const owners = new Map();
+  for (const moduleKey of registry.CRUD_MODULES) {
+    for (const table of registry.MODULES[moduleKey].tables || []) {
+      if (!owners.has(table)) owners.set(table, []);
+      owners.get(table).push(moduleKey);
+    }
+  }
+  const contested = [...owners]
+    .filter(([, mods]) => mods.length > 1)
+    .map(([table, mods]) => `${table} claimed by ${mods.join(' + ')}`);
+  assert.deepEqual(
+    contested,
+    [],
+    `Every table needs exactly one owner:\n  ${contested.join('\n  ')}`,
+  );
+});
+
 test('server.js declares no module maps of its own (registry is the source)', () => {
   const source = fs.readFileSync(SERVER, 'utf8');
   // These were duplicated inline once; the duplicates silently drifted from the
