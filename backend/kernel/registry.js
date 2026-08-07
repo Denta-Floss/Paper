@@ -37,7 +37,9 @@ const OP_LABELS = {
 const MODULES = {
   orders: {
     label: 'Orders',
-    pathSegments: ['orders', 'order-items', 'order-po-uploads', 'order-po-documents'],
+    // 'order-items' was declared here but nothing serves it; a declaration that
+    // matches no route gates nothing and misleads the territory meter.
+    pathSegments: ['orders', 'order-po-uploads', 'order-po-documents'],
     recordSource: { table: 'order_items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(order_no), ''), 'Order ' || id)" },
     tables: [
       'order_headers', 'order_items', 'order_activity_log', 'order_status_history',
@@ -83,7 +85,8 @@ const MODULES = {
   },
   production: {
     label: 'Production',
-    pathSegments: ['production', 'production-runs', 'pipeline-runs', 'telemetry', 'production-scrap'],
+    // 'pipeline-runs' and 'telemetry' were declared but are served by nothing.
+    pathSegments: ['production', 'production-runs', 'production-scrap'],
     // stage_reconciliations holds per-run/per-node pipeline metrics: its only
     // writers are upsertStageReconciliation/backfillStageReconciliations and
     // its readers are getMergedNodeMetrics + the material control tower. No
@@ -99,7 +102,7 @@ const MODULES = {
     // The routes actually answer at /api/freelancer-jobs; declaring only
     // 'jobs' (which nothing serves) left all five of them unclaimed by the
     // central gate, so the jobs.* CRUD keys could never gate anything.
-    pathSegments: ['jobs', 'freelancer-jobs'],
+    pathSegments: ['freelancer-jobs'],
     tables: ['freelancer_jobs', 'freelancer_job_batches', 'freelancer_job_tasks'],
     evacuated: false,
   },
