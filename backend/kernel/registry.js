@@ -61,7 +61,7 @@ const MODULES = {
       'inventory_stock_positions', 'inventory_sets', 'inventory_set_lines',
       'scan_history',
     ],
-    evacuated: false,
+    evacuated: true,
   },
   challans: {
     label: 'Delivery Challans',
