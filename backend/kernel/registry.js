@@ -95,7 +95,7 @@ const MODULES = {
       'production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap',
       'stage_reconciliations',
     ],
-    evacuated: false,
+    evacuated: true,
   },
   jobs: {
     label: 'Jobs',

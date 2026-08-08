@@ -22237,23 +22237,111 @@ async function countPipelineRunsForTemplate(templateId) {
   return get('SELECT COUNT(*) as count FROM pipeline_runs WHERE template_id = ?', [templateId]);
 }
 
-app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
-  try {
-    const runs = await listCompletedProductionRuns({
-      search: req.query.search || req.query.q || '',
-      limit: req.query.limit || 25,
-    });
-    res.json({ success: true, data: runs, productionRuns: runs, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      data: [],
-      productionRuns: [],
-      message: error.message,
-      error: error.message,
-    });
+async function recordProductionScrap({
+  pipelineRunId,
+  nodeId,
+  orderNo,
+  materialBarcode,
+  scrapQty,
+  scrapItemId,
+  scrapItemName,
+  req,
+}) {
+  // First log to legacy production_scrap table
+  await run(`
+    INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
+
+  // Check pipeline for targeted scrap routing group
+  const runRow = await get('SELECT scrap_routing FROM pipeline_runs WHERE id = ?', [pipelineRunId]);
+  const scrapRoutingGroupId = runRow?.scrap_routing && runRow.scrap_routing !== 'inventory' ? runRow.scrap_routing : null;
+
+  // Bridge to actual inventory. The stage's chosen Scrap-group item (set in
+  // the pipeline builder) wins: the lot is linked to that item and named per
+  // order, so each order's scrap shows as its own entry under the item.
+  // Without a scrap item we fall back to the legacy source-material link.
+  let scrapItem = null;
+  if (scrapItemId) {
+    scrapItem = await get(`
+        SELECT i.id, i.name, i.display_name, i.unit_id, u.symbol AS unit_symbol
+        FROM items i
+        LEFT JOIN units u ON u.id = i.unit_id
+        WHERE i.id = ?
+      `, [Number(scrapItemId)]);
+  } else if (scrapItemName) {
+    scrapItem = await itemsPorts.lookupByName(scrapItemName);
+    if (scrapItem) {
+      const unit = await get('SELECT symbol FROM units WHERE id = ?', [scrapItem.unit_id]);
+      scrapItem.unit_symbol = unit?.symbol;
+    }
   }
-});
+  const sourceMaterial = await getMaterialRowByBarcode(materialBarcode);
+  if ((scrapItem || sourceMaterial) && Number(scrapQty) > 0) {
+    const actor = actorFromRequest(req);
+    const newLotBarcode = `LOT-SCRAP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const lotName = scrapItem
+      ? `${scrapItemName || scrapItem.display_name || scrapItem.name} - ${orderNo || pipelineRunId}`
+      : `Scrap - ${sourceMaterial.name}`;
+    const lotUnit = sourceMaterial?.unit || scrapItem?.unit_symbol || 'pcs';
+
+    await run(`
+      INSERT INTO materials (
+        barcode, name, type, kind, group_mode,
+        linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+        unit, unit_id, inventory_state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      newLotBarcode,
+      lotName,
+      sourceMaterial?.type ?? 'Scrap',
+      'lot',
+      'tracked',
+      scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
+      scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
+      scrapItem ? null : sourceMaterial.linked_variation_leaf_node_id,
+      lotUnit,
+      sourceMaterial?.unit_id ?? scrapItem?.unit_id ?? null,
+      'available',
+      new Date().toISOString()
+    ]);
+
+    await applyInventoryMovementCore({
+      barcode: newLotBarcode,
+      movementType: 'receive',
+      qty: Number(scrapQty),
+      primaryQty: Number(scrapQty),
+      uom: lotUnit,
+      toLocationId: 'SCRAP-BIN',
+      reasonCode: 'production_scrap',
+      referenceType: 'pipeline_scrap',
+      referenceId: pipelineRunId,
+      actor: actor?.id || null,
+      lotCode: newLotBarcode,
+    }, { useTransaction: false });
+
+    // Auto-generate internal challan for scrap so it appears in Ledger
+    const challanNo = await generateChallanNumber('internal');
+    const challanRes = await run(
+      `INSERT INTO delivery_challans (
+        type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'internal', challanNo, new Date().toISOString(), 'MAIN', `Scrap/Run ${pipelineRunId}/Node ${nodeId}`, 'completed', 0, 'manufacturing', 'scrap', new Date().toISOString(), new Date().toISOString()
+      ]
+    );
+    
+    const challanId = challanRes.lastID;
+    await run(
+      `INSERT INTO delivery_challan_items (
+        challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        challanId, scrapItem ? scrapItem.id : sourceMaterial.linked_item_id, Number(scrapQty), Number(scrapQty), 1, new Date().toISOString(), new Date().toISOString()
+      ]
+    );
+  }
+}
 
 const handlePrintChallan = async (req, res) => {
   try {
@@ -23363,134 +23451,7 @@ app.put('/runs/:id/batches', async (req, res) => {
   }
 });
 
-app.post('/api/production-scrap', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, scrapItemId, scrapItemName } = req.body;
-    if (!pipelineRunId || !nodeId || !materialBarcode) {
-      return res.status(400).json({ success: false, error: 'pipelineRunId, nodeId, and materialBarcode are required.' });
-    }
 
-    // First log to legacy production_scrap table
-    await run(`
-      INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
-
-    // Check pipeline for targeted scrap routing group
-    const runRow = await get('SELECT scrap_routing FROM pipeline_runs WHERE id = ?', [pipelineRunId]);
-    const scrapRoutingGroupId = runRow?.scrap_routing && runRow.scrap_routing !== 'inventory' ? runRow.scrap_routing : null;
-
-    // Bridge to actual inventory. The stage's chosen Scrap-group item (set in
-    // the pipeline builder) wins: the lot is linked to that item and named per
-    // order, so each order's scrap shows as its own entry under the item.
-    // Without a scrap item we fall back to the legacy source-material link.
-    let scrapItem = null;
-    if (scrapItemId) {
-      scrapItem = await get(`
-          SELECT i.id, i.name, i.display_name, i.unit_id, u.symbol AS unit_symbol
-          FROM items i
-          LEFT JOIN units u ON u.id = i.unit_id
-          WHERE i.id = ?
-        `, [Number(scrapItemId)]);
-    } else if (scrapItemName) {
-      scrapItem = await itemsPorts.lookupByName(scrapItemName);
-      if (scrapItem) {
-        const unit = await get('SELECT symbol FROM units WHERE id = ?', [scrapItem.unit_id]);
-        scrapItem.unit_symbol = unit?.symbol;
-      }
-    }
-    const sourceMaterial = await getMaterialRowByBarcode(materialBarcode);
-    if ((scrapItem || sourceMaterial) && Number(scrapQty) > 0) {
-      const actor = actorFromRequest(req);
-      const newLotBarcode = `LOT-SCRAP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const lotName = scrapItem
-        ? `${scrapItemName || scrapItem.display_name || scrapItem.name} - ${orderNo || pipelineRunId}`
-        : `Scrap - ${sourceMaterial.name}`;
-      const lotUnit = sourceMaterial?.unit || scrapItem?.unit_symbol || 'pcs';
-
-      await run(`
-        INSERT INTO materials (
-          barcode, name, type, kind, group_mode,
-          linked_group_id, linked_item_id, linked_variation_leaf_node_id,
-          unit, unit_id, inventory_state, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        newLotBarcode,
-        lotName,
-        sourceMaterial?.type ?? 'Scrap',
-        'lot',
-        'tracked',
-        scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
-        scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
-        scrapItem ? null : sourceMaterial.linked_variation_leaf_node_id,
-        lotUnit,
-        sourceMaterial?.unit_id ?? scrapItem?.unit_id ?? null,
-        'available',
-        new Date().toISOString()
-      ]);
-
-      await applyInventoryMovementCore({
-        barcode: newLotBarcode,
-        movementType: 'receive',
-        qty: Number(scrapQty),
-        primaryQty: Number(scrapQty),
-        uom: lotUnit,
-        toLocationId: 'SCRAP-BIN',
-        reasonCode: 'production_scrap',
-        referenceType: 'pipeline_scrap',
-        referenceId: pipelineRunId,
-        actor: actor?.id || null,
-        lotCode: newLotBarcode,
-      }, { useTransaction: false });
-
-      // Auto-generate internal challan for scrap so it appears in Ledger
-      const challanNo = await generateChallanNumber('internal');
-      const challanRes = await run(
-        `INSERT INTO delivery_challans (
-          type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          'internal', challanNo, new Date().toISOString(), 'MAIN', `Scrap/Run ${pipelineRunId}/Node ${nodeId}`, 'completed', 0, 'manufacturing', 'scrap', new Date().toISOString(), new Date().toISOString()
-        ]
-      );
-      
-      const challanId = challanRes.lastID;
-      await run(
-        `INSERT INTO delivery_challan_items (
-          challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          challanId, scrapItem ? scrapItem.id : sourceMaterial.linked_item_id, Number(scrapQty), Number(scrapQty), 1, new Date().toISOString(), new Date().toISOString()
-        ]
-      );
-    }
-
-    res.status(201).json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/production-scrap', requirePermission('config.read'), async (req, res) => {
-  try {
-    const { pipelineRunId, nodeId } = req.query;
-    let query = 'SELECT * FROM production_scrap WHERE 1=1';
-    const params = [];
-    if (pipelineRunId) {
-      query += ' AND pipeline_run_id = ?';
-      params.push(pipelineRunId);
-    }
-    if (nodeId) {
-      query += ' AND node_id = ?';
-      params.push(nodeId);
-    }
-    query += ' ORDER BY created_at DESC';
-    const rows = await all(query, params);
-    res.json({ success: true, data: rows });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 
 // ── SANDBOX CONTROL PLANE ROUTES ──
@@ -25185,6 +25146,17 @@ registerPipelinesModuleRoutes({
   trackUpdate,
   trackDelete,
   countPipelineRunsForTemplate,
+});
+
+const registerProductionModuleRoutes = require('./modules/production/routes');
+registerProductionModuleRoutes({
+  app,
+  requirePermission,
+  get,
+  all,
+  run,
+  listCompletedProductionRuns,
+  recordProductionScrap,
 });
 
 const { computeTerritory } = require("./kernel/territory");
