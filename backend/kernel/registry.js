@@ -123,7 +123,7 @@ const MODULES = {
     // authenticated user could read salary data.
     sensitive: true,
     tables: ['payroll_components', 'payroll_runs', 'payroll_run_details'],
-    evacuated: false,
+    evacuated: true,
   },
   // Masters sub-entities (grouped under "Masters" in the UI tree):
   people: {
