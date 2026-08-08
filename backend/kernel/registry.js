@@ -151,7 +151,7 @@ const MODULES = {
     recordSource: { table: 'vendors', idCol: 'id', label: 'name' },
     trackTables: { vendors: 'Vendor' },
     tables: ['vendors'],
-    evacuated: false,
+    evacuated: true,
   },
   items: {
     label: 'Items',
