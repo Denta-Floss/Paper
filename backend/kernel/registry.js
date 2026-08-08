@@ -110,7 +110,7 @@ const MODULES = {
     label: 'Action Center',
     pathSegments: ['action-center', 'trash'],
     tables: ['delete_requests', 'deleted_records'],
-    evacuated: false,
+    evacuated: true,
   },
   payroll: {
     label: 'Payroll',

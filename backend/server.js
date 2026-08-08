@@ -8123,6 +8123,176 @@ async function getVendorPurchaseHistory(vendorId) {
   `, [Number(vendorId || 0)]);
 }
 
+async function approveDeleteRequestEntity(reqRow, req) {
+  if (reqRow.entity_type === 'material') {
+    await deleteMaterialRecord(reqRow.entity_id);
+  } else if (reqRow.entity_type === 'item') {
+    await itemsPorts.delete('item', reqRow.entity_id, req);
+  } else if (reqRow.entity_type === 'asset') {
+    await deleteAsset(reqRow.entity_id);
+  } else if (reqRow.entity_type === 'group') {
+    await itemsPorts.delete('group', reqRow.entity_id, req);
+  } else if (reqRow.entity_type === 'vendor') {
+    await run('DELETE FROM vendors WHERE id = ?', [reqRow.entity_id]);
+  } else if (reqRow.entity_type === 'inventory_set') {
+    await deleteInventorySet(reqRow.entity_id);
+  } else if (reqRow.entity_type === 'challan_template') {
+    await deleteChallanTemplate(reqRow.entity_id);
+  } else if (reqRow.entity_type === 'machine') {
+    await run('DELETE FROM machines WHERE id = ?', [reqRow.entity_id]);
+  } else if (reqRow.entity_type === 'die') {
+    await run('DELETE FROM dies WHERE id = ?', [reqRow.entity_id]);
+  } else if (reqRow.entity_type === 'user') {
+    await run('DELETE FROM users WHERE id = ?', [reqRow.entity_id]);
+  }
+}
+
+async function restoreTrashedRecord(tableName, recordId) {
+  if (!RESTORABLE_TABLES.has(tableName)) {
+    return { success: false, statusCode: 400, error: `Table "${tableName}" is not restorable.` };
+  }
+
+  const rec = await get(
+    `SELECT * FROM deleted_records WHERE table_name = ? AND record_id = ? ORDER BY id DESC LIMIT 1`,
+    [tableName, recordId]
+  );
+  if (!rec) {
+    return { success: false, statusCode: 404, error: 'No trashed record found for that table and id.' };
+  }
+
+  // Never clobber a live row that already occupies this id.
+  const live = await get(`SELECT id FROM ${tableName} WHERE id = ?`, [recordId]);
+  if (live) {
+    return { success: false, statusCode: 409, error: `A live ${tableName} record with id ${recordId} already exists.` };
+  }
+
+  let data;
+  try {
+    data = JSON.parse(rec.data_json);
+  } catch (_) {
+    return { success: false, statusCode: 422, error: 'Trashed record data is corrupt and cannot be restored.' };
+  }
+  const cols = Object.keys(data || {});
+  if (cols.length === 0) {
+    return { success: false, statusCode: 422, error: 'Trashed record has no columns to restore.' };
+  }
+  const colList = cols.map((c) => `"${c}"`).join(', ');
+  const placeholders = cols.map(() => '?').join(', ');
+  const values = cols.map((c) => data[c]);
+
+  // Insert on the dedicated FK-off connection so a row can be restored even
+  // while some of its own references are still missing (they resurface in the
+  // Action Center) without touching FK enforcement on the main connection.
+  try {
+    await runOnDelete(`INSERT INTO ${tableName} (${colList}) VALUES (${placeholders})`, values);
+  } catch (insertErr) {
+    const msg = String((insertErr && insertErr.message) || insertErr);
+    if (/UNIQUE constraint/i.test(msg)) {
+      return { success: false, statusCode: 409, error: `Cannot restore: it conflicts with an existing record. (${msg})` };
+    }
+    if (/no column named|has no column/i.test(msg)) {
+      return { success: false, statusCode: 422, error: `Cannot restore: this table's structure changed since the record was deleted. (${msg})` };
+    }
+    return { success: false, statusCode: 422, error: `Restore failed: ${msg}` };
+  }
+
+  // Remove every trash entry for this record (there may be more than one).
+  await run(`DELETE FROM deleted_records WHERE table_name = ? AND record_id = ?`, [tableName, recordId]);
+
+  await logChange(tableName, recordId, 'INSERT');
+  return { success: true };
+}
+
+async function scanActionCenterIssues() {
+  const issues = [];
+  const scanErrors = [];
+
+  function addIssue({ severity, ownerTable, ownerId, ownerLabel, brokenTable, brokenField, brokenId, brokenLabel }) {
+    issues.push({
+      type: 'broken_reference',
+      severity,
+      ownerTable,
+      ownerId,
+      ownerLabel,
+      brokenTable,
+      brokenField,
+      brokenId,
+      brokenLabel,
+    });
+  }
+
+  async function scan(label, fn) {
+    try {
+      await fn();
+    } catch (err) {
+      scanErrors.push({ scan: label, error: err.message });
+      console.error(`[ActionCenter] scan "${label}" failed:`, err.message);
+    }
+  }
+
+  // Items → groups
+  await scan('items.group_id', async () => {
+    const rows = await all(`SELECT i.id, i.name, i.display_name, i.group_id FROM items i LEFT JOIN groups g ON g.id = i.group_id WHERE i.group_id IS NOT NULL AND g.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'items', ownerId: r.id, ownerLabel: r.display_name || r.name || `Item #${r.id}`, brokenTable: 'groups', brokenField: 'group_id', brokenId: r.group_id, brokenLabel: `Group #${r.group_id}` });
+  });
+
+  // Items → units
+  await scan('items.unit_id', async () => {
+    const rows = await all(`SELECT i.id, i.name, i.display_name, i.unit_id FROM items i LEFT JOIN units u ON u.id = i.unit_id WHERE i.unit_id IS NOT NULL AND u.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'items', ownerId: r.id, ownerLabel: r.display_name || r.name || `Item #${r.id}`, brokenTable: 'units', brokenField: 'unit_id', brokenId: r.unit_id, brokenLabel: `Unit #${r.unit_id}` });
+  });
+
+  // Groups → parent group
+  await scan('groups.parent_group_id', async () => {
+    const rows = await all(`SELECT g.id, g.name, g.parent_group_id FROM groups g LEFT JOIN groups p ON p.id = g.parent_group_id WHERE g.parent_group_id IS NOT NULL AND p.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'groups', ownerId: r.id, ownerLabel: r.name || `Group #${r.id}`, brokenTable: 'groups', brokenField: 'parent_group_id', brokenId: r.parent_group_id, brokenLabel: `Group #${r.parent_group_id}` });
+  });
+
+  // Groups → units
+  await scan('groups.unit_id', async () => {
+    const rows = await all(`SELECT g.id, g.name, g.unit_id FROM groups g LEFT JOIN units u ON u.id = g.unit_id WHERE g.unit_id IS NOT NULL AND u.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'groups', ownerId: r.id, ownerLabel: r.name || `Group #${r.id}`, brokenTable: 'units', brokenField: 'unit_id', brokenId: r.unit_id, brokenLabel: `Unit #${r.unit_id}` });
+  });
+
+  // Order lines → client
+  await scan('order_items.client_id', async () => {
+    const rows = await all(`SELECT oi.id, oi.order_no, oi.client_id FROM order_items oi LEFT JOIN clients c ON c.id = oi.client_id WHERE oi.client_id IS NOT NULL AND c.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'clients', brokenField: 'client_id', brokenId: r.client_id, brokenLabel: `Client #${r.client_id}` });
+  });
+
+  // Order lines → item
+  await scan('order_items.item_id', async () => {
+    const rows = await all(`SELECT oi.id, oi.order_no, oi.item_id FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.item_id IS NOT NULL AND i.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'items', brokenField: 'item_id', brokenId: r.item_id, brokenLabel: `Item #${r.item_id}` });
+  });
+
+  // Order lines → sub-contractor
+  await scan('order_items.sub_contractor_id', async () => {
+    const rows = await all(`SELECT oi.id, oi.order_no, oi.sub_contractor_id FROM order_items oi LEFT JOIN sub_contractors s ON s.id = oi.sub_contractor_id WHERE oi.sub_contractor_id IS NOT NULL AND s.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'sub_contractors', brokenField: 'sub_contractor_id', brokenId: r.sub_contractor_id, brokenLabel: `Sub-contractor #${r.sub_contractor_id}` });
+  });
+
+  // Delivery challans → material-owner client
+  await scan('delivery_challans.material_owner_client_id', async () => {
+    const rows = await all(`SELECT dc.id, dc.challan_no, dc.material_owner_client_id FROM delivery_challans dc LEFT JOIN clients c ON c.id = dc.material_owner_client_id WHERE dc.material_owner_client_id IS NOT NULL AND c.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'delivery_challans', ownerId: r.id, ownerLabel: r.challan_no ? `Challan ${r.challan_no}` : `Challan #${r.id}`, brokenTable: 'clients', brokenField: 'material_owner_client_id', brokenId: r.material_owner_client_id, brokenLabel: `Client #${r.material_owner_client_id}` });
+  });
+
+  // Delivery challans → vendor
+  await scan('delivery_challans.vendor_id', async () => {
+    const rows = await all(`SELECT dc.id, dc.challan_no, dc.vendor_id FROM delivery_challans dc LEFT JOIN vendors v ON v.id = dc.vendor_id WHERE dc.vendor_id IS NOT NULL AND v.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'delivery_challans', ownerId: r.id, ownerLabel: r.challan_no ? `Challan ${r.challan_no}` : `Challan #${r.id}`, brokenTable: 'vendors', brokenField: 'vendor_id', brokenId: r.vendor_id, brokenLabel: `Vendor #${r.vendor_id}` });
+  });
+
+  // Inventory movements → item
+  await scan('inventory_movements.item_id', async () => {
+    const rows = await all(`SELECT m.id, m.item_id, m.movement_type FROM inventory_movements m LEFT JOIN items i ON i.id = m.item_id WHERE m.item_id IS NOT NULL AND i.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'inventory_movements', ownerId: r.id, ownerLabel: `${r.movement_type || 'Movement'} #${r.id}`, brokenTable: 'items', brokenField: 'item_id', brokenId: r.item_id, brokenLabel: `Item #${r.item_id}` });
+  });
+
+  return { issues, scanErrors };
+}
+
 async function getOrderPipelineRuns(orderNo) {
   const rows = await all(`
     SELECT pr.*
@@ -20873,181 +21043,7 @@ app.patch('/api/users/:id/status', requirePermission('users.update_status'), asy
   }
 });
 
-app.get('/api/delete-requests', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const status = String(req.query.status || '').trim();
-    const whereClauses = [];
-    const params = [];
-    if (status && ['pending', 'approved', 'rejected'].includes(status)) {
-      whereClauses.push('status = ?');
-      params.push(status);
-    }
-    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
-    const countRow = await get(`SELECT COUNT(*) as count FROM delete_requests ${whereSql}`, params);
-    const total = Number(countRow?.count || 0);
-    const rows = await all(`SELECT * FROM delete_requests ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
 
-    res.json({
-      success: true,
-      requests: rows.map(r => ({
-        id: r.id,
-        entityType: r.entity_type,
-        entityId: r.entity_id,
-        entityLabel: r.entity_label,
-        reason: r.reason,
-        status: r.status,
-        requestedByUserId: r.requested_by_user_id,
-        reviewedByUserId: r.reviewed_by_user_id,
-        reviewedAt: r.reviewed_at,
-        reviewedNote: r.reviewed_note,
-        createdAt: r.created_at
-      })),
-      total
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/delete-requests', requireAuth, async (req, res) => {
-  try {
-    const { entityType, entityId, entityLabel, reason } = req.body;
-    if (!entityType || !entityId) {
-       return res.status(400).json({ success: false, error: 'entityType and entityId are required.' });
-    }
-    const insertResult = await run(
-      `INSERT INTO delete_requests (entity_type, entity_id, entity_label, reason, status, requested_by_user_id, created_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-      [entityType, entityId, entityLabel || '', reason || '', req.user.id, new Date().toISOString()]
-    );
-    const r = await get(`SELECT * FROM delete_requests WHERE id = ?`, [insertResult.lastID]);
-    res.status(201).json({
-      success: true,
-      request: {
-        id: r.id,
-        entityType: r.entity_type,
-        entityId: r.entity_id,
-        entityLabel: r.entity_label,
-        reason: r.reason,
-        status: r.status,
-        requestedByUserId: r.requested_by_user_id,
-        reviewedByUserId: r.reviewed_by_user_id,
-        reviewedAt: r.reviewed_at,
-        reviewedNote: r.reviewed_note,
-        createdAt: r.created_at
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/delete-requests/:id/approve', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const reqRow = await get('SELECT * FROM delete_requests WHERE id = ?', [id]);
-    if (!reqRow) return res.status(404).json({ success: false, error: 'Not found' });
-    if (reqRow.status !== 'pending') return res.status(400).json({ success: false, error: 'Request is not pending.' });
-
-    if (reqRow.entity_type === 'material') {
-      await deleteMaterialRecord(reqRow.entity_id);
-    } else if (reqRow.entity_type === 'item') {
-      await itemsPorts.delete('item', reqRow.entity_id, req);
-    } else if (reqRow.entity_type === 'asset') {
-      await deleteAsset(reqRow.entity_id);
-    } else if (reqRow.entity_type === 'group') {
-      await itemsPorts.delete('group', reqRow.entity_id, req);
-    } else if (reqRow.entity_type === 'vendor') {
-      await run('DELETE FROM vendors WHERE id = ?', [reqRow.entity_id]);
-    } else if (reqRow.entity_type === 'inventory_set') {
-      await deleteInventorySet(reqRow.entity_id);
-    } else if (reqRow.entity_type === 'challan_template') {
-      await deleteChallanTemplate(reqRow.entity_id);
-    } else if (reqRow.entity_type === 'machine') {
-      await run('DELETE FROM machines WHERE id = ?', [reqRow.entity_id]);
-    } else if (reqRow.entity_type === 'die') {
-      await run('DELETE FROM dies WHERE id = ?', [reqRow.entity_id]);
-    } else if (reqRow.entity_type === 'user') {
-      await run('DELETE FROM users WHERE id = ?', [reqRow.entity_id]);
-    }
-
-    const note = req.body?.note || '';
-    const now = new Date().toISOString();
-    await run(
-      `UPDATE delete_requests SET status = 'approved', reviewed_by_user_id = ?, reviewed_at = ?, reviewed_note = ? WHERE id = ?`,
-      [req.user.id, now, note, id]
-    );
-    const r = await get('SELECT * FROM delete_requests WHERE id = ?', [id]);
-
-    res.json({
-      success: true,
-      request: {
-        id: r.id,
-        entityType: r.entity_type,
-        entityId: r.entity_id,
-        entityLabel: r.entity_label,
-        reason: r.reason,
-        status: r.status,
-        requestedByUserId: r.requested_by_user_id,
-        reviewedByUserId: r.reviewed_by_user_id,
-        reviewedAt: r.reviewed_at,
-        reviewedNote: r.reviewed_note,
-        createdAt: r.created_at
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/delete-requests/:id/reject', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const reqRow = await get('SELECT * FROM delete_requests WHERE id = ?', [id]);
-    if (!reqRow) return res.status(404).json({ success: false, error: 'Not found' });
-    if (reqRow.status !== 'pending') return res.status(400).json({ success: false, error: 'Request is not pending.' });
-
-    const note = req.body?.note || '';
-    const now = new Date().toISOString();
-    await run(
-      `UPDATE delete_requests SET status = 'rejected', reviewed_by_user_id = ?, reviewed_at = ?, reviewed_note = ? WHERE id = ?`,
-      [req.user.id, now, note, id]
-    );
-    const r = await get('SELECT * FROM delete_requests WHERE id = ?', [id]);
-
-    res.json({
-      success: true,
-      request: {
-        id: r.id,
-        entityType: r.entity_type,
-        entityId: r.entity_id,
-        entityLabel: r.entity_label,
-        reason: r.reason,
-        status: r.status,
-        requestedByUserId: r.requested_by_user_id,
-        reviewedByUserId: r.reviewed_by_user_id,
-        reviewedAt: r.reviewed_at,
-        reviewedNote: r.reviewed_note,
-        createdAt: r.created_at
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/delete-requests/export', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const rows = await all(`SELECT * FROM delete_requests ORDER BY created_at DESC`);
-    const csvHeader = 'id,entityType,entityId,entityLabel,status,createdAt,reviewedAt\n';
-    const csvBody = rows.map(r => `${r.id},${r.entity_type},${r.entity_id},${r.entity_label},${r.status},${r.created_at},${r.reviewed_at || ''}`).join('\n');
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="delete_requests_export.csv"');
-    res.send(csvHeader + csvBody);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 function machineRowToDto(r) {
   return {
@@ -25412,6 +25408,20 @@ registerJobsModuleRoutes({
   createFreelancerJobWithTasks,
 });
 
+const registerActionCenterModuleRoutes = require('./modules/action_center/routes');
+registerActionCenterModuleRoutes({
+  app,
+  requirePermission,
+  requireAuth,
+  get,
+  all,
+  run,
+  parsePagination,
+  approveDeleteRequestEntity,
+  restoreTrashedRecord,
+  scanActionCenterIssues,
+});
+
 const { computeTerritory } = require("./kernel/territory");
 // Kernel introspection is infrastructure, not business data: it exposes the
 // deployment's internal shape, so it is admin-gated rather than merely
@@ -25781,213 +25791,7 @@ const RESTORABLE_TABLES = new Set([
   'item_variations', 'item_variation_nodes', 'item_unit_conversions', 'uploaded_assets',
 ]);
 
-// GET /api/trash — list trashed records (most recent first), optionally filtered by table.
-app.get('/api/trash', requirePermission('config.read'), async (req, res) => {
-  try {
-    const { tableName } = req.query;
-    const params = [];
-    let where = '';
-    if (tableName) {
-      where = 'WHERE table_name = ?';
-      params.push(String(tableName));
-    }
-    const rows = await all(
-      `SELECT id, table_name, record_id, data_json, deleted_at, deleted_by
-       FROM deleted_records ${where} ORDER BY id DESC LIMIT 500`,
-      params
-    );
-    const records = rows.map((r) => {
-      let data = null;
-      try {
-        data = JSON.parse(r.data_json);
-      } catch (_) {
-        data = null;
-      }
-      return {
-        id: r.id,
-        tableName: r.table_name,
-        recordId: r.record_id,
-        deletedAt: r.deleted_at,
-        deletedBy: r.deleted_by,
-        label: (data && (data.display_name || data.name || data.challan_no)) || `${r.table_name} #${r.record_id}`,
-        data,
-      };
-    });
-    res.json({ success: true, records, total: records.length, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, records: [], total: 0, error: error.message });
-  }
-});
 
-// POST /api/trash/restore — re-insert a trashed row (original id preserved) and
-// remove it from the trash. Uses a plain INSERT (never OR REPLACE) so a live row
-// is never silently clobbered; FK checks are skipped so a row can be restored even
-// if some of its own references are still missing (those resurface in Action Center).
-app.post('/api/trash/restore', requirePermission('config.write'), async (req, res) => {
-  try {
-    const tableName = String(req.body?.tableName || '');
-    const recordId = Number(req.body?.recordId);
-    if (!tableName || !Number.isFinite(recordId)) {
-      return res.status(400).json({ success: false, error: 'tableName and recordId are required.' });
-    }
-    if (!RESTORABLE_TABLES.has(tableName)) {
-      return res.status(400).json({ success: false, error: `Table "${tableName}" is not restorable.` });
-    }
-
-    const rec = await get(
-      `SELECT * FROM deleted_records WHERE table_name = ? AND record_id = ? ORDER BY id DESC LIMIT 1`,
-      [tableName, recordId]
-    );
-    if (!rec) {
-      return res.status(404).json({ success: false, error: 'No trashed record found for that table and id.' });
-    }
-
-    // Never clobber a live row that already occupies this id.
-    const live = await get(`SELECT id FROM ${tableName} WHERE id = ?`, [recordId]);
-    if (live) {
-      return res.status(409).json({ success: false, error: `A live ${tableName} record with id ${recordId} already exists.` });
-    }
-
-    let data;
-    try {
-      data = JSON.parse(rec.data_json);
-    } catch (_) {
-      return res.status(422).json({ success: false, error: 'Trashed record data is corrupt and cannot be restored.' });
-    }
-    const cols = Object.keys(data || {});
-    if (cols.length === 0) {
-      return res.status(422).json({ success: false, error: 'Trashed record has no columns to restore.' });
-    }
-    const colList = cols.map((c) => `"${c}"`).join(', ');
-    const placeholders = cols.map(() => '?').join(', ');
-    const values = cols.map((c) => data[c]);
-
-    // Insert on the dedicated FK-off connection so a row can be restored even
-    // while some of its own references are still missing (they resurface in the
-    // Action Center) without touching FK enforcement on the main connection.
-    try {
-      await runOnDelete(`INSERT INTO ${tableName} (${colList}) VALUES (${placeholders})`, values);
-    } catch (insertErr) {
-      const msg = String((insertErr && insertErr.message) || insertErr);
-      // Turn the common recoverable failures into clean 4xx responses instead of
-      // a raw 500: a non-PK UNIQUE collision, or a column that no longer exists
-      // because a migration changed the table since the row was trashed.
-      if (/UNIQUE constraint/i.test(msg)) {
-        return res.status(409).json({ success: false, error: `Cannot restore: it conflicts with an existing record. (${msg})` });
-      }
-      if (/no column named|has no column/i.test(msg)) {
-        return res.status(422).json({ success: false, error: `Cannot restore: this table's structure changed since the record was deleted. (${msg})` });
-      }
-      return res.status(422).json({ success: false, error: `Restore failed: ${msg}` });
-    }
-
-    // Remove every trash entry for this record (there may be more than one).
-    await run(`DELETE FROM deleted_records WHERE table_name = ? AND record_id = ?`, [tableName, recordId]);
-
-    await logChange(tableName, recordId, 'INSERT');
-
-    res.json({ success: true, restored: { tableName, recordId }, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ─── ACTION CENTER ─────────────────────────────────────────────────────────────
-// Scans for broken foreign-key references caused by hard-deletes and returns a
-// structured list of issues the user can resolve.
-app.get('/api/action-center/issues', requirePermission('config.read'), async (req, res) => {
-  const issues = [];
-  const scanErrors = [];
-
-  // ownerTable/ownerId → the record holding the dangling reference (drives "Resolve").
-  // brokenTable/brokenId → the missing target row (drives "Revert" = restore from trash).
-  function addIssue({ severity, ownerTable, ownerId, ownerLabel, brokenTable, brokenField, brokenId, brokenLabel }) {
-    issues.push({
-      type: 'broken_reference',
-      severity,
-      ownerTable,
-      ownerId,
-      ownerLabel,
-      brokenTable,
-      brokenField,
-      brokenId,
-      brokenLabel,
-    });
-  }
-
-  // Each scan runs in isolation so one failing query (e.g. a table absent on an
-  // older DB) records an error but never aborts the remaining scans.
-  async function scan(label, fn) {
-    try {
-      await fn();
-    } catch (err) {
-      scanErrors.push({ scan: label, error: err.message });
-      console.error(`[ActionCenter] scan "${label}" failed:`, err.message);
-    }
-  }
-
-  // Items → groups
-  await scan('items.group_id', async () => {
-    const rows = await all(`SELECT i.id, i.name, i.display_name, i.group_id FROM items i LEFT JOIN groups g ON g.id = i.group_id WHERE i.group_id IS NOT NULL AND g.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'items', ownerId: r.id, ownerLabel: r.display_name || r.name || `Item #${r.id}`, brokenTable: 'groups', brokenField: 'group_id', brokenId: r.group_id, brokenLabel: `Group #${r.group_id}` });
-  });
-
-  // Items → units
-  await scan('items.unit_id', async () => {
-    const rows = await all(`SELECT i.id, i.name, i.display_name, i.unit_id FROM items i LEFT JOIN units u ON u.id = i.unit_id WHERE i.unit_id IS NOT NULL AND u.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'items', ownerId: r.id, ownerLabel: r.display_name || r.name || `Item #${r.id}`, brokenTable: 'units', brokenField: 'unit_id', brokenId: r.unit_id, brokenLabel: `Unit #${r.unit_id}` });
-  });
-
-  // Groups → parent group
-  await scan('groups.parent_group_id', async () => {
-    const rows = await all(`SELECT g.id, g.name, g.parent_group_id FROM groups g LEFT JOIN groups p ON p.id = g.parent_group_id WHERE g.parent_group_id IS NOT NULL AND p.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'groups', ownerId: r.id, ownerLabel: r.name || `Group #${r.id}`, brokenTable: 'groups', brokenField: 'parent_group_id', brokenId: r.parent_group_id, brokenLabel: `Group #${r.parent_group_id}` });
-  });
-
-  // Groups → units
-  await scan('groups.unit_id', async () => {
-    const rows = await all(`SELECT g.id, g.name, g.unit_id FROM groups g LEFT JOIN units u ON u.id = g.unit_id WHERE g.unit_id IS NOT NULL AND u.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'groups', ownerId: r.id, ownerLabel: r.name || `Group #${r.id}`, brokenTable: 'units', brokenField: 'unit_id', brokenId: r.unit_id, brokenLabel: `Unit #${r.unit_id}` });
-  });
-
-  // Order lines → client
-  await scan('order_items.client_id', async () => {
-    const rows = await all(`SELECT oi.id, oi.order_no, oi.client_id FROM order_items oi LEFT JOIN clients c ON c.id = oi.client_id WHERE oi.client_id IS NOT NULL AND c.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'clients', brokenField: 'client_id', brokenId: r.client_id, brokenLabel: `Client #${r.client_id}` });
-  });
-
-  // Order lines → item
-  await scan('order_items.item_id', async () => {
-    const rows = await all(`SELECT oi.id, oi.order_no, oi.item_id FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.item_id IS NOT NULL AND i.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'items', brokenField: 'item_id', brokenId: r.item_id, brokenLabel: `Item #${r.item_id}` });
-  });
-
-  // Order lines → sub-contractor
-  await scan('order_items.sub_contractor_id', async () => {
-    const rows = await all(`SELECT oi.id, oi.order_no, oi.sub_contractor_id FROM order_items oi LEFT JOIN sub_contractors s ON s.id = oi.sub_contractor_id WHERE oi.sub_contractor_id IS NOT NULL AND s.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'sub_contractors', brokenField: 'sub_contractor_id', brokenId: r.sub_contractor_id, brokenLabel: `Sub-contractor #${r.sub_contractor_id}` });
-  });
-
-  // Delivery challans → material-owner client
-  await scan('delivery_challans.material_owner_client_id', async () => {
-    const rows = await all(`SELECT dc.id, dc.challan_no, dc.material_owner_client_id FROM delivery_challans dc LEFT JOIN clients c ON c.id = dc.material_owner_client_id WHERE dc.material_owner_client_id IS NOT NULL AND c.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'delivery_challans', ownerId: r.id, ownerLabel: r.challan_no ? `Challan ${r.challan_no}` : `Challan #${r.id}`, brokenTable: 'clients', brokenField: 'material_owner_client_id', brokenId: r.material_owner_client_id, brokenLabel: `Client #${r.material_owner_client_id}` });
-  });
-
-  // Delivery challans → vendor
-  await scan('delivery_challans.vendor_id', async () => {
-    const rows = await all(`SELECT dc.id, dc.challan_no, dc.vendor_id FROM delivery_challans dc LEFT JOIN vendors v ON v.id = dc.vendor_id WHERE dc.vendor_id IS NOT NULL AND v.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'delivery_challans', ownerId: r.id, ownerLabel: r.challan_no ? `Challan ${r.challan_no}` : `Challan #${r.id}`, brokenTable: 'vendors', brokenField: 'vendor_id', brokenId: r.vendor_id, brokenLabel: `Vendor #${r.vendor_id}` });
-  });
-
-  // Inventory movements → item
-  await scan('inventory_movements.item_id', async () => {
-    const rows = await all(`SELECT m.id, m.item_id, m.movement_type FROM inventory_movements m LEFT JOIN items i ON i.id = m.item_id WHERE m.item_id IS NOT NULL AND i.id IS NULL`);
-    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'inventory_movements', ownerId: r.id, ownerLabel: `${r.movement_type || 'Movement'} #${r.id}`, brokenTable: 'items', brokenField: 'item_id', brokenId: r.item_id, brokenLabel: `Item #${r.item_id}` });
-  });
-
-  res.json({ success: true, issues, total: issues.length, scanErrors, error: null });
-});
 
 
 // ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
