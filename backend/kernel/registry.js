@@ -142,7 +142,7 @@ const MODULES = {
     recordSource: { table: 'clients', idCol: 'id', label: 'name' },
     trackTables: { clients: 'Client' },
     tables: ['clients', 'sub_contractors'],
-    evacuated: false,
+    evacuated: true,
   },
   vendors: {
     label: 'Vendors',
