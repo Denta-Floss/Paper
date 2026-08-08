@@ -2170,26 +2170,6 @@ function rowToClientDto(row) {
   };
 }
 
-function rowToVendorDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    name: row.name || '',
-    alias: row.alias || '',
-    gstNumber: row.gst_number || '',
-    address: row.address || '',
-    contactName: row.contact_name || '',
-    phone: row.phone || '',
-    email: row.email || '',
-    isArchived: Boolean(row.is_archived),
-    usageCount: row.usage_count || 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
 
 function rowToOrderDto(row) {
   if (!row) {
@@ -8222,39 +8202,7 @@ async function ensureDemoClientsPresent() {
   }
 }
 
-async function getVendorRowById(id) {
-  // usage_count comes from challans territory, so it is asked for through the
-  // challans port and merged back onto the row — callers (display AND the
-  // in-use guards) keep seeing the exact same shape.
-  const row = await get(
-    `
-    SELECT
-      vendors.*
-    FROM vendors
-    WHERE vendors.id = ?
-    `,
-    [id],
-  );
-  if (!row) return row;
-  row.usage_count = await challansPorts.usage.countForVendor(row.id);
-  return row;
-}
 
-async function getVendorsWithUsage() {
-  const rows = await all(`
-    SELECT
-      vendors.*
-    FROM vendors
-    ORDER BY vendors.is_archived ASC, LOWER(vendors.name) ASC, vendors.id ASC
-  `);
-  // ONE batched port call for the whole list — a per-row call here would turn
-  // the vendor list into N+1.
-  const counts = await challansPorts.usage.countByVendors(rows.map((r) => r.id));
-  for (const row of rows) {
-    row.usage_count = counts.get(Number(row.id)) || 0;
-  }
-  return rows;
-}
 
 async function isMachineAssignedToActiveRun(machineId) {
   const activeRuns = await all("SELECT overrides_json FROM pipeline_runs WHERE status IN ('planned', 'in_progress', 'paused')");
@@ -8282,22 +8230,6 @@ async function isDieAssignedToActiveRun(dieId) {
   return false;
 }
 
-async function getVendorPurchaseHistory(vendorId) {
-  return all(`
-    SELECT DISTINCT
-      dci.item_id,
-      dci.variation_leaf_node_id,
-      dci.variation_path_label,
-      dci.variation_path_node_ids_json,
-      dci.custom_variation_values_json,
-      dci.particulars
-    FROM delivery_challans dc
-    JOIN delivery_challan_items dci ON dc.id = dci.challan_id
-    WHERE dc.vendor_id = ? AND dc.type = 'reception'
-    ORDER BY dci.created_at DESC
-    LIMIT 100
-  `, [Number(vendorId || 0)]);
-}
 
 async function approveDeleteRequestEntity(reqRow, req) {
   if (reqRow.entity_type === 'material') {
@@ -8800,109 +8732,7 @@ async function resetMaterialScanCount(barcode, actor = 'Demo Admin') {
   return get('SELECT * FROM materials WHERE id = ?', [row.id]);
 }
 
-async function findVendorDuplicate({ name, gstNumber = '', excludeId = null }) {
-  const rows = await all('SELECT id, name, gst_number FROM vendors');
-  const normalizedName = normalizePartyValue(name);
-  const normalizedGst = normalizeGstNumber(gstNumber);
-  return rows.find((row) => {
-    if (excludeId != null && row.id === excludeId) {
-      return false;
-    }
-    const sameName = normalizePartyValue(row.name) === normalizedName;
-    const sameGst =
-      normalizedGst &&
-      normalizeGstNumber(row.gst_number || '') === normalizedGst;
-    return sameName || Boolean(sameGst);
-  }) || null;
-}
 
-async function saveVendor({
-  name,
-  alias = '',
-  gstNumber = '',
-  address = '',
-  contactName = '',
-  phone = '',
-  email = '',
-  id = null,
-}) {
-  const trimmedName = String(name || '').trim();
-  const trimmedAlias = String(alias || '').trim();
-  const trimmedAddress = String(address || '').trim();
-  const trimmedContactName = String(contactName || '').trim();
-  const trimmedPhone = String(phone || '').trim();
-  const trimmedEmail = String(email || '').trim();
-  const trimmedGstNumber = normalizeGstNumber(gstNumber);
-  if (!trimmedName) {
-    const error = new Error('Vendor name is required.');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const duplicate = await findVendorDuplicate({
-    name: trimmedName,
-    gstNumber: trimmedGstNumber,
-    excludeId: id,
-  });
-  if (duplicate) {
-    const error = new Error('A vendor with the same name or GST number already exists.');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  if (id == null) {
-    const result = await run(
-      `
-      INSERT INTO vendors (
-        name, alias, gst_number, address, contact_name, phone, email, is_archived, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-      `,
-      [
-        trimmedName,
-        trimmedAlias,
-        trimmedGstNumber,
-        trimmedAddress,
-        trimmedContactName,
-        trimmedPhone,
-        trimmedEmail,
-        now,
-        now,
-      ],
-    );
-    await logChange('vendors', result.lastID, 'INSERT');
-    return getVendorRowById(result.lastID);
-  }
-
-  const existing = await getVendorRowById(id);
-  if (!existing) {
-    const error = new Error('Vendor not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  await run(
-    `
-    UPDATE vendors
-    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?
-    WHERE id = ?
-    `,
-    [
-      trimmedName,
-      trimmedAlias,
-      trimmedGstNumber,
-      trimmedAddress,
-      trimmedContactName,
-      trimmedPhone,
-      trimmedEmail,
-      now,
-      id,
-    ],
-  );
-  await logChange('vendors', id, 'UPDATE');
-  return getVendorRowById(id);
-}
 
 const DEFAULT_COMPANY_PROFILE = Object.freeze({
   companyName: 'Shree Ganesh Metal Works',
@@ -22749,6 +22579,20 @@ const challansPorts = createChallansPorts({
     }
     return result;
   },
+  receptionLinesForVendor: async (vendorId) => all(`
+    SELECT DISTINCT
+      dci.item_id,
+      dci.variation_leaf_node_id,
+      dci.variation_path_label,
+      dci.variation_path_node_ids_json,
+      dci.custom_variation_values_json,
+      dci.particulars
+    FROM delivery_challans dc
+    JOIN delivery_challan_items dci ON dc.id = dci.challan_id
+    WHERE dc.vendor_id = ? AND dc.type = 'reception'
+    ORDER BY dci.created_at DESC
+    LIMIT 100
+  `, [Number(vendorId || 0)]),
   countByVendors: async (vendorIds) => {
     const ids = challansPortIds(vendorIds);
     const result = new Map();
@@ -22839,6 +22683,28 @@ registerUnitsModuleRoutes({
   trackUpdate,
   trackDelete,
   trashAndDelete,
+});
+
+// Vendors domain service (evacuated to modules/vendors/service.js). Constructed
+// here so it can be handed both kernel primitives and the challans port; the
+// destructured names below keep every existing legacy caller and the module
+// export list working unchanged.
+const createVendorsService = require('./modules/vendors/service');
+const {
+  rowToVendorDto,
+  getVendorRowById,
+  getVendorsWithUsage,
+  getVendorPurchaseHistory,
+  findVendorDuplicate,
+  saveVendor,
+} = createVendorsService({
+  all,
+  challansPorts,
+  get,
+  logChange,
+  normalizeGstNumber,
+  normalizePartyValue,
+  run,
 });
 
 const registerVendorsModuleRoutes = require('./modules/vendors/routes');

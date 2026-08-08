@@ -128,8 +128,10 @@ test('challans ports meter their traffic and reject a missing implementation', (
   const ports = createChallansPorts({
     qtyByOrderItems: async () => new Map(),
     countByVendors: async () => new Map(),
+    receptionLinesForVendor: async () => [],
   });
   assert.ok('delivery.qtyByOrderItems' in ports.stats());
   assert.ok('usage.countByVendors' in ports.stats());
+  assert.ok('reception.linesForVendor' in ports.stats());
   assert.throws(() => createChallansPorts({ qtyByOrderItems: async () => {} }), /has no implementation/);
 });

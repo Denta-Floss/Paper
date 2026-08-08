@@ -18,6 +18,8 @@
 //   delivery.qtyForOrderItem(id)   -> number
 //   usage.countByVendors(ids)      -> Map<vendorId, challanCount>
 //   usage.countForVendor(id)       -> number
+//   reception.linesForVendor(id)   -> distinct item selections received from a
+//                                     vendor (their purchase history)
 // ---------------------------------------------------------------------------
 
 function normalizeIds(ids) {
@@ -56,6 +58,11 @@ function createChallansPorts(impl) {
         const map = await countByVendors([vendorId]);
         return map.get(Number(vendorId)) || 0;
       },
+    },
+    reception: {
+      // "What have we previously received from this vendor?" is a challans
+      // question, not a vendors one — vendors must not read delivery_challans.
+      linesForVendor: counted('reception.linesForVendor', impl.receptionLinesForVendor),
     },
     stats: () => ({ ...counts }),
   };
