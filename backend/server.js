@@ -8123,6 +8123,245 @@ async function getVendorPurchaseHistory(vendorId) {
   `, [Number(vendorId || 0)]);
 }
 
+async function getOrderPipelineRuns(orderNo) {
+  const rows = await all(`
+    SELECT pr.*
+    FROM pipeline_runs pr
+    JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+    JOIN order_items i ON opa.order_item_id = i.id
+    WHERE i.order_no = ?
+    ORDER BY pr.created_at DESC
+  `, [orderNo]);
+
+  const runs = [];
+  for (const row of rows) {
+    runs.push(await rowToRun(row));
+  }
+  return runs;
+}
+
+async function getOrderProductionReport(orderNo) {
+  const header = await get(`
+    SELECT h.order_no, h.po_number, c.name AS client_name
+    FROM order_headers h
+    LEFT JOIN clients c ON h.client_id = c.id
+    WHERE h.order_no = ?
+  `, [orderNo]);
+  if (!header) {
+    return null;
+  }
+  const items = await all(`
+    SELECT id, item_name, variation_path_label, quantity, unit_name, unit_symbol, unit_price
+    FROM order_items WHERE order_no = ? ORDER BY id ASC
+  `, [orderNo]);
+  const runRows = await all(`
+    SELECT pr.*, opa.order_item_id
+    FROM pipeline_runs pr
+    JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+    JOIN order_items i ON opa.order_item_id = i.id
+    WHERE i.order_no = ?
+    ORDER BY pr.created_at DESC
+  `, [orderNo]);
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const machineRows = await all('SELECT * FROM machines');
+  const machineByKey = new Map();
+  for (const row of machineRows) {
+    const dto = machineRowToDto(row);
+    [String(row.id), row.asset_id, row.name].forEach((key) => {
+      if (key) machineByKey.set(String(key).trim(), dto);
+    });
+  }
+  const dieRows = await all('SELECT * FROM dies');
+  const dieByKey = new Map();
+  for (const row of dieRows) {
+    const dto = dieRowToDto(row);
+    [String(row.id), row.tool_code].forEach((key) => {
+      if (key) dieByKey.set(String(key).trim(), dto);
+    });
+  }
+
+  const templateCache = new Map();
+  const runs = [];
+  for (const runRow of runRows) {
+    if (!templateCache.has(runRow.template_id)) {
+      templateCache.set(runRow.template_id, await get(
+        'SELECT id, name, nodes_json FROM pipeline_templates WHERE id = ?',
+        [runRow.template_id],
+      ));
+    }
+    const template = templateCache.get(runRow.template_id);
+    const nodes = template ? parseJson(template.nodes_json, []) : [];
+    const metricsByNode = await getMergedNodeMetrics(runRow);
+    const orderItem = itemById.get(runRow.order_item_id);
+    const orderQty = Number(orderItem?.quantity || 0);
+    const stages = nodes
+      .slice()
+      .sort((a, b) => (a.stageIndex || 0) - (b.stageIndex || 0))
+      .map((node) => {
+        const metrics = metricsByNode[node.id] || {};
+        const machineKey = String(
+          node.machineId || node.machine_id || node.machineAssetId || node.machine || node.machineName || ''
+        ).trim();
+        const dieKey = String(node.dieId || node.die_id || '').trim();
+        const machine = machineByKey.get(machineKey) || null;
+        const die = dieByKey.get(dieKey) || null;
+        const quantityPerUnit = Number(
+          node.quantityPerUnit ??
+          node.quantity_per_unit ??
+          node.inputItem?.quantityPerUnit ??
+          node.inputItem?.quantity_per_unit ??
+          node.inputItem?.perUnitQty ??
+          NaN
+        );
+        const plannedMaterialQty = Number.isFinite(quantityPerUnit) && orderQty > 0
+          ? quantityPerUnit * orderQty
+          : null;
+        return {
+          nodeId: node.id,
+          name: node.name || '',
+          stageIndex: Number(node.stageIndex || 0),
+          processType: node.processType || '',
+          material: node.inputItem?.variationPathLabel || node.inputItem?.itemName || '',
+          materialUnit: node.inputItem?.unitSymbol || '',
+          outputName: node.outputItem?.variationPathLabel || node.outputItem?.itemName || '',
+          outputUnit: node.outputItem?.unitSymbol || '',
+          quantityPerUnit: Number.isFinite(quantityPerUnit) ? quantityPerUnit : null,
+          plannedMaterialQty,
+          machine: machine?.name || node.machine || node.machineGroupName || '',
+          machineAssetId: machine?.assetId || machineKey,
+          machineOutputPerHour: machine?.reportOutputPerHour ?? null,
+          machineSetupMinutes: machine?.setupMinutes ?? null,
+          machineLaborCount: machine?.laborCount ?? null,
+          machinePowerKw: machine?.powerKw ?? null,
+          machineReportNotes: machine?.reportNotes || '',
+          dieId: dieKey,
+          dieToolCode: die?.toolCode || dieKey,
+          dieCavities: die?.numberOfCavities ?? null,
+          dieMaxStrokes: die?.maxStrokes ?? null,
+          dieStrokesPerPiece: die?.strokesPerPiece ?? null,
+          dieSetupMinutes: die?.setupMinutes ?? null,
+          dieReportNotes: die?.reportNotes || '',
+          plannedHours: Number(node.durationHours || 0),
+          allotted: metrics.allotted ?? null,
+          output: metrics.output ?? metrics.goodYield ?? null,
+          leftover: metrics.remaining ?? null,
+          scrap: metrics.scrap ?? null,
+          inputTime: metrics.inputTime ?? null,
+          outputTime: metrics.outputTime ?? null,
+          actualHours: metrics.actualHours ?? null,
+        };
+      });
+    runs.push({
+      runId: runRow.id,
+      runName: runRow.name || '',
+      status: runRow.status || 'planned',
+      orderItemId: runRow.order_item_id,
+      templateName: template?.name || '',
+      startedAt: runRow.started_at,
+      completedAt: runRow.completed_at,
+      stages,
+    });
+  }
+
+  return {
+    orderNo,
+    clientName: header.client_name || '',
+    poNumber: header.po_number || '',
+    items: items.map((item) => ({
+      orderItemId: item.id,
+      itemName: item.item_name || '',
+      variationPathLabel: item.variation_path_label || '',
+      quantity: Number(item.quantity || 0),
+      unitSymbol: item.unit_symbol || item.unit_name || 'pcs',
+      unitPrice: Number(item.unit_price || 0),
+    })),
+    runs,
+  };
+}
+
+async function getClientNameAndAlias(clientId) {
+  return get('SELECT name, alias FROM clients WHERE id = ?', [clientId]);
+}
+
+async function deleteOrderAndRecoverMovements(orderId, body, actorName, userId) {
+  await run('BEGIN TRANSACTION');
+  try {
+    const wipBarcode = body?.wip_barcode;
+    const wipQty = Number(body?.wip_qty || 0);
+    const recoveredMovements = [];
+
+    const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
+    for (const assignment of assignments) {
+      const runId = assignment.pipeline_run_id;
+
+      const consumedMovements = await all(
+        "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
+        [runId]
+      );
+
+      for (const move of consumedMovements) {
+        const qty = move.qty;
+        if (qty > 0) {
+          await applyInventoryMovementCore({
+            barcode: move.material_barcode,
+            movementType: 'adjust_in',
+            qty: qty,
+            actor: actorName,
+            referenceType: 'pipeline_dissolution',
+            referenceId: String(orderId),
+            reasonCode: 'ORDER_DELETED',
+            toLocationId: move.from_location_id || 'MAIN'
+          }, { useTransaction: false });
+          recoveredMovements.push({ barcode: move.material_barcode, qty, reason: 'Raw Material Recovery' });
+        }
+      }
+
+      await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
+      await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
+    }
+
+    if (wipBarcode && wipQty > 0) {
+      await applyInventoryMovementCore({
+        barcode: wipBarcode,
+        movementType: 'adjust_in',
+        qty: wipQty,
+        actor: actorName,
+        referenceType: 'pipeline_dissolution',
+        referenceId: String(orderId),
+        reasonCode: 'WIP_RECOVERY',
+        toLocationId: 'MAIN'
+      }, { useTransaction: false });
+      recoveredMovements.push({ barcode: wipBarcode, qty: wipQty, reason: 'WIP Recovery' });
+    }
+
+    await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
+    await run('DELETE FROM order_status_history WHERE order_id = ?', [orderId]);
+    await run('DELETE FROM order_activity_log WHERE order_id = ?', [orderId]);
+    await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);
+    await run('DELETE FROM order_po_documents WHERE order_id = ?', [orderId]);
+
+    const item = await get('SELECT order_no FROM order_items WHERE id = ?', [orderId]);
+    if (item) {
+      await run('DELETE FROM order_items WHERE id = ?', [orderId]);
+      const otherItems = await get('SELECT id FROM order_items WHERE order_no = ?', [item.order_no]);
+      if (!otherItems) {
+        await run('DELETE FROM order_headers WHERE order_no = ?', [item.order_no]);
+      }
+    }
+
+    await run(
+      "INSERT INTO activity_logs (entity_type, entity_id, action, actor_id, actor_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ['order', String(orderId), 'deleted', userId, actorName, JSON.stringify({ reason: 'User requested Undo' }), new Date().toISOString()]
+    ).catch(() => {});
+
+    await run('COMMIT');
+    return recoveredMovements;
+  } catch (err) {
+    await run('ROLLBACK').catch(() => {});
+    throw err;
+  }
+}
+
 async function getInventoryStockList() {
   const rows = await all(`
     SELECT
@@ -21397,29 +21636,7 @@ const handleCreateChallan = async (req, res) => {
 // wiping barcodes and re-running issuance). Idempotent: replaces the barcodes
 // for each referenced item, so re-generating or re-printing is safe.
 
-app.get('/api/orders/:orderId/delivery-challans', requirePermission('config.read'), async (req, res) => {
-  try {
-    const orderId = Number(req.params.orderId);
-    if (!Number.isInteger(orderId) || orderId <= 0) {
-      res.status(400).json({
-        success: false,
-        data: [],
-        message: 'Invalid order id.',
-        error: 'Invalid order id.',
-      });
-      return;
-    }
-    const challans = await listDeliveryChallans({ orderId, type: 'delivery' });
-    res.json({ success: true, data: challans, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      data: [],
-      message: error.message,
-      error: error.message,
-    });
-  }
-});
+
 
 const handleGetChallan = async (req, res) => {
   try {
@@ -22274,72 +22491,7 @@ async function handleChallanTemplateTestPrint(req, res) {
 
 
 
-app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await getOrders();
-    res.json({ success: true, orders: rows.map(rowToOrderDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, orders: [], error: error.message });
-  }
-});
 
-app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
-  try {
-    const actor = {
-      id: req.user?.id || null,
-      name: req.user?.name || 'System',
-      role: req.user?.role || 'system',
-      source: 'api'
-    };
-    const result = await saveOrder({ ...(req.body || {}), actor }, { returnMeta: true });
-    if (io) io.emit('orders_changed');
-    res.status(result.merged ? 200 : 201).json({
-      success: true,
-      order: rowToOrderDto(result.orderRow),
-      merged: result.merged,
-      quantityBefore: result.quantityBefore,
-      quantityAdded: result.quantityAdded,
-      quantityAfter: result.quantityAfter,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      order: null,
-      error: error.message,
-    });
-  }
-});
-
-app.post('/api/order-po-uploads/intent', requirePermission('config.write'), async (req, res) => {
-  try {
-    const intent = await createPoUploadIntent(req.body || {});
-    res.status(intent.alreadyUploaded ? 200 : 201).json({
-      success: true,
-      intent,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      intent: null,
-      error: error.message,
-    });
-  }
-});
-
-app.post('/api/order-po-uploads/complete', requirePermission('config.write'), async (req, res) => {
-  try {
-    const document = await completePoUpload(req.body || {});
-    res.json({ success: true, document, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      document: null,
-      error: error.message,
-    });
-  }
-});
 
 
 app.post('/api/upload/generic', requireGenericUploadPermission, async (req, res) => {
@@ -22503,468 +22655,6 @@ app.delete('/api/assets/:id', requireAssetEntityPermission('write', assetEntityT
     });
   }
 });
-
-app.get('/api/orders/:id/po-documents', requirePermission('config.read'), async (req, res) => {
-  try {
-    const documents = await getPoDocumentsForOrder(Number(req.params.id));
-    res.json({ success: true, documents, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      documents: [],
-      error: error.message,
-    });
-  }
-});
-
-app.post('/api/orders/:id/po-documents', requirePermission('config.write'), async (req, res) => {
-  try {
-    const orderId = Number(req.params.id);
-    const { newlyLinkedIds } = await linkPoDocumentsToOrder(orderId, req.body?.documentIds || []);
-    if (newlyLinkedIds.length > 0) {
-      const actor = {
-        id: req.user?.id || null,
-        name: req.user?.name || 'System',
-        role: req.user?.role || 'system',
-        source: 'api'
-      };
-      await insertOrderActivityLog({
-        orderId,
-        activityType: 'po_documents_linked',
-        actor,
-        details: { documentIds: newlyLinkedIds },
-      });
-    }
-    const documents = await getPoDocumentsForOrder(orderId);
-    res.json({ success: true, documents, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      documents: [],
-      error: error.message,
-    });
-  }
-});
-
-app.get('/api/orders/:id/material-requirements', requirePermission('config.read'), async (req, res) => {
-  try {
-    const requirements = await all(
-      'SELECT * FROM order_material_requirements WHERE order_id = ? ORDER BY id ASC',
-      [Number(req.params.id)]
-    );
-    res.json({ success: true, requirements, error: null });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      requirements: [],
-      error: error.message,
-    });
-  }
-});
-
-app.get('/api/orders/:id/activity', requirePermission('config.read'), async (req, res) => {
-  try {
-    const orderId = Number(req.params.id);
-    const rows = await getOrderActivity(orderId);
-    res.json({ success: true, activities: rows.map(rowToOrderActivityDto), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      activities: [],
-      error: error.message,
-    });
-  }
-});
-
-app.get('/api/orders/:id/status-history', requirePermission('config.read'), async (req, res) => {
-  try {
-    const orderId = Number(req.params.id);
-    const rows = await getOrderStatusHistory(orderId);
-    res.json({ success: true, history: rows.map(rowToOrderStatusHistoryDto), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      history: [],
-      error: error.message,
-    });
-  }
-});
-
-app.get('/api/orders/:orderNo/pipeline-runs', requirePermission('config.read'), async (req, res) => {
-  try {
-    const orderNo = req.params.orderNo;
-    const rows = await all(`
-      SELECT pr.*
-      FROM pipeline_runs pr
-      JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-      JOIN order_items i ON opa.order_item_id = i.id
-      WHERE i.order_no = ?
-      ORDER BY pr.created_at DESC
-    `, [orderNo]);
-
-    const runs = [];
-    for (const row of rows) {
-      runs.push(await rowToRun(row));
-    }
-    res.json({ success: true, runs, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, runs: [], error: error.message });
-  }
-});
-
-// Quantities-only production report for an order: pipeline stages with actual
-// consumption/output/waste from stage_reconciliations. No costs by design —
-// rates are filled in on paper.
-app.get('/api/orders/:orderNo/production-report', requirePermission('config.read'), async (req, res) => {
-  try {
-    const orderNo = req.params.orderNo;
-    const header = await get(`
-      SELECT h.order_no, h.po_number, c.name AS client_name
-      FROM order_headers h
-      LEFT JOIN clients c ON h.client_id = c.id
-      WHERE h.order_no = ?
-    `, [orderNo]);
-    if (!header) {
-      return res.status(404).json({ success: false, report: null, error: 'Order not found.' });
-    }
-    const items = await all(`
-      SELECT id, item_name, variation_path_label, quantity, unit_name, unit_symbol, unit_price
-      FROM order_items WHERE order_no = ? ORDER BY id ASC
-    `, [orderNo]);
-    const runRows = await all(`
-      SELECT pr.*, opa.order_item_id
-      FROM pipeline_runs pr
-      JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-      JOIN order_items i ON opa.order_item_id = i.id
-      WHERE i.order_no = ?
-      ORDER BY pr.created_at DESC
-    `, [orderNo]);
-    const itemById = new Map(items.map((item) => [item.id, item]));
-    const machineRows = await all('SELECT * FROM machines');
-    const machineByKey = new Map();
-    for (const row of machineRows) {
-      const dto = machineRowToDto(row);
-      [String(row.id), row.asset_id, row.name].forEach((key) => {
-        if (key) machineByKey.set(String(key).trim(), dto);
-      });
-    }
-    const dieRows = await all('SELECT * FROM dies');
-    const dieByKey = new Map();
-    for (const row of dieRows) {
-      const dto = dieRowToDto(row);
-      [String(row.id), row.tool_code].forEach((key) => {
-        if (key) dieByKey.set(String(key).trim(), dto);
-      });
-    }
-
-    const templateCache = new Map();
-    const runs = [];
-    for (const runRow of runRows) {
-      if (!templateCache.has(runRow.template_id)) {
-        templateCache.set(runRow.template_id, await get(
-          'SELECT id, name, nodes_json FROM pipeline_templates WHERE id = ?',
-          [runRow.template_id],
-        ));
-      }
-      const template = templateCache.get(runRow.template_id);
-      const nodes = template ? parseJson(template.nodes_json, []) : [];
-      const metricsByNode = await getMergedNodeMetrics(runRow);
-      const orderItem = itemById.get(runRow.order_item_id);
-      const orderQty = Number(orderItem?.quantity || 0);
-      const stages = nodes
-        .slice()
-        .sort((a, b) => (a.stageIndex || 0) - (b.stageIndex || 0))
-        .map((node) => {
-          const metrics = metricsByNode[node.id] || {};
-          const machineKey = String(
-            node.machineId || node.machine_id || node.machineAssetId || node.machine || node.machineName || ''
-          ).trim();
-          const dieKey = String(node.dieId || node.die_id || '').trim();
-          const machine = machineByKey.get(machineKey) || null;
-          const die = dieByKey.get(dieKey) || null;
-          const quantityPerUnit = Number(
-            node.quantityPerUnit ??
-            node.quantity_per_unit ??
-            node.inputItem?.quantityPerUnit ??
-            node.inputItem?.quantity_per_unit ??
-            node.inputItem?.perUnitQty ??
-            NaN
-          );
-          const plannedMaterialQty = Number.isFinite(quantityPerUnit) && orderQty > 0
-            ? quantityPerUnit * orderQty
-            : null;
-          return {
-            nodeId: node.id,
-            name: node.name || '',
-            stageIndex: Number(node.stageIndex || 0),
-            processType: node.processType || '',
-            material: node.inputItem?.variationPathLabel || node.inputItem?.itemName || '',
-            materialUnit: node.inputItem?.unitSymbol || '',
-            outputName: node.outputItem?.variationPathLabel || node.outputItem?.itemName || '',
-            outputUnit: node.outputItem?.unitSymbol || '',
-            quantityPerUnit: Number.isFinite(quantityPerUnit) ? quantityPerUnit : null,
-            plannedMaterialQty,
-            machine: machine?.name || node.machine || node.machineGroupName || '',
-            machineAssetId: machine?.assetId || machineKey,
-            machineOutputPerHour: machine?.reportOutputPerHour ?? null,
-            machineSetupMinutes: machine?.setupMinutes ?? null,
-            machineLaborCount: machine?.laborCount ?? null,
-            machinePowerKw: machine?.powerKw ?? null,
-            machineReportNotes: machine?.reportNotes || '',
-            dieId: dieKey,
-            dieToolCode: die?.toolCode || dieKey,
-            dieCavities: die?.numberOfCavities ?? null,
-            dieMaxStrokes: die?.maxStrokes ?? null,
-            dieStrokesPerPiece: die?.strokesPerPiece ?? null,
-            dieSetupMinutes: die?.setupMinutes ?? null,
-            dieReportNotes: die?.reportNotes || '',
-            plannedHours: Number(node.durationHours || 0),
-            allotted: metrics.allotted ?? null,
-            output: metrics.output ?? metrics.goodYield ?? null,
-            leftover: metrics.remaining ?? null,
-            scrap: metrics.scrap ?? null,
-            inputTime: metrics.inputTime ?? null,
-            outputTime: metrics.outputTime ?? null,
-            actualHours: metrics.actualHours ?? null,
-          };
-        });
-      runs.push({
-        runId: runRow.id,
-        runName: runRow.name || '',
-        status: runRow.status || 'planned',
-        orderItemId: runRow.order_item_id,
-        templateName: template?.name || '',
-        startedAt: runRow.started_at,
-        completedAt: runRow.completed_at,
-        stages,
-      });
-    }
-
-    res.json({
-      success: true,
-      report: {
-        orderNo,
-        clientName: header.client_name || '',
-        poNumber: header.po_number || '',
-        items: items.map((item) => ({
-          orderItemId: item.id,
-          itemName: item.item_name || '',
-          variationPathLabel: item.variation_path_label || '',
-          quantity: Number(item.quantity || 0),
-          unitSymbol: item.unit_symbol || item.unit_name || 'pcs',
-          unitPrice: Number(item.unit_price || 0),
-        })),
-        runs,
-      },
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, report: null, error: error.message });
-  }
-});
-
-app.post('/api/order-po-documents/:id/read-url', requirePermission('config.read'), async (req, res) => {
-  try {
-    const result = await createPoDocumentReadUrl(Number(req.params.id));
-    res.json({ success: true, ...result, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      document: null,
-      readUrl: null,
-      error: error.message,
-    });
-  }
-});
-
-app.patch('/api/orders/:id/lifecycle', requirePermission('config.write'), async (req, res) => {
-  try {
-    const actor = {
-      id: req.user?.id || null,
-      name: req.user?.name || 'System',
-      role: req.user?.role || 'system',
-      source: 'api'
-    };
-    const order = await updateOrderLifecycle({
-      ...(req.body || {}),
-      id: Number(req.params.id),
-      actor
-    });
-    res.json({ success: true, order: rowToOrderDto(order), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      order: null,
-      error: error.message,
-    });
-  }
-});
-
-app.put('/api/orders/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const orderId = Number(req.params.id);
-    const updates = req.body || {};
-    
-    // Begin transaction
-    await run('BEGIN TRANSACTION');
-    
-    // Get existing order item
-    const existingItem = await get('SELECT * FROM order_items WHERE id = ?', [orderId]);
-    if (!existingItem) {
-      await run('ROLLBACK').catch(() => {});
-      return res.status(404).json({ success: false, error: 'Order not found.' });
-    }
-
-    const orderNo = updates.orderNo || existingItem.order_no;
-    const clientId = updates.clientId || existingItem.client_id;
-    let clientCode = updates.clientCode || existingItem.client_code;
-    let clientName = updates.clientName || existingItem.client_name;
-    
-    // Auto-update client code and name if client changed
-    if (updates.clientId && updates.clientId !== existingItem.client_id) {
-      const client = await get('SELECT name, alias FROM clients WHERE id = ?', [updates.clientId]);
-      if (client) {
-        clientName = client.name;
-        clientCode = client.alias || client.name.substring(0, 3).toUpperCase();
-      }
-    }
-
-    // Update order_headers if order_no or client changed
-    if (orderNo !== existingItem.order_no || clientId !== existingItem.client_id) {
-      // Create new header if it doesn't exist
-      await run(
-        'INSERT OR IGNORE INTO order_headers (order_no, client_id, po_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-        [orderNo, clientId, '', new Date().toISOString(), new Date().toISOString()]
-      );
-      
-      // Update header client_id if order_no stayed the same
-      if (orderNo === existingItem.order_no) {
-         await run('UPDATE order_headers SET client_id = ?, updated_at = ? WHERE order_no = ?', [clientId, new Date().toISOString(), orderNo]);
-      }
-    }
-
-    await run(`
-      UPDATE order_items 
-      SET order_no = ?, client_id = ?, client_name = ?, client_code = ?, item_id = ?, 
-          variation_leaf_node_id = ?, variation_path_label = ?, item_name = ?, 
-          hsn_code = ?, quantity = ?, unit_price = ?, taxable_value = ?, 
-          cgst_rate = ?, sgst_rate = ?, cgst_amount = ?, sgst_amount = ?, updated_at = ?
-      WHERE id = ?
-    `, [
-      orderNo, clientId, clientName, clientCode,
-      updates.itemId || existingItem.item_id,
-      updates.variationLeafNodeId || existingItem.variation_leaf_node_id,
-      updates.variationPathLabel || existingItem.variation_path_label,
-      updates.itemName || existingItem.item_name,
-      updates.hsnCode || existingItem.hsn_code,
-      updates.quantity !== undefined ? updates.quantity : existingItem.quantity,
-      updates.unitPrice !== undefined ? updates.unitPrice : existingItem.unit_price,
-      updates.taxableValue !== undefined ? updates.taxableValue : existingItem.taxable_value,
-      updates.cgstRate !== undefined ? updates.cgstRate : existingItem.cgst_rate,
-      updates.sgstRate !== undefined ? updates.sgstRate : existingItem.sgst_rate,
-      updates.cgstAmount !== undefined ? updates.cgstAmount : existingItem.cgst_amount,
-      updates.sgstAmount !== undefined ? updates.sgstAmount : existingItem.sgst_amount,
-      new Date().toISOString(),
-      orderId
-    ]);
-
-    await run('COMMIT');
-    const orders = await getOrders();
-    const updated = orders.find(o => o.id === orderId);
-    if (io) io.emit('orders_changed');
-    res.json({ success: true, order: updated, error: null });
-  } catch (error) {
-    await run('ROLLBACK').catch(() => {});
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const orderId = Number(req.params.id);
-    const actorName = req.user?.name || 'System';
-    
-    await run('BEGIN TRANSACTION');
-
-    const wipBarcode = req.body?.wip_barcode;
-    const wipQty = Number(req.body?.wip_qty || 0);
-    const recoveredMovements = [];
-
-    const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
-    for (const assignment of assignments) {
-      const runId = assignment.pipeline_run_id;
-
-      // Dissolve unused raw inputs (that were consumed) back to inventory
-      const consumedMovements = await all(
-        "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
-        [runId]
-      );
-
-      for (const move of consumedMovements) {
-        const qty = move.qty;
-        if (qty > 0) {
-          await applyInventoryMovementCore({
-            barcode: move.material_barcode,
-            movementType: 'adjust_in',
-            qty: qty,
-            actor: actorName,
-            referenceType: 'pipeline_dissolution',
-            referenceId: String(orderId),
-            reasonCode: 'ORDER_DELETED',
-            toLocationId: move.from_location_id || 'MAIN'
-          }, { useTransaction: false });
-          recoveredMovements.push({ barcode: move.material_barcode, qty, reason: 'Raw Material Recovery' });
-        }
-      }
-
-      await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
-      await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
-    }
-
-    if (wipBarcode && wipQty > 0) {
-      await applyInventoryMovementCore({
-        barcode: wipBarcode,
-        movementType: 'adjust_in',
-        qty: wipQty,
-        actor: actorName,
-        referenceType: 'pipeline_dissolution',
-        referenceId: String(orderId),
-        reasonCode: 'WIP_RECOVERY',
-        toLocationId: 'MAIN'
-      }, { useTransaction: false });
-      recoveredMovements.push({ barcode: wipBarcode, qty: wipQty, reason: 'WIP Recovery' });
-    }
-
-    await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
-    await run('DELETE FROM order_status_history WHERE order_id = ?', [orderId]);
-    await run('DELETE FROM order_activity_log WHERE order_id = ?', [orderId]);
-    await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);
-    await run('DELETE FROM order_po_documents WHERE order_id = ?', [orderId]);
-
-    const item = await get('SELECT order_no FROM order_items WHERE id = ?', [orderId]);
-    if (item) {
-      await run('DELETE FROM order_items WHERE id = ?', [orderId]);
-      const otherItems = await get('SELECT id FROM order_items WHERE order_no = ?', [item.order_no]);
-      if (!otherItems) {
-        await run('DELETE FROM order_headers WHERE order_no = ?', [item.order_no]);
-      }
-    }
-
-    // Audit log
-    await run(
-      "INSERT INTO activity_logs (entity_type, entity_id, action, actor_id, actor_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ['order', String(orderId), 'deleted', req.user?.id || 1, actorName, JSON.stringify({ reason: 'User requested Undo' }), new Date().toISOString()]
-    ).catch(() => {});
-
-    await run('COMMIT');
-    if (io) io.emit('orders_changed');
-    res.json({ success: true, recoveredMovements, error: null });
-  } catch (error) {
-    await run('ROLLBACK').catch(() => {});
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
-  }
-});
-
 
 
 
@@ -25745,6 +25435,35 @@ registerInventoryModuleRoutes({
   getMaterialActivity,
   rowToMaterialActivityDto,
   currentActor,
+});
+
+const registerOrdersModuleRoutes = require('./modules/orders/routes');
+registerOrdersModuleRoutes({
+  app,
+  requirePermission,
+  get,
+  all,
+  run,
+  listDeliveryChallans,
+  getOrders,
+  saveOrder,
+  rowToOrderDto,
+  createPoUploadIntent,
+  completePoUpload,
+  getPoDocumentsForOrder,
+  linkPoDocumentsToOrder,
+  insertOrderActivityLog,
+  getOrderActivity,
+  rowToOrderActivityDto,
+  getOrderStatusHistory,
+  rowToOrderStatusHistoryDto,
+  getOrderPipelineRuns,
+  getOrderProductionReport,
+  createPoDocumentReadUrl,
+  updateOrderLifecycle,
+  getClientNameAndAlias,
+  deleteOrderAndRecoverMovements,
+  getIo: () => io,
 });
 
 const { computeTerritory } = require("./kernel/territory");

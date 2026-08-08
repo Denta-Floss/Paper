@@ -48,7 +48,7 @@ const MODULES = {
       'procurement_requests', 'procurement_request_lines',
       'procurement_request_line_sources', 'procurement_activity_log',
     ],
-    evacuated: false,
+    evacuated: true,
   },
   inventory: {
     label: 'Inventory',
