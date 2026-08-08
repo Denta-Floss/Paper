@@ -22988,7 +22988,7 @@ app.put('/runs/:id/node-status', async (req, res) => {
         const newJobId = result.lastID;
 
         // Populate tasks from BOM
-        const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
+        const bomLines = await itemsPorts.bom.lines(itemId);
         for (const line of bomLines) {
            // We map the material barcode back to an item if needed, but tasks schema requires item_id.
            // Since item_bom_lines has material_barcode, let's find the linked item.
@@ -24406,7 +24406,7 @@ async function createFreelancerJobWithTasks({ item_id, quantity }) {
   );
   const newJobId = result.lastID;
 
-  const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [item_id]);
+  const bomLines = await itemsPorts.bom.lines(item_id);
   for (const line of bomLines) {
      const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
      if (mat && mat.linked_item_id) {
