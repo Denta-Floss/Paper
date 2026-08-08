@@ -183,7 +183,7 @@ const MODULES = {
     recordSource: { table: 'machines', idCol: 'id', label: 'name' },
     trackTables: { machines: 'Machine' },
     tables: ['machines'],
-    evacuated: false,
+    evacuated: true,
   },
   dies: {
     label: 'Dies',
