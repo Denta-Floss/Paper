@@ -133,7 +133,7 @@ const MODULES = {
     recordSource: { table: 'employees', idCol: 'id', label: 'name' },
     trackTables: { employees: 'Person' },
     tables: ['employees', 'departments'],
-    evacuated: false,
+    evacuated: true,
   },
   clients: {
     label: 'Clients',
