@@ -376,4 +376,28 @@ app.get('/api/materials/:barcode/activity', requirePermission('inventory.read'),
   }
 });
 
+app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ success: false, error: 'Code is required' });
+    }
+
+    const row = ctx.lookupBarcode ? await ctx.lookupBarcode(code) : null;
+
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Barcode not found in database.' });
+    }
+
+    const itemsPorts = typeof ctx.itemsPorts === 'function' ? ctx.itemsPorts() : ctx.itemsPorts;
+    const itemDesc = itemsPorts ? await itemsPorts.describe(row.item_id) : null;
+    row.item_name = itemDesc?.name || 'Unknown Item';
+    row.short_code = itemDesc?.shortCode || '';
+
+    res.json({ success: true, result: row });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 };

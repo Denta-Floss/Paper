@@ -179,6 +179,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
         'config.read',
         'login.mobile',
         'login.desktop',
+        'search.create',
       ]);
       return [key, staffCaps.has(key)];
     }),
@@ -194,7 +195,7 @@ const DEFAULT_PERMISSION_TEMPLATES = [
   },
   {
     name: 'Inventory Operator',
-    description: 'Full inventory; view items and orders.',
+    description: 'Full inventory; view items and orders; mobile staging.',
     permissions: {
       'inventory.read': true,
       'inventory.create': true,
@@ -202,6 +203,8 @@ const DEFAULT_PERMISSION_TEMPLATES = [
       'inventory.request_delete': true,
       'items.read': true,
       'orders.read': true,
+      'mobile.create': true,
+      'mobile.update': true,
     },
   },
   {
@@ -331,16 +334,21 @@ app.use(cors(buildCorsOptions()));
 app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-app.get('/health', (_req, res) => {
-  res.json({
-    success: true,
-    status: dbReady ? 'ok' : 'starting',
-    port: PORT,
-    dbPath: IS_PRODUCTION ? null : DB_PATH,
-    dbReady,
-    dbInitError: dbInitError?.message ?? null,
-    timestamp: new Date().toISOString(),
-  });
+const registerIntrospectionKernelRoutes = require('./kernel/routes/introspection');
+registerIntrospectionKernelRoutes({
+  app,
+  requireAuth,
+  requireRoles,
+  all,
+  get,
+  get itemsPorts() { return itemsPorts; },
+  get challansPorts() { return challansPorts; },
+  isDbReady: () => dbReady,
+  getPort: () => PORT,
+  isProduction: () => IS_PRODUCTION,
+  getDbPath: () => DB_PATH,
+  getDbInitError: () => dbInitError,
+  getContractEnforce: () => CONTRACT_ENFORCE,
 });
 
 app.use((req, res, next) => {
@@ -1491,13 +1499,14 @@ function currentActor(req) {
 }
 
 async function requireAuth(req, res, next) {
-  // Bypass auth for local development sandbox sync, replays, and dashboard APIs
+  // Bypass auth for local development sandbox sync, replays, and dashboard APIs, plus public portal and freelancer login
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
       req.path.startsWith('/sandbox-dashboard') ||
       req.path.startsWith('/activation') ||
       req.path.startsWith('/build') ||
-      req.path.startsWith('/config')) {
+      req.path.startsWith('/config') ||
+      kernelRegistry.isPublicApiPath(req.path)) {
     return next();
   }
 
@@ -1599,6 +1608,12 @@ function moduleOpForRequest(req) {
   const seg = path.split('/')[1] || '';
   // Excluded segments are declared once in kernel/registry.js.
   if (kernelRegistry.MODULE_GATE_EXCLUDED_SEGMENTS.has(seg)) return null;
+  // Public endpoints skip the module gate too. Auth-bypassing a path while its
+  // segment is ALSO a declared module leaves the gate demanding a permission
+  // the anonymous caller can never hold — /portal/login answered 403 that way.
+  if (kernelRegistry.isPublicApiPath(path)) return null;
+  // Public portal login and token-based freelancer portal endpoints are auth-exempt
+  if (path === '/portal/login' || path.startsWith('/freelancer-portal')) return null;
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
   if (seg === 'employees' && /\/(create-login|link-login|unlink-login)/.test(path)) {
     return null;
@@ -1689,6 +1704,12 @@ async function requireApiModulePermission(req, res, next) {
 }
 
 function requireApiWritePermission(req, res, next) {
+  // Public endpoints skip this gate too. There are THREE borders in the chain
+  // (auth, module gate, this legacy write gate) and "public" has to hold at
+  // every one of them — honouring it at only two still yields a 403.
+  if (kernelRegistry.isPublicApiPath(req.path)) {
+    return next();
+  }
   // Per-module CRUD is already enforced by requireApiModulePermission for
   // mapped business paths; don't double-gate them with the legacy write check.
   if (req._moduleGated) {
@@ -4606,6 +4627,161 @@ async function initDb() {
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
   await ensureColumnExists('units', 'conversion_factor', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
+  // Bootstrap parity with migrations/005-payroll-and-portal.js and
+  // 006-client-portal-catalog.js. Fresh databases build their schema HERE and
+  // never run the migration runner, so without these the entire payroll and
+  // portal modules sit on tables that do not exist and every one of their
+  // routes 500s. (This is what made POST /api/portal/login fail: it queries
+  // portal_users, throws 'no such table', and never reaches its fallback.)
+  await run(`
+    CREATE TABLE IF NOT EXISTS payroll_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER REFERENCES clients(id),
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    calculation_method TEXT NOT NULL,
+    is_statutory INTEGER NOT NULL DEFAULT 0,
+    config_json TEXT NOT NULL DEFAULT '{}'
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS employee_salary_structures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    effective_from TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS employee_salary_structure_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    structure_id INTEGER NOT NULL REFERENCES employee_salary_structures(id) ON DELETE CASCADE,
+    component_id INTEGER NOT NULL REFERENCES payroll_components(id) ON DELETE CASCADE,
+    amount_or_formula TEXT NOT NULL,
+    sequence INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS attendance_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    in_time TEXT,
+    out_time TEXT,
+    hours_worked REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'present'
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS leave_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER REFERENCES clients(id),
+    name TEXT NOT NULL,
+    paid INTEGER NOT NULL DEFAULT 1,
+    accrual_rule TEXT NOT NULL DEFAULT ''
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS leave_balances (
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    leave_type_id INTEGER NOT NULL REFERENCES leave_types(id) ON DELETE CASCADE,
+    opening REAL NOT NULL DEFAULT 0,
+    credited REAL NOT NULL DEFAULT 0,
+    availed REAL NOT NULL DEFAULT 0,
+    closing REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY(employee_id, leave_type_id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS payroll_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER REFERENCES clients(id),
+    month INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    processed_at TEXT,
+    total_gross REAL NOT NULL DEFAULT 0,
+    total_deduction REAL NOT NULL DEFAULT 0,
+    total_net REAL NOT NULL DEFAULT 0
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS payroll_run_details (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    component_id INTEGER REFERENCES payroll_components(id),
+    amount REAL NOT NULL DEFAULT 0,
+    is_deduction INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS payslips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    pdf_path TEXT DEFAULT '',
+    emailed_at TEXT
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS statutory_config (
+    client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+    pf_wage_ceiling REAL NOT NULL DEFAULT 15000,
+    pf_employee_rate REAL NOT NULL DEFAULT 12.0,
+    pf_employer_rate REAL NOT NULL DEFAULT 12.0,
+    esi_eligible_threshold REAL NOT NULL DEFAULT 21000,
+    esi_employee_rate REAL NOT NULL DEFAULT 0.75,
+    esi_employer_rate REAL NOT NULL DEFAULT 3.25,
+    pt_slabs_json TEXT NOT NULL DEFAULT '[]',
+    tds_config_json TEXT NOT NULL DEFAULT '{}'
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS portal_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    last_login TEXT
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS portal_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS portal_carts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    portal_user_id INTEGER NOT NULL REFERENCES portal_users(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+    quantity REAL NOT NULL DEFAULT 1,
+    unit_price REAL NOT NULL DEFAULT 0
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS portal_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    sender_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS client_portal_catalog (
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    PRIMARY KEY (client_id, item_id)
+    )
+  `);
+
   // Bootstrap parity with migrations/026-units-families.sql — fresh DBs (tests,
   // new deployments seeding before first boot) must match migrated DBs.
   await ensureColumnExists('unit_groups', 'dimension', 'TEXT');
@@ -19705,1342 +19881,80 @@ async function ensureDemoPipelineRunsPresent() {
   });
 }
 
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const email = normalizeEmail(req.body?.email);
-    const password = String(req.body?.password || '');
-    const pin = String(req.body?.pin || '').trim();
-
-    let user;
-    if (pin && pin.length === 4) {
-      // Code login: match the user's assigned 4-digit code. (No hardcoded
-      // master PIN — that was a backdoor into the super admin account.)
-      user = await get('SELECT * FROM users WHERE mobile_pin = ?', [pin]);
-    } else {
-      user = await get('SELECT * FROM users WHERE email = ?', [email]);
-    }
-
-    if (user && isTimestampInFuture(user.lockout_until)) {
-      await logAuthEvent({
-        eventType: 'login_blocked_lockout',
-        targetUserId: user.id,
-        ipAddress: getRequestIp(req),
-        userAgent: getRequestUserAgent(req),
-        metadata: { lockoutUntil: user.lockout_until },
-      });
-      res.status(423).json({ success: false, user: null, token: null, error: 'Account is temporarily locked. Try again later.' });
-      return;
-    }
-
-    if (pin && pin.length === 4) {
-      if (!user || Number(user.is_active || 0) !== 1) {
-        await registerLoginFailure({ user, email: 'pin-login', req });
-        res.status(401).json({ success: false, user: null, token: null, error: 'Invalid PIN.' });
-        return;
-      }
-    } else {
-      if (!user || Number(user.is_active || 0) !== 1 || !verifyPassword(password, user.password_hash)) {
-        await registerLoginFailure({ user, email, req });
-        res.status(401).json({ success: false, user: null, token: null, error: 'Invalid email or password.' });
-        return;
-      }
-    }
-    const permissionMap = await getEffectivePermissionMap(user.id, user.role);
-
-    const clientPlatform = (req.headers['x-client-platform'] || '').toLowerCase();
-    const isMobile = clientPlatform === 'mobile' || clientPlatform === 'ios' || clientPlatform === 'android';
-    
-    if (isMobile) {
-      if (permissionMap['login.mobile'] !== true && user.role !== 'super_admin') {
-        res.status(403).json({ success: false, user: null, token: null, error: 'Mobile login is disabled for this account.' });
-        return;
-      }
-    } else {
-      if (permissionMap['login.desktop'] !== true && user.role !== 'super_admin') {
-        res.status(403).json({ success: false, user: null, token: null, error: 'Desktop login is disabled for this account.' });
-        return;
-      }
-    }
-
-    const safeUser = safeUserDto(user, permissionMap);
-    const { token } = await createAuthSession({ user, req });
-    res.json({ success: true, user: safeUser, token, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, user: null, token: null, error: error.message });
-  }
-});
-// ---------------------------------------------------------
-// Railway Track Real-time Events (SSE)
-// ---------------------------------------------------------
-// Any authenticated user may receive the realtime change stream. It carries only
-// {table_name, record_id, event_type} (ids, no row data); the actual fetch each
-// event triggers is separately permission-checked. Gating this behind
-// config.read wrongly starved non-admin users of live updates.
-app.get('/api/events', requireAuth, async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  // Tell nginx / reverse proxies NOT to buffer this stream. Without this, small
-  // change events pile up in the proxy's buffer and reach the client only when
-  // it fills or the heartbeat flushes it — so live updates arrive in laggy
-  // bursts. Pairs with `proxy_buffering off` in deploy/nginx.paper.conf.
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-  // Disable Nagle so each small SSE frame goes out on the wire immediately.
-  req.socket?.setNoDelay(true);
-
-  // Flush per-write when a flush() is available (e.g. behind compression);
-  // harmless no-op otherwise.
-  const flush = () => {
-    if (typeof res.flush === 'function') res.flush();
-  };
-
-  let sinceId = Number(req.query.since);
-  if (!Number.isFinite(sinceId) || sinceId < 0) {
-    sinceId = null;
-  }
-
-  try {
-    // Only replay when the client already holds a real position (since > 0),
-    // i.e. it received live events and then reconnected. A fresh client sends
-    // since=0 and just syncs to head — it does a full initial load on its own,
-    // so replaying the entire changelog history would be a needless burst of
-    // refetches on every app launch.
-    if (sinceId !== null && sinceId > 0) {
-      // Catch up on events missed while disconnected. This MUST use the same
-      // framing as the live `listener` below (an `event: table-change` line and
-      // table_name/record_id/event_type keys) — otherwise the client silently
-      // drops every replayed event and never recovers changes made during the
-      // reconnect gap. LIMIT guards against an unbounded replay for a very stale
-      // client; the closing `lastChangeId` still advances it to head.
-      const rows = await all('SELECT id, table_name, record_id, event_type FROM changelog WHERE id > ? ORDER BY id ASC LIMIT 1000', [sinceId]);
-      for (const row of rows) {
-        res.write(`id: ${row.id}\n`);
-        res.write(`event: table-change\n`);
-        res.write(`data: ${JSON.stringify({ table_name: row.table_name, record_id: row.record_id, event_type: row.event_type })}\n\n`);
-      }
-    }
-    // Always tell the client the current head so it can anchor its position
-    // (used on first connect, and after a capped catch-up).
-    const row = await get('SELECT MAX(id) as maxId FROM changelog');
-    const maxId = row?.maxId || 0;
-    res.write(`data: ${JSON.stringify({ lastChangeId: maxId })}\n\n`);
-    flush();
-  } catch (err) {
-    console.error('[SSE] Failed to fetch changelog:', err);
-  }
-
-  const listener = (event) => {
-    res.write(`id: ${event.id}\n`);
-    res.write(`event: table-change\n`);
-    res.write(`data: ${JSON.stringify({ table_name: event.table, record_id: event.recordId, event_type: event.eventType })}\n\n`);
-    flush();
-  };
-
-  const customEventListener = (payload) => {
-    res.write(`event: custom-event\n`);
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    flush();
-  };
-
-  changeEmitter.on('table-change', listener);
-  changeEmitter.on('custom-event', customEventListener);
-
-  // Heartbeat to keep the connection (and any idle proxy) alive.
-  const heartbeat = setInterval(() => {
-    res.write(': heartbeat\n\n');
-    flush();
-  }, 15000);
-
-  req.on('close', () => {
-    changeEmitter.off('table-change', listener);
-    changeEmitter.off('custom-event', customEventListener);
-    clearInterval(heartbeat);
-  });
+const registerAuthKernelRoutes = require('./kernel/routes/auth');
+registerAuthKernelRoutes({
+  app,
+  requireAuth,
+  requirePermission,
+  get,
+  all,
+  run,
+  normalizeEmail,
+  verifyPassword,
+  hashPassword,
+  validatePasswordPolicy,
+  getEffectivePermissionMap,
+  safeUserDto,
+  createAuthSession,
+  revokeSession,
+  logAuthEvent,
+  getRequestIp,
+  getRequestUserAgent,
+  isTimestampInFuture,
+  registerLoginFailure,
+  rowToAuthSessionDto,
+  rowToAuthEventDto,
+  normalizeNullableDate,
+  parsePagination,
+  toCsv,
+  changeEmitter,
+  canManageUser,
+  revokeSessionsForUser,
+  requireApiModulePermission,
+  requireApiWritePermission,
+  logGlobalAudit,
 });
 
-
-app.use('/api', (req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  next();
-});
-app.use('/api', requireAuth);
-app.use('/api', requireApiModulePermission);
-app.use('/api', requireApiWritePermission);
-
-app.use('/api', (req, res, next) => {
-  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    const originalSend = res.send;
-    res.send = function (body) {
-      if (res.statusCode >= 200 && res.statusCode < 300 && req.user) {
-        try {
-          const parsed = JSON.parse(body);
-          if (parsed && parsed.success === false) {
-            // It failed logically even if HTTP status was 200, skip logging
-          } else {
-            let entityType = req.path.split('/')[1] || 'unknown';
-            if (entityType === 'auth') {
-              entityType = req.path.split('/')[2] || 'auth';
-            }
-            let action = req.method;
-            
-            // Do not block response, fire and forget
-            logGlobalAudit({
-              actorUserId: req.user.id,
-              actorName: req.user.name,
-              actorRole: req.user.role,
-              action,
-              entityType,
-              details: { path: req.path, method: req.method },
-              ipAddress: getRequestIp(req)
-            }).catch(err => console.error('[Audit] Failed to log:', err));
-          }
-        } catch (e) {
-          // If response body is not JSON, we still log it.
-          let entityType = req.path.split('/')[1] || 'unknown';
-          let action = req.method;
-          logGlobalAudit({
-            actorUserId: req.user.id,
-            actorName: req.user.name,
-            actorRole: req.user.role,
-            action,
-            entityType,
-            details: { path: req.path, method: req.method },
-            ipAddress: getRequestIp(req)
-          }).catch(err => console.error('[Audit] Failed to log:', err));
-        }
-      }
-      originalSend.call(this, body);
-    };
-  }
-  next();
+const registerTrackKernelRoutes = require('./kernel/routes/track');
+registerTrackKernelRoutes({
+  app,
+  requirePermission,
+  get,
+  all,
+  rowToEntityActivityDto,
 });
 
-
-app.get('/api/auth/me', async (req, res) => {
-  res.json({ success: true, user: req.user, error: null });
-});
-
-app.post('/api/auth/logout', async (req, res) => {
-  try {
-    await revokeSession(req.authSession.id, 'logout');
-    await logAuthEvent({
-      eventType: 'logout',
-      actorUserId: req.user.id,
-      targetUserId: req.user.id,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { sessionId: req.authSession.id },
-    });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/auth/sessions', async (req, res) => {
-  try {
-    const rows = await all(
-      `
-      SELECT *
-      FROM auth_sessions
-      WHERE user_id = ?
-      ORDER BY datetime(created_at) DESC
-      LIMIT 50
-      `,
-      [req.user.id],
-    );
-    res.json({ success: true, sessions: rows.map(rowToAuthSessionDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, sessions: [], error: error.message });
-  }
-});
-
-app.delete('/api/auth/sessions/:id', async (req, res) => {
-  try {
-    const sessionId = String(req.params.id || '').trim();
-    const existing = await get('SELECT * FROM auth_sessions WHERE id = ? AND user_id = ?', [
-      sessionId,
-      req.user.id,
-    ]);
-    if (!existing) {
-      res.status(404).json({ success: false, error: 'Session not found.' });
-      return;
-    }
-    await revokeSession(sessionId, 'user_revoked');
-    await logAuthEvent({
-      eventType: 'session_revoked',
-      actorUserId: req.user.id,
-      targetUserId: req.user.id,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { sessionId },
-    });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/users/:id/sessions', requirePermission('sessions.manage'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, sessions: [], error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role) && targetId !== req.user.id) {
-      res.status(403).json({ success: false, sessions: [], error: 'You do not have permission to view this user sessions.' });
-      return;
-    }
-    const rows = await all(
-      `
-      SELECT *
-      FROM auth_sessions
-      WHERE user_id = ?
-      ORDER BY datetime(created_at) DESC
-      LIMIT 100
-      `,
-      [targetId],
-    );
-    res.json({ success: true, sessions: rows.map(rowToAuthSessionDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, sessions: [], error: error.message });
-  }
-});
-
-app.post('/api/users/:id/sessions/revoke', requirePermission('sessions.manage'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role) && targetId !== req.user.id) {
-      res.status(403).json({ success: false, error: 'You do not have permission to revoke this user sessions.' });
-      return;
-    }
-    await revokeSessionsForUser(targetId, {
-      exceptSessionId: targetId === req.user.id ? req.authSession.id : null,
-      reason: 'admin_revoked',
-    });
-    await logAuthEvent({
-      eventType: 'user_sessions_revoked',
-      actorUserId: req.user.id,
-      targetUserId: targetId,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-    });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/audit/global', requirePermission('audit.read'), async (req, res) => {
-  try {
-    const params = [];
-    const whereClauses = [];
-    const entityType = String(req.query.entityType || '').trim();
-    const action = String(req.query.action || '').trim();
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 1000);
-    const offset = Math.max(Number(req.query.offset) || 0, 0);
-
-    if (entityType) {
-      whereClauses.push('g.entity_type = ?');
-      params.push(entityType);
-    }
-    if (action) {
-      whereClauses.push('g.action = ?');
-      params.push(action);
-    }
-
-    if (req.user.role === 'admin') {
-      whereClauses.push('(g.actor_user_id = ? OR g.actor_role = ?)');
-      params.push(req.user.id, 'user');
-    } else if (req.user.role !== 'super_admin') {
-      whereClauses.push('g.actor_user_id = ?');
-      params.push(req.user.id);
-    }
-
-    const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
-
-    const countRow = await get(
-      `SELECT COUNT(*) as c FROM global_audit_logs g ${whereSql}`,
-      params
-    );
-    const total = countRow ? countRow.c : 0;
-
-    const rows = await all(
-      `
-      SELECT 
-        g.id, g.actor_user_id, g.actor_name, g.actor_role, 
-        g.action, g.entity_type, g.entity_id, g.details_json, 
-        g.ip_address, g.created_at
-      FROM global_audit_logs g
-      ${whereSql}
-      ORDER BY g.created_at DESC
-      LIMIT ? OFFSET ?
-      `,
-      [...params, limit, offset]
-    );
-
-    const logs = rows.map((r) => ({
-      id: r.id,
-      actorUserId: r.actor_user_id,
-      actorName: r.actor_name,
-      actorRole: r.actor_role,
-      action: r.action,
-      entityType: r.entity_type,
-      entityId: r.entity_id,
-      details: JSON.parse(r.details_json || '{}'),
-      ipAddress: r.ip_address,
-      createdAt: r.created_at,
-    }));
-
-    res.json({ success: true, data: logs, total, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// --- Track: per-entity + per-person activity feeds --------------------------
-// Per-person "overall" track — everything this user changed, newest first.
-// Defined before the generic /:entityType route so "actor" isn't swallowed.
-app.get('/api/track/actor/:userId', requirePermission('audit.read'), async (req, res) => {
-  try {
-    const userId = Number(req.params.userId);
-    const limit = Math.min(Number(req.query.limit) || 200, 500);
-    const rows = await all(
-      `SELECT * FROM entity_activity_log
-       WHERE actor_user_id = ?
-       ORDER BY created_at DESC, id DESC
-       LIMIT ?`,
-      [userId, limit],
-    );
-    res.json({
-      success: true,
-      events: rows.map(rowToEntityActivityDto),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, events: [], error: error.message });
-  }
-});
-
-// Per-record track — the "Track" tab on a master (Item, Vendor, Client, ...).
-app.get('/api/track/:entityType/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const entityType = String(req.params.entityType || '');
-    const entityId = String(req.params.id || '');
-    const limit = Math.min(Number(req.query.limit) || 200, 500);
-    const rows = await all(
-      `SELECT * FROM entity_activity_log
-       WHERE entity_type = ? AND entity_id = ?
-       ORDER BY created_at DESC, id DESC
-       LIMIT ?`,
-      [entityType, entityId, limit],
-    );
-    res.json({
-      success: true,
-      events: rows.map(rowToEntityActivityDto),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, events: [], error: error.message });
-  }
-});
-
-app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) => {
-  try {
-    const params = [];
-    const whereClauses = [];
-    const eventType = String(req.query.eventType || '').trim();
-    const targetUserId = Number(req.query.targetUserId || 0);
-    const actorUserId = Number(req.query.actorUserId || 0);
-    const from = normalizeNullableDate(req.query.from);
-    const to = normalizeNullableDate(req.query.to);
-    const { limit, offset } = parsePagination(req.query, {
-      defaultLimit: 50,
-      maxLimit: 200,
-    });
-    if (eventType) {
-      whereClauses.push('ae.event_type = ?');
-      params.push(eventType);
-    }
-    if (targetUserId > 0) {
-      whereClauses.push('ae.target_user_id = ?');
-      params.push(targetUserId);
-    }
-    if (actorUserId > 0) {
-      whereClauses.push('ae.actor_user_id = ?');
-      params.push(actorUserId);
-    }
-    if (from) {
-      whereClauses.push('datetime(ae.created_at) >= datetime(?)');
-      params.push(from);
-    }
-    if (to) {
-      whereClauses.push('datetime(ae.created_at) <= datetime(?)');
-      params.push(to);
-    }
-    if (req.user.role === 'admin') {
-      whereClauses.push(`(
-        ae.actor_user_id = ? OR ae.target_user_id = ?
-        OR actor.role = 'user' OR target.role = 'user'
-      )`);
-      params.push(req.user.id, req.user.id);
-    }
-    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const countRow = await get(
-      `
-      SELECT COUNT(*) AS count
-      FROM auth_events ae
-      LEFT JOIN users actor ON actor.id = ae.actor_user_id
-      LEFT JOIN users target ON target.id = ae.target_user_id
-      ${whereSql}
-      `,
-      params,
-    );
-    const total = Number(countRow?.count || 0);
-    const rows = await all(
-      `
-      SELECT
-        ae.*,
-        actor.name AS actor_user_name,
-        actor.role AS actor_role,
-        target.name AS target_user_name,
-        target.role AS target_role
-      FROM auth_events ae
-      LEFT JOIN users actor ON actor.id = ae.actor_user_id
-      LEFT JOIN users target ON target.id = ae.target_user_id
-      ${whereSql}
-      ORDER BY datetime(ae.created_at) DESC
-      LIMIT ? OFFSET ?
-      `,
-      [...params, limit, offset],
-    );
-    res.json({
-      success: true,
-      events: rows.map(rowToAuthEventDto),
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + rows.length < total,
-      },
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, events: [], error: error.message });
-  }
-});
-
-app.get('/api/auth/events/export', requirePermission('audit.read'), async (req, res) => {
-  try {
-    const rows = await all(
-      `
-      SELECT
-        ae.*,
-        actor.name AS actor_user_name,
-        target.name AS target_user_name
-      FROM auth_events ae
-      LEFT JOIN users actor ON actor.id = ae.actor_user_id
-      LEFT JOIN users target ON target.id = ae.target_user_id
-      ORDER BY datetime(ae.created_at) DESC
-      LIMIT 5000
-      `,
-    );
-    const csv = toCsv(
-      [
-        'id',
-        'created_at',
-        'event_type',
-        'actor_user_id',
-        'actor_user_name',
-        'target_user_id',
-        'target_user_name',
-        'ip_address',
-        'user_agent',
-        'metadata_json',
-      ],
-      rows.map((row) => [
-        row.id,
-        row.created_at,
-        row.event_type,
-        row.actor_user_id ?? '',
-        row.actor_user_name || '',
-        row.target_user_id ?? '',
-        row.target_user_name || '',
-        row.ip_address || '',
-        row.user_agent || '',
-        row.metadata_json || '{}',
-      ]),
-    );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="auth-events-${new Date().toISOString().slice(0, 10)}.csv"`,
-    );
-    res.status(200).send(csv);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/me/password', async (req, res) => {
-  try {
-    const currentPassword = String(req.body?.currentPassword || '');
-    const nextPassword = String(req.body?.newPassword || '');
-    const user = await get('SELECT * FROM users WHERE id = ?', [req.user.id]);
-    if (!user || !verifyPassword(currentPassword, user.password_hash)) {
-      res.status(401).json({ success: false, error: 'Current password is incorrect.' });
-      return;
-    }
-    const passwordError = validatePasswordPolicy(nextPassword, { email: user.email, role: user.role });
-    if (passwordError) {
-      res.status(400).json({ success: false, error: passwordError });
-      return;
-    }
-    await run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
-      hashPassword(nextPassword),
-      new Date().toISOString(),
-      req.user.id,
-    ]);
-    await revokeSessionsForUser(req.user.id, {
-      exceptSessionId: req.authSession.id,
-      reason: 'password_changed',
-    });
-    await logAuthEvent({
-      eventType: 'password_changed',
-      actorUserId: req.user.id,
-      targetUserId: req.user.id,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-    });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/users', requirePermission('users.read'), async (req, res) => {
-  try {
-    const params = [];
-    const whereClauses = [];
-    const queryText = String(req.query.query || '').trim().toLowerCase();
-    const role = String(req.query.role || '').trim();
-    const isActiveRaw = String(req.query.isActive || '').trim().toLowerCase();
-    if (queryText) {
-      whereClauses.push('(LOWER(users.name) LIKE ? OR LOWER(email) LIKE ?)');
-      params.push(`%${queryText}%`, `%${queryText}%`);
-    }
-    if (USER_ROLES.has(role)) {
-      whereClauses.push('users.role = ?');
-      params.push(role);
-    }
-    if (isActiveRaw === 'true' || isActiveRaw === 'false') {
-      whereClauses.push('users.is_active = ?');
-      params.push(isActiveRaw === 'true' ? 1 : 0);
-    }
-    if (req.user.role === 'admin') {
-      whereClauses.push('(users.role = ? OR users.id = ?)');
-      params.push('user', req.user.id);
-    }
-    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const { limit, offset } = parsePagination(req.query, { defaultLimit: 25, maxLimit: 100 });
-    const countRow = await get(`SELECT COUNT(*) AS count FROM users ${whereSql}`, params);
-    const total = Number(countRow?.count || 0);
-    const rows = await all(
-      `
-      SELECT users.*, clients.name as client_name
-      FROM users
-      LEFT JOIN clients ON users.client_id = clients.id
-      ${whereSql}
-      ORDER BY users.role ASC, users.name ASC
-      LIMIT ? OFFSET ?
-      `,
-      [...params, limit, offset],
-    );
-    const users = [];
-    for (const row of rows) {
-      users.push(await safeUserDtoWithPermissions(row));
-    }
-    res.json({
-      success: true,
-      users,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + users.length < total,
-      },
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, users: [], error: error.message });
-  }
-});
-
-app.get('/api/permissions', requirePermission('users.manage_permissions'), async (_req, res) => {
-  res.json({
-    success: true,
-    permissions: permissionDescriptors(),
-    error: null,
-  });
-});
-
-app.get('/api/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const queryText = String(req.query.query || '').trim().toLowerCase();
-    const params = [];
-    let whereSql = '';
-    if (queryText) {
-      whereSql = 'WHERE LOWER(name) LIKE ? OR LOWER(description) LIKE ?';
-      params.push(`%${queryText}%`, `%${queryText}%`);
-    }
-    const rows = await all(
-      `
-      SELECT *
-      FROM permission_templates
-      ${whereSql}
-      ORDER BY name ASC
-      `,
-      params,
-    );
-    const templates = [];
-    for (const row of rows) {
-      const permissionRows = await all(
-        `
-        SELECT permission_key, is_allowed
-        FROM permission_template_permissions
-        WHERE template_id = ?
-        ORDER BY permission_key ASC
-        `,
-        [row.id],
-      );
-      templates.push({
-        id: row.id,
-        name: row.name || '',
-        description: row.description || '',
-        isSystemDefault: Number(row.is_system_default || 0) === 1,
-        permissions: permissionRows
-          .filter((item) => Number(item.is_allowed || 0) === 1)
-          .map((item) => String(item.permission_key || '').trim())
-          .filter(Boolean),
-      });
-    }
-    res.json({ success: true, templates, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, templates: [], error: error.message });
-  }
-});
-
-// --- Named presets (admin-authored roles) ----------------------------------
-function normalizeTemplatePermissionKeys(input) {
-  const requested = Array.isArray(input)
-    ? input
-    : Object.entries(input || {})
-        .filter(([, v]) => v === true)
-        .map(([k]) => k);
-  return [
-    ...new Set(
-      requested.map((k) => normalizePermissionKey(k)).filter(isKnownPermissionKey),
-    ),
-  ];
-}
-
-// A non-super_admin cannot bake a permission they lack into a preset.
-function firstUngrantableKey(req, keys) {
-  if (req.user.role === 'super_admin') return null;
-  return keys.find((k) => req.userPermissions?.[k] !== true) || null;
-}
-
-app.post('/api/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const name = String(req.body?.name || '').trim();
-    if (!name) return res.status(400).json({ success: false, error: 'A name is required.' });
-    const description = String(req.body?.description || '').trim();
-    const keys = normalizeTemplatePermissionKeys(req.body?.permissions);
-    const lacking = firstUngrantableKey(req, keys);
-    if (lacking) {
-      return res.status(403).json({ success: false, error: `You cannot grant a permission you do not have (${lacking}).` });
-    }
-    const existing = await get('SELECT id FROM permission_templates WHERE LOWER(name) = LOWER(?)', [name]);
-    if (existing) return res.status(409).json({ success: false, error: 'A preset with that name already exists.' });
-    const now = nowIso();
-    const info = await run(
-      'INSERT INTO permission_templates (name, description, is_system_default, created_at, updated_at) VALUES (?, ?, 0, ?, ?)',
-      [name, description, now, now],
-    );
-    const templateId = info.lastID;
-    for (const key of keys) {
-      await run(
-        'INSERT INTO permission_template_permissions (template_id, permission_key, is_allowed, created_at, updated_at) VALUES (?, ?, 1, ?, ?)',
-        [templateId, key, now, now],
-      );
-    }
-    res.status(201).json({ success: true, id: templateId, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/permission-templates/:id', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const tpl = await get('SELECT * FROM permission_templates WHERE id = ?', [id]);
-    if (!tpl) return res.status(404).json({ success: false, error: 'Preset not found.' });
-    if (Number(tpl.is_system_default || 0) === 1) {
-      return res.status(403).json({ success: false, error: 'Built-in presets cannot be edited.' });
-    }
-    const now = nowIso();
-    const name = req.body?.name !== undefined ? String(req.body.name).trim() : tpl.name;
-    if (!name) return res.status(400).json({ success: false, error: 'A name is required.' });
-    const description = req.body?.description !== undefined ? String(req.body.description).trim() : tpl.description;
-    await run('UPDATE permission_templates SET name = ?, description = ?, updated_at = ? WHERE id = ?', [name, description, now, id]);
-    if (req.body?.permissions !== undefined) {
-      const keys = normalizeTemplatePermissionKeys(req.body.permissions);
-      const lacking = firstUngrantableKey(req, keys);
-      if (lacking) {
-        return res.status(403).json({ success: false, error: `You cannot grant a permission you do not have (${lacking}).` });
-      }
-      await run('DELETE FROM permission_template_permissions WHERE template_id = ?', [id]);
-      for (const key of keys) {
-        await run(
-          'INSERT INTO permission_template_permissions (template_id, permission_key, is_allowed, created_at, updated_at) VALUES (?, ?, 1, ?, ?)',
-          [id, key, now, now],
-        );
-      }
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/permission-templates/:id', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const tpl = await get('SELECT * FROM permission_templates WHERE id = ?', [id]);
-    if (!tpl) return res.status(404).json({ success: false, error: 'Preset not found.' });
-    if (Number(tpl.is_system_default || 0) === 1) {
-      return res.status(403).json({ success: false, error: 'Built-in presets cannot be deleted.' });
-    }
-    await run('DELETE FROM permission_template_permissions WHERE template_id = ?', [id]);
-    await run('DELETE FROM user_permission_templates WHERE template_id = ?', [id]);
-    await run('DELETE FROM permission_templates WHERE id = ?', [id]);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/users/:id/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, templates: [], error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      res.status(403).json({ success: false, templates: [], error: 'You do not have permission to manage this user.' });
-      return;
-    }
-    const assignedRows = await getAssignedPermissionTemplates(targetId);
-    const assignedTemplateIds = assignedRows.map((row) => Number(row.id));
-    res.json({
-      success: true,
-      assignedTemplateIds,
-      assignedTemplates: assignedRows.map((row) => ({
-        id: row.id,
-        name: row.name || '',
-        description: row.description || '',
-      })),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, templates: [], error: error.message });
-  }
-});
-
-app.patch('/api/users/:id/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      res.status(403).json({ success: false, error: 'You do not have permission to manage this user.' });
-      return;
-    }
-    if (target.role === 'super_admin') {
-      res.status(403).json({ success: false, error: 'Super admin templates cannot be edited.' });
-      return;
-    }
-    const templateIds = Array.isArray(req.body?.templateIds)
-      ? [...new Set(req.body.templateIds.map((value) => Number(value)).filter((value) => value > 0))]
-      : null;
-    if (!templateIds) {
-      res.status(400).json({ success: false, error: 'templateIds array is required.' });
-      return;
-    }
-    if (templateIds.length > 0) {
-      const placeholders = templateIds.map(() => '?').join(', ');
-      const templateRows = await all(
-        `
-        SELECT DISTINCT pt.id, ptp.permission_key, ptp.is_allowed
-        FROM permission_templates pt
-        LEFT JOIN permission_template_permissions ptp ON ptp.template_id = pt.id
-        WHERE pt.id IN (${placeholders})
-        `,
-        templateIds,
-      );
-      const foundTemplateIds = new Set(templateRows.map((row) => Number(row.id)));
-      if (foundTemplateIds.size !== templateIds.length) {
-        res.status(400).json({ success: false, error: 'One or more templates were not found.' });
-        return;
-      }
-      if (req.user.role !== 'super_admin') {
-        for (const row of templateRows) {
-          const key = normalizePermissionKey(row.permission_key);
-          if (!key || Number(row.is_allowed || 0) !== 1) {
-            continue;
-          }
-          if (req.userPermissions?.[key] !== true) {
-            res.status(403).json({
-              success: false,
-              error: `You cannot assign template permissions you do not have: ${key}`,
-            });
-            return;
-          }
-        }
-      }
-    }
-    await run('DELETE FROM user_permission_templates WHERE user_id = ?', [targetId]);
-    const now = nowIso();
-    for (const templateId of templateIds) {
-      await run(
-        `
-        INSERT INTO user_permission_templates (user_id, template_id, created_at)
-        VALUES (?, ?, ?)
-        `,
-        [targetId, templateId, now],
-      );
-    }
-    await logAuthEvent({
-      eventType: 'permission_templates_updated',
-      actorUserId: req.user.id,
-      targetUserId: targetId,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { templateIds },
-    });
-    res.json({ success: true, templateIds, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/users/:id/permissions', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, permissions: [], error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      res.status(403).json({ success: false, permissions: [], error: 'You do not have permission to manage this user.' });
-      return;
-    }
-    const permissions = await getUserPermissionSnapshot(target);
-    const assignedTemplates = await getAssignedPermissionTemplates(targetId);
-    res.json({
-      success: true,
-      permissions,
-      assignedTemplates: assignedTemplates.map((row) => ({
-        id: row.id,
-        name: row.name || '',
-        description: row.description || '',
-      })),
-      role: target.role,
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, permissions: [], error: error.message });
-  }
-});
-
-// --- Per-record (row-level) grants for a single user -----------------------
-app.get('/api/users/:id/record-permissions', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) return res.status(404).json({ success: false, records: [], error: 'User not found.' });
-    if (!canManageUser(req.user.role, target.role)) {
-      return res.status(403).json({ success: false, records: [], error: 'You do not have permission to manage this user.' });
-    }
-    const rows = await all(
-      'SELECT entity_type, entity_id, op FROM user_record_permissions WHERE user_id = ? ORDER BY entity_type, entity_id',
-      [targetId],
-    );
-    const records = [];
-    for (const r of rows) {
-      const src = RECORD_OPTION_SOURCES[r.entity_type];
-      let label = `#${r.entity_id}`;
-      if (src) {
-        try {
-          const row = await get(`SELECT ${src.label} AS label FROM ${src.table} WHERE ${src.idCol || 'id'} = ?`, [r.entity_id]);
-          if (row && row.label) label = row.label;
-        } catch (_) {}
-      }
-      records.push({ entityType: r.entity_type, entityId: String(r.entity_id), op: r.op, label });
-    }
-    res.json({ success: true, records, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, records: [], error: error.message });
-  }
-});
-
-app.put('/api/users/:id/record-permissions', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
-    if (!canManageUser(req.user.role, target.role)) {
-      return res.status(403).json({ success: false, error: 'You do not have permission to manage this user.' });
-    }
-    const requested = Array.isArray(req.body?.records) ? req.body.records : [];
-    const clean = [];
-    for (const r of requested) {
-      const entityType = String(r?.entityType || '').trim();
-      const entityId = String(r?.entityId ?? '').trim();
-      const op = String(r?.op || '').trim();
-      if (!RECORD_OPTION_SOURCES[entityType] || !RECORD_PERMISSION_OPS.has(op) || !entityId) continue;
-      if (req.user.role !== 'super_admin' && req.userPermissions?.[`${entityType}.${op}`] !== true) {
-        return res.status(403).json({ success: false, error: `You cannot grant ${op} on ${entityType} that you do not have yourself.` });
-      }
-      clean.push({ entityType, entityId, op });
-    }
-    const now = nowIso();
-    await run('DELETE FROM user_record_permissions WHERE user_id = ?', [targetId]);
-    for (const r of clean) {
-      await run(
-        'INSERT OR IGNORE INTO user_record_permissions (user_id, entity_type, entity_id, op, created_at) VALUES (?, ?, ?, ?, ?)',
-        [targetId, r.entityType, r.entityId, r.op, now],
-      );
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Searchable record list for the per-record picker (id + label per module).
-app.get('/api/record-options/:entityType', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const src = RECORD_OPTION_SOURCES[String(req.params.entityType)];
-    if (!src) return res.json({ success: true, options: [], error: null });
-    const q = String(req.query.query || '').trim().toLowerCase();
-    const limit = Math.min(Number(req.query.limit) || 50, 200);
-    const params = [];
-    let where = '';
-    if (q) {
-      where = `WHERE LOWER(${src.label}) LIKE ?`;
-      params.push(`%${q}%`);
-    }
-    params.push(limit);
-    const rows = await all(
-      `SELECT ${src.idCol || 'id'} AS id, ${src.label} AS label FROM ${src.table} ${where} ORDER BY label LIMIT ?`,
-      params,
-    );
-    res.json({
-      success: true,
-      options: rows.map((r) => ({ id: String(r.id), label: r.label || `#${r.id}` })),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, options: [], error: error.message });
-  }
-});
-
-app.patch('/api/users/:id/permissions', requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, permissions: [], error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      res.status(403).json({ success: false, permissions: [], error: 'You do not have permission to manage this user.' });
-      return;
-    }
-    if (target.role === 'super_admin') {
-      res.status(403).json({ success: false, permissions: [], error: 'Super admin permissions cannot be edited.' });
-      return;
-    }
-
-    const patchItems = Array.isArray(req.body?.overrides) ? req.body.overrides : null;
-    if (!patchItems) {
-      res.status(400).json({ success: false, permissions: [], error: 'overrides array is required.' });
-      return;
-    }
-
-    const actorCanGrant = req.userPermissions || createEmptyPermissionMap();
-    const targetRoleDefaults = await getRolePermissionMap(target.role);
-    const targetTemplateDefaults = await getTemplatePermissionMapForUser(targetId);
-    const now = nowIso();
-    for (const item of patchItems) {
-      const key = normalizePermissionKey(item?.key);
-      if (!isKnownPermissionKey(key)) {
-        res.status(400).json({ success: false, permissions: [], error: `Unknown permission key: ${key}` });
-        return;
-      }
-      const allowed = parseBooleanFlag(item?.allowed);
-      if (req.user.role !== 'super_admin' && allowed && actorCanGrant[key] !== true) {
-        res.status(403).json({ success: false, permissions: [], error: `You cannot grant permission you do not have: ${key}` });
-        return;
-      }
-      const baselineAllowed =
-        targetRoleDefaults[key] === true || targetTemplateDefaults[key] === true;
-      if (allowed === baselineAllowed) {
-        await run(
-          'DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_key = ?',
-          [targetId, key],
-        );
-      } else {
-        await run(
-          `
-          INSERT INTO user_permission_overrides (user_id, permission_key, is_allowed, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(user_id, permission_key)
-          DO UPDATE SET is_allowed = excluded.is_allowed, updated_at = excluded.updated_at
-          `,
-          [targetId, key, allowed ? 1 : 0, now, now],
-        );
-      }
-    }
-
-    await logAuthEvent({
-      eventType: 'permissions_updated',
-      actorUserId: req.user.id,
-      targetUserId: targetId,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { updatedKeys: patchItems.map((item) => normalizePermissionKey(item?.key)).filter(Boolean) },
-    });
-
-    const refreshedTarget = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    const permissions = await getUserPermissionSnapshot(refreshedTarget);
-    res.json({ success: true, permissions, role: refreshedTarget.role, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, permissions: [], error: error.message });
-  }
-});
-
-app.post('/api/admins', requireRoles('super_admin'), requirePermission('users.create_admin'), async (req, res) => {
-  try {
-    const user = await createUserAccount({
-      name: req.body?.name,
-      email: req.body?.email,
-      password: req.body?.password,
-      role: 'admin',
-      createdByUserId: req.user.id,
-    });
-    await logAuthEvent({
-      eventType: 'user_created',
-      actorUserId: req.user.id,
-      targetUserId: user.id,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { role: 'admin' },
-    });
-    res.status(201).json({ success: true, user: await safeUserDtoWithPermissions(user), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
-  }
-});
-
-app.post('/api/users', requireRoles('super_admin', 'admin'), requirePermission('users.create_user'), async (req, res) => {
-  try {
-    const user = await createUserAccount({
-      name: req.body?.name,
-      email: req.body?.email,
-      password: req.body?.password,
-      role: 'user',
-      createdByUserId: req.user.id,
-    });
-    await logAuthEvent({
-      eventType: 'user_created',
-      actorUserId: req.user.id,
-      targetUserId: user.id,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { role: 'user' },
-    });
-    res.status(201).json({ success: true, user: await safeUserDtoWithPermissions(user), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
-  }
-});
-
-app.delete('/api/users/:id', requireRoles('super_admin', 'admin'), requirePermission('users.manage_permissions'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const override = req.query.override === 'true';
-    if (!override) {
-       return res.status(400).json({ success: false, error: 'User deletion requires override flag for compliance reasons.' });
-    }
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-    if (targetId === req.user.id) {
-      return res.status(400).json({ success: false, error: 'You cannot delete your own account.' });
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      return res.status(403).json({ success: false, error: 'You can only delete accounts below your own role level.' });
-    }
-
-    const fs = require('fs');
-    const path = require('path');
-    const backupDir = path.join(__dirname, 'backups');
-    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir);
-    fs.writeFileSync(path.join(backupDir, `user_${targetId}_backup.json`), JSON.stringify(target, null, 2));
-
-    await run('BEGIN TRANSACTION');
-    try {
-      await run('DELETE FROM auth_sessions WHERE user_id = ?', [targetId]);
-      await run('DELETE FROM user_permission_overrides WHERE user_id = ?', [targetId]);
-      await run('DELETE FROM user_permission_templates WHERE user_id = ?', [targetId]);
-      await run('UPDATE auth_events SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
-      await run('UPDATE auth_events SET target_user_id = NULL WHERE target_user_id = ?', [targetId]);
-      await run('UPDATE global_audit_logs SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
-      await run('UPDATE delete_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = ?', [targetId]);
-      await run('DELETE FROM delete_requests WHERE requested_by_user_id = ?', [targetId]);
-      await run('UPDATE users SET created_by_user_id = NULL WHERE created_by_user_id = ?', [targetId]);
-      await run('UPDATE procurement_requests SET created_by_user_id = NULL WHERE created_by_user_id = ?', [targetId]);
-      await run('UPDATE procurement_requests SET raised_by_user_id = NULL WHERE raised_by_user_id = ?', [targetId]);
-      await run('UPDATE procurement_requests SET cancelled_by_user_id = NULL WHERE cancelled_by_user_id = ?', [targetId]);
-      await run('UPDATE procurement_requests SET closed_by_user_id = NULL WHERE closed_by_user_id = ?', [targetId]);
-      await run('UPDATE procurement_activity_log SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
-      await run('UPDATE delivery_challans SET created_by = NULL WHERE created_by = ?', [targetId]);
-      await run('UPDATE delivery_challans SET updated_by = NULL WHERE updated_by = ?', [targetId]);
-      await run('DELETE FROM search_history WHERE user_id = ?', [targetId]);
-      await run('DELETE FROM search_clicks WHERE user_id = ?', [targetId]);
-      
-      await run('DELETE FROM users WHERE id = ?', [targetId]);
-      await run('COMMIT');
-    } catch (e) {
-      await run('ROLLBACK');
-      throw e;
-    }
-    
-    await logAuthEvent({
-      eventType: 'user_deleted',
-      actorUserId: req.user.id,
-      targetUserId: targetId,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { note: 'compliance override delete with backup' },
-    });
-    
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/users/:id/password', requirePermission('users.reset_password'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, error: 'User not found.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      res.status(403).json({ success: false, error: 'You can only reset passwords for accounts below your own role level.' });
-      return;
-    }
-    const newPassword = String(req.body?.newPassword || req.body?.password || '');
-    const passwordError = validatePasswordPolicy(newPassword, { email: target.email, role: target.role });
-    if (passwordError) {
-      res.status(400).json({ success: false, error: passwordError });
-      return;
-    }
-    await run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [
-      hashPassword(newPassword),
-      new Date().toISOString(),
-      targetId,
-    ]);
-    await revokeSessionsForUser(targetId, { reason: 'password_reset' });
-    await logAuthEvent({
-      eventType: 'password_reset',
-      actorUserId: req.user.id,
-      targetUserId: targetId,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-    });
-    res.json({
-      success: true,
-      user: await safeUserDtoWithPermissions(await get('SELECT * FROM users WHERE id = ?', [targetId])),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/users/:id/status', requirePermission('users.update_status'), async (req, res) => {
-  try {
-    const targetId = Number(req.params.id);
-    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
-    if (!target) {
-      res.status(404).json({ success: false, user: null, error: 'User not found.' });
-      return;
-    }
-    if (targetId === req.user.id) {
-      res.status(400).json({ success: false, user: null, error: 'You cannot deactivate your own account.' });
-      return;
-    }
-    if (!canManageUser(req.user.role, target.role)) {
-      res.status(403).json({ success: false, user: null, error: 'You can only update accounts below your own role level.' });
-      return;
-    }
-    await run('UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', [
-      req.body?.isActive === false ? 0 : 1,
-      new Date().toISOString(),
-      targetId,
-    ]);
-    const isActive = req.body?.isActive === false ? false : true;
-    if (!isActive) {
-      await revokeSessionsForUser(targetId, { reason: 'user_deactivated' });
-    }
-    await logAuthEvent({
-      eventType: isActive ? 'user_activated' : 'user_deactivated',
-      actorUserId: req.user.id,
-      targetUserId: targetId,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-    });
-    res.json({
-      success: true,
-      user: await safeUserDtoWithPermissions(await get('SELECT * FROM users WHERE id = ?', [targetId])),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, user: null, error: error.message });
-  }
+const registerUsersKernelRoutes = require('./kernel/routes/users');
+registerUsersKernelRoutes({
+  app,
+  requirePermission,
+  requireRoles,
+  get,
+  all,
+  run,
+  USER_ROLES,
+  RECORD_OPTION_SOURCES,
+  RECORD_PERMISSION_OPS,
+  parsePagination,
+  safeUserDtoWithPermissions,
+  permissionDescriptors,
+  normalizePermissionKey,
+  isKnownPermissionKey,
+  nowIso,
+  canManageUser,
+  getAssignedPermissionTemplates,
+  getUserPermissionSnapshot,
+  createEmptyPermissionMap,
+  getRolePermissionMap,
+  getTemplatePermissionMapForUser,
+  parseBooleanFlag,
+  logAuthEvent,
+  getRequestIp,
+  getRequestUserAgent,
+  createUserAccount,
+  validatePasswordPolicy,
+  hashPassword,
+  revokeSessionsForUser,
 });
 
 
@@ -21125,15 +20039,13 @@ function mergeCustomVariationValueJsonRows(rows) {
   return merged;
 }
 
-
-
-app.get('/api/search', requirePermission('inventory.read'), async (req, res) => {
-  try {
-    const q = (req.query.q || '').trim();
-    if (!q) {
-      return res.json({ success: true, results: [] });
-    }
-    
+const registerSearchModuleRoutes = require('./modules/search/routes');
+registerSearchModuleRoutes({
+  app,
+  requirePermission,
+  all,
+  run,
+  searchEntities: async (q, userId) => {
     const tokens = q.split(/\s+/).filter(Boolean);
     const itemConditions = tokens.map(() => '(i.name LIKE ? OR i.display_name LIKE ? OR i.alias LIKE ? OR v.variation_path_label LIKE ?)').join(' AND ');
     const itemParams = tokens.flatMap(t => {
@@ -21167,19 +20079,18 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
       materialParams
     );
 
-    const clicks = await all(
+    const clicks = userId ? await all(
       `SELECT entity_type, entity_id, COUNT(*) as click_count 
        FROM search_clicks 
        WHERE user_id = ? 
        GROUP BY entity_type, entity_id`,
-      [req.user.id]
-    );
+      [userId]
+    ) : [];
     const clickMap = {};
     for (const c of clicks) {
       clickMap[`${c.entity_type}_${c.entity_id}`] = c.click_count;
     }
 
-    // Fetch configurations for items
     const itemConfigs = {};
     const itemIds = [...new Set(items.map(i => i.id))];
     if (itemIds.length > 0) {
@@ -21202,7 +20113,6 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
         configsMap[id] = new Map();
       }
 
-      // Initialize with base configs to preserve order
       allNodes.forEach(n => {
         if (!n.parent_node_id) {
           configsMap[n.item_id].set(n.display_name || n.name, new Set());
@@ -21214,7 +20124,6 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
 
       for (const row of stockRows) {
         const itemId = row.item_id;
-        
         try {
           const pathIds = row.variation_path_node_ids_json ? JSON.parse(row.variation_path_node_ids_json) : [];
           for (const id of pathIds) {
@@ -21304,274 +20213,36 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
     ];
     
     results.sort((a, b) => b.score - a.score);
-    
-    res.json({ success: true, results });
-  } catch (error) {
-    res.status(500).json({ success: false, results: [], error: error.message });
+    return results;
   }
 });
 
-app.get('/api/search/history', requirePermission('inventory.read'), async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.json({ success: true, history: [] });
-    }
-    const history = await all(
-      'SELECT query, MAX(created_at) as last_searched FROM search_history WHERE user_id = ? GROUP BY query ORDER BY last_searched DESC LIMIT 10',
-      [userId]
-    );
-    res.json({ success: true, history: history.map(h => h.query) });
-  } catch (error) {
-    res.status(500).json({ success: false, history: [], error: error.message });
-  }
+const registerFavoritesKernelRoutes = require('./kernel/routes/favorites');
+registerFavoritesKernelRoutes({
+  app,
+  all,
+  run,
 });
 
-app.post('/api/search/history', requirePermission('inventory.read'), async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { query } = req.body;
-    if (userId && query) {
-      await run(
-        'INSERT INTO search_history (user_id, query, created_at) VALUES (?, ?, ?)',
-        [userId, String(query).trim(), new Date().toISOString()]
-      );
-    }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+const registerCompanyProfileModuleRoutes = require('./modules/company_profile/routes');
+registerCompanyProfileModuleRoutes({
+  app,
+  requirePermission,
+  getActiveCompanyProfile,
+  saveCompanyProfile,
+  rowToCompanyProfileDto,
 });
 
-app.post('/api/search/clicks', requirePermission('inventory.read'), async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { query, entityType, entityId, entityLabel } = req.body;
-    if (userId && entityType && entityId) {
-      await run(
-        'INSERT INTO search_clicks (user_id, query, entity_type, entity_id, entity_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, query || '', entityType, String(entityId), entityLabel || '', new Date().toISOString()]
-      );
-    }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+const registerAdminKernelRoutes = require('./kernel/routes/admin');
+registerAdminKernelRoutes({
+  app,
+  requireRoles,
+  requirePermission,
+  resetAndSeedDemoData,
+  factoryResetData,
+  clearAllData,
+  reseedDemoData,
 });
-
-
-
-
-
-app.get('/api/favorites', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
-    const rows = await all(
-      'SELECT item_id, variation_leaf_node_id, variation_path_label, variation_path_node_ids, custom_variation_values FROM user_favorite_items WHERE user_id = ?',
-      [userId]
-    );
-    res.json({
-      success: true,
-      favorites: rows.map(r => ({
-        itemId: r.item_id,
-        variationLeafNodeId: r.variation_leaf_node_id,
-        variationPathLabel: r.variation_path_label,
-        variationPathNodeIds: JSON.parse(r.variation_path_node_ids),
-        customVariationValues: JSON.parse(r.custom_variation_values),
-      })),
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/favorites', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
-    const {
-      itemId,
-      variationLeafNodeId = 0,
-      variationPathLabel = '',
-      variationPathNodeIds = [],
-      customVariationValues = {}
-    } = req.body;
-
-    if (!itemId) {
-      return res.status(400).json({ success: false, error: 'itemId is required' });
-    }
-
-    await run(
-      `INSERT INTO user_favorite_items (
-        user_id, item_id, variation_leaf_node_id, variation_path_label, variation_path_node_ids, custom_variation_values, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT DO NOTHING`,
-      [
-        userId,
-        itemId,
-        variationLeafNodeId,
-        variationPathLabel,
-        JSON.stringify(variationPathNodeIds),
-        JSON.stringify(customVariationValues)
-      ]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/favorites/:itemId/:variationLeafNodeId', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
-    const itemId = Number(req.params.itemId);
-    const variationLeafNodeId = Number(req.params.variationLeafNodeId);
-
-    await run(
-      'DELETE FROM user_favorite_items WHERE user_id = ? AND item_id = ? AND variation_leaf_node_id = ?',
-      [userId, itemId, variationLeafNodeId]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-
-
-
-
-
-function actorFromRequest(req) {
-  return {
-    id: req.user?.id || null,
-    name: req.user?.name || 'System',
-    role: req.user?.role || 'system',
-  };
-}
-
-app.get('/api/company-profile', requirePermission('config.read'), async (_req, res) => {
-  try {
-    const profile = await getActiveCompanyProfile();
-    res.json({ success: true, data: rowToCompanyProfileDto(profile), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, data: null, error: error.message });
-  }
-});
-
-app.put('/api/company-profile', requirePermission('config.write'), async (req, res) => {
-  try {
-    const profile = await saveCompanyProfile(req.body || {});
-    res.json({ success: true, data: rowToCompanyProfileDto(profile), error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      data: null,
-      error: error.message,
-    });
-  }
-});
-
-app.post(
-  '/api/admin/reset-demo-data',
-  requireRoles('super_admin', 'admin'),
-  requirePermission('config.write'),
-  async (req, res) => {
-    try {
-      const scenarioId = req.body?.scenarioId || 'default';
-      await resetAndSeedDemoData(scenarioId);
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        error: error.message,
-      });
-    }
-  },
-);
-
-console.log('Registering /api/admin/factory-reset route...');
-app.post(
-  '/api/admin/factory-reset',
-  requireRoles('super_admin'),
-  async (_req, res) => {
-    try {
-      await factoryResetData();
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        error: error.message,
-      });
-    }
-  },
-);
-
-console.log('Registering /api/admin/clear-data route...');
-app.post(
-  '/api/admin/clear-data',
-  requireRoles('super_admin', 'admin'),
-  requirePermission('config.write'),
-  async (_req, res) => {
-    try {
-      await clearAllData();
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        error: error.message,
-      });
-    }
-  },
-);
-
-// Personal data reset: any signed-in user (including staff) can wipe THEIR OWN
-// account-scoped data — favorites and search history — without touching shared
-// business records. Admins use /api/admin/clear-data for a full workspace wipe.
-app.post('/api/me/clear-data', requireAuth, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    await run('BEGIN TRANSACTION');
-    try {
-      await run('DELETE FROM user_favorite_items WHERE user_id = ?', [userId]);
-      await run('DELETE FROM search_history WHERE user_id = ?', [userId]);
-      await run('DELETE FROM search_clicks WHERE user_id = ?', [userId]);
-      await run('COMMIT');
-    } catch (inner) {
-      await run('ROLLBACK');
-      throw inner;
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
-  }
-});
-
-app.post(
-  '/api/admin/reseed-data',
-  requireRoles('super_admin', 'admin'),
-  requirePermission('config.write'),
-  async (req, res) => {
-    try {
-      const scenarioId = req.body?.scenarioId || 'default';
-      await reseedDemoData(scenarioId);
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        error: error.message,
-      });
-    }
-  },
-);
 
 const handleListChallans = async (req, res) => {
   try {
@@ -22233,6 +20904,14 @@ const handleUpdateChallanReportGroups = async (req, res) => {
 
 
 
+function actorFromRequest(req) {
+  return {
+    id: req?.user?.id || null,
+    name: req?.user?.name || 'System',
+    role: req?.user?.role || 'system',
+  };
+}
+
 async function countPipelineRunsForTemplate(templateId) {
   return get('SELECT COUNT(*) as count FROM pipeline_runs WHERE template_id = ?', [templateId]);
 }
@@ -22251,7 +20930,7 @@ async function recordProductionScrap({
   await run(`
     INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
     VALUES (?, ?, ?, ?, ?, ?)
-  `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
+  `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req).name]);
 
   // Check pipeline for targeted scrap routing group
   const runRow = await get('SELECT scrap_routing FROM pipeline_runs WHERE id = ?', [pipelineRunId]);
@@ -22298,8 +20977,8 @@ async function recordProductionScrap({
       'lot',
       'tracked',
       scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
-      scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
-      scrapItem ? null : sourceMaterial.linked_variation_leaf_node_id,
+      scrapItem ? scrapItem.id : (sourceMaterial?.linked_item_id || null),
+      scrapItem ? null : (sourceMaterial?.linked_variation_leaf_node_id || null),
       lotUnit,
       sourceMaterial?.unit_id ?? scrapItem?.unit_id ?? null,
       'available',
@@ -22337,7 +21016,7 @@ async function recordProductionScrap({
         challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
-        challanId, scrapItem ? scrapItem.id : sourceMaterial.linked_item_id, Number(scrapQty), Number(scrapQty), 1, new Date().toISOString(), new Date().toISOString()
+        challanId, scrapItem ? scrapItem.id : (sourceMaterial?.linked_item_id || null), Number(scrapQty), Number(scrapQty), 1, new Date().toISOString(), new Date().toISOString()
       ]
     );
   }
@@ -22467,166 +21146,24 @@ async function handleChallanTemplateTestPrint(req, res) {
 
 
 
-app.post('/api/upload/generic', requireGenericUploadPermission, async (req, res) => {
-  try {
-    const { fileName, contentType, sha256 } = req.body || {};
-    if (!fileName || !contentType) {
-      const error = new Error('fileName and contentType are required.');
-      error.statusCode = 400;
-      throw error;
-    }
-    
-    const normalizedName = normalizeAssetFileName(fileName);
-    const uniqueStem = `${Date.now()}-${String(sha256 || '').slice(0, 12)}`;
-    const objectKey = `generic/${uniqueStem}-${normalizedName}`;
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
-    const uploadSessionId = `generic-upload-${now.getTime()}-${crypto.randomBytes(8).toString('hex')}`;
-    
-    const uploadUrl = await presignS3Url({
-      method: 'PUT',
-      objectKey,
-      contentType,
-      expiresSeconds: 900,
-    });
-    
-    const readUrl = await presignS3Url({
-      method: 'GET',
-      objectKey,
-      expiresSeconds: 7 * 24 * 60 * 60, // 7 days (maximum for presigned URLs typically)
-    });
-
-    const intent = {
-      alreadyUploaded: false,
-      upload: {
-        uploadSessionId,
-        objectKey,
-        uploadUrl,
-        headers: { 'Content-Type': contentType },
-        expiresAt,
-        readUrl,
-      }
-    };
-
-    res.status(201).json({
-      success: true,
-      intent,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      intent: null,
-      error: error.message,
-    });
-  }
-});
-
-app.post('/api/assets/upload-intent', requireAssetEntityPermission('write', assetEntityTypeFromBody), async (req, res) => {
-  try {
-    const intent = await createAssetUploadIntent(req.body || {});
-    res.status(intent.alreadyUploaded ? 200 : 201).json({
-      success: true,
-      intent,
-      error: null,
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      intent: null,
-      error: error.message,
-    });
-  }
-});
-
-
-
-
-
-app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res) => {
-  try {
-    const { code } = req.query;
-    if (!code) {
-      return res.status(400).json({ success: false, error: 'Code is required' });
-    }
-    
-    const row = await get(`
-      SELECT pb.*, 
-             ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight, ci.note,
-             c.order_no, c.type as challan_type, c.vendor_name
-      FROM piece_barcodes pb
-      JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
-      JOIN delivery_challans c ON ci.challan_id = c.id
-      WHERE pb.parent_code = ? OR pb.child_code = ?
-    `, [code, code]);
-    
-    if (!row) {
-      return res.status(404).json({ success: false, error: 'Barcode not found in database.' });
-    }
-
-    const itemDesc = await itemsPorts.describe(row.item_id);
-    row.item_name = itemDesc?.name || 'Unknown Item';
-    row.short_code = itemDesc?.shortCode || '';
-    
-    res.json({ success: true, result: row });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-
-app.post('/api/assets/upload-complete', requireAssetEntityPermission('write', assetEntityTypeFromUploadSession), async (req, res) => {
-  try {
-    const asset = await completeAssetUpload(req.body || {});
-    res.json({ success: true, asset, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      asset: null,
-      error: error.message,
-    });
-  }
-});
-
-
-
-app.post('/api/assets/:id/read-url', requireAssetEntityPermission('read', assetEntityTypeFromAssetId), async (req, res) => {
-  try {
-    const payload = await createAssetReadUrl(Number(req.params.id));
-    res.json({ success: true, ...payload, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      asset: null,
-      readUrl: null,
-      error: error.message,
-    });
-  }
-});
-
-app.patch('/api/assets/:id/primary', requireAssetEntityPermission('write', assetEntityTypeFromAssetId), async (req, res) => {
-  try {
-    const asset = await setPrimaryAsset(Number(req.params.id));
-    res.json({ success: true, asset, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      asset: null,
-      error: error.message,
-    });
-  }
-});
-
-app.delete('/api/assets/:id', requireAssetEntityPermission('write', assetEntityTypeFromAssetId), async (req, res) => {
-  try {
-    await deleteAsset(Number(req.params.id));
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+const registerAssetsKernelRoutes = require('./kernel/routes/assets');
+registerAssetsKernelRoutes({
+  app,
+  requirePermission,
+  requireGenericUploadPermission,
+  requireAssetEntityPermission,
+  assetEntityTypeFromBody,
+  assetEntityTypeFromUploadSession,
+  assetEntityTypeFromAssetId,
+  normalizeAssetFileName,
+  presignS3Url,
+  createAssetUploadIntent,
+  completeAssetUpload,
+  createAssetReadUrl,
+  setPrimaryAsset,
+  deleteAsset,
+  getS3Client,
+  run,
 });
 
 
@@ -23455,459 +21992,12 @@ app.put('/runs/:id/batches', async (req, res) => {
 
 
 // ── SANDBOX CONTROL PLANE ROUTES ──
-
-// Public configuration fetch endpoint (polled by clients at startup/update check)
-app.get('/sandbox-config/:clientId', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const row = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
-    if (row) {
-      res.setHeader('Content-Type', 'application/json');
-      return res.send(row.config_json);
-    }
-    // Fall back to default config if client specific config doesn't exist
-    const defaultRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', ['default']);
-    if (defaultRow) {
-      res.setHeader('Content-Type', 'application/json');
-      return res.send(defaultRow.config_json);
-    }
-    // Static fallback
-    res.json({
-      "modules": {
-        "orders": true,
-        "masters": true,
-        "inventory": true,
-        "production": true,
-        "pm": true,
-        "jobs": true,
-        "delivery_challans": true,
-        "actionCenter": true
-      },
-      "orders": {
-        "statusColors": {
-          "pending": "#FFA500",
-          "in_progress": "#1E90FF",
-          "completed": "#32CD32"
-        },
-        "allowCustomActions": true,
-        "allowOrdersCreation": true,
-        "showReport": true
-      },
-      "features": {
-        "disableMachineCustomFields": false
-      },
-      "production": {
-        "multiScrapItems": true,
-        "materialVariationPaths": true
-      },
-      "enhancements": {
-        "catalogInventory": true,
-        "boardingPassCards": true
-      },
-      "challans": {
-        "singleTypeView": true,
-        "reconciliation": true
-      },
-      "catalog": {
-        "purchaseItems": true
-      },
-      "purchase": {
-        "flowV2": true
-      },
-      "update": {
-        "channel": "stable",
-        "latest_version": "1.0.0"
-      },
-      "units": {
-        "families": true
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Dynamic Appcast XML endpoint for the auto-updater
-app.get('/api/appcast/:clientId.xml', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    let configStr = null;
-    const row = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
-    if (row) {
-      configStr = row.config_json;
-    } else {
-      const defaultRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', ['default']);
-      if (defaultRow) configStr = defaultRow.config_json;
-    }
-    
-    let targetVersion = '1.0.0';
-    if (configStr) {
-      try {
-        const config = JSON.parse(configStr);
-        if (config.update && config.update.latest_version) {
-          targetVersion = config.update.latest_version;
-        }
-      } catch (e) {}
-    }
-
-    // Replace this with your actual S3 bucket public URL or CloudFront distribution
-    const bucketUrl = process.env.AWS_S3_UPDATE_BUCKET_URL || 'https://your-bucket.s3.amazonaws.com/releases';
-    const downloadUrl = `${bucketUrl}/${targetVersion}/paper-windows-v${targetVersion}.exe`;
-
-    const xml = `<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-    <channel>
-        <title>Paper Appcast</title>
-        <item>
-            <title>Version ${targetVersion}</title>
-            <sparkle:version>${targetVersion}</sparkle:version>
-            <enclosure url="${downloadUrl}" sparkle:os="windows" />
-        </item>
-    </channel>
-</rss>`;
-
-    res.setHeader('Content-Type', 'application/xml');
-    res.send(xml);
-  } catch (error) {
-    res.status(500).send('<error>Internal Server Error</error>');
-  }
-});
-
-// Serve the centralized feature registry definition
-app.get('/api/sandbox-dashboard/feature-registry', (req, res) => {
-  try {
-    const registryPath = path.join(__dirname, 'feature_registry.json');
-    if (fs.existsSync(registryPath)) {
-      const data = fs.readFileSync(registryPath, 'utf8');
-      res.setHeader('Content-Type', 'application/json');
-      return res.send(data);
-    }
-    return res.json([]);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Client SQLite database sync endpoint
-app.post('/api/sandbox-sync/:clientId', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const { data } = req.body;
-    if (!data) {
-      return res.status(400).json({ success: false, error: 'Missing sync data' });
-    }
-    
-    const zlib = require('zlib');
-    const buffer = Buffer.from(data, 'base64');
-    zlib.gunzip(buffer, async (err, decoded) => {
-      if (err) {
-        console.error('[Sandbox Sync Error] Gunzip failed:', err);
-        return res.status(400).json({ success: false, error: 'Decompression failed' });
-      }
-      try {
-        const dbStateStr = decoded.toString('utf8');
-        // Validate JSON
-        JSON.parse(dbStateStr);
-        
-        await run(`
-          INSERT INTO sandbox_sync_states (client_id, db_state, updated_at)
-          VALUES (?, ?, datetime('now'))
-          ON CONFLICT(client_id) DO UPDATE SET
-            db_state = excluded.db_state,
-            updated_at = excluded.updated_at
-        `, [clientId, dbStateStr]);
-        
-        res.json({ success: true, message: 'Sync successful' });
-      } catch (e) {
-        console.error('[Sandbox Sync Error] JSON parse or SQL save failed:', e);
-        res.status(400).json({ success: false, error: 'Invalid sync payload structure' });
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Client session replay sync endpoint
-app.post('/api/session-replay/:clientId', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const { data } = req.body;
-    if (!data) return res.status(400).json({ success: false, error: 'Missing replay data' });
-    
-    const zlib = require('zlib');
-    const buffer = Buffer.from(data, 'base64');
-    zlib.gunzip(buffer, async (err, decoded) => {
-      if (err) {
-        console.error('[Replay Sync Error] Gunzip failed:', err);
-        return res.status(400).json({ success: false, error: 'Decompression failed' });
-      }
-      try {
-        const payload = JSON.parse(decoded.toString('utf8'));
-        const { sessionId, events } = payload;
-        
-        // Fetch existing replay for this session
-        const existing = await get('SELECT events_json FROM sandbox_replays WHERE client_id = ? AND session_id = ?', [clientId, sessionId]);
-        let allEvents = [];
-        if (existing) {
-          allEvents = JSON.parse(existing.events_json);
-        }
-        allEvents.push(...events);
-        
-        if (existing) {
-          await run('UPDATE sandbox_replays SET events_json = ? WHERE client_id = ? AND session_id = ?', [JSON.stringify(allEvents), clientId, sessionId]);
-        } else {
-          await run('INSERT INTO sandbox_replays (client_id, session_id, events_json, created_at) VALUES (?, ?, ?, datetime(\'now\'))', [clientId, sessionId, JSON.stringify(allEvents)]);
-        }
-        
-        res.json({ success: true, message: 'Replay synced successfully' });
-      } catch (e) {
-        console.error('[Replay Sync Error] JSON parse or SQL save failed:', e);
-        res.status(400).json({ success: false, error: 'Invalid payload structure' });
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Dashboard APIs (for config and observation)
-app.get('/api/sandbox-dashboard/clients', async (req, res) => {
-  try {
-    const configs = await all('SELECT client_id, updated_at FROM sandbox_client_configs');
-    const syncs = await all('SELECT client_id, updated_at FROM sandbox_sync_states');
-    
-    const clientsMap = {};
-    for (const c of configs) {
-      clientsMap[c.client_id] = { clientId: c.client_id, configUpdatedAt: c.updated_at, syncUpdatedAt: null };
-    }
-    for (const s of syncs) {
-      if (!clientsMap[s.client_id]) {
-        clientsMap[s.client_id] = { clientId: s.client_id, configUpdatedAt: null };
-      }
-      clientsMap[s.client_id].syncUpdatedAt = s.updated_at;
-    }
-    res.json({ success: true, clients: Object.values(clientsMap) });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/sandbox-dashboard/client/:clientId', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const configRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
-    const syncRow = await get('SELECT db_state, updated_at FROM sandbox_sync_states WHERE client_id = ?', [clientId]);
-    const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [clientId]);
-    const machines = await all('SELECT * FROM sandbox_activated_machines WHERE client_id = ?', [clientId]);
-    const users = await all('SELECT * FROM sandbox_client_users WHERE client_id = ?', [clientId]);
-    
-    res.json({
-      success: true,
-      clientId,
-      activationPin: pinRow ? pinRow.activation_pin : null,
-      activatedMachines: machines || [],
-      users: users || [],
-      config: configRow ? JSON.parse(configRow.config_json) : null,
-      syncState: syncRow ? JSON.parse(syncRow.db_state) : null,
-      syncUpdatedAt: syncRow ? syncRow.updated_at : null
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/sandbox-dashboard/client/:clientId/config', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const { config } = req.body;
-    if (!config) {
-      return res.status(400).json({ success: false, error: 'Missing configuration' });
-    }
-    
-    await run(`
-      INSERT INTO sandbox_client_configs (client_id, config_json, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(client_id) DO UPDATE SET
-        config_json = excluded.config_json,
-        updated_at = excluded.updated_at
-    `, [clientId, JSON.stringify(config)]);
-    
-    // Generate an activation pin if it doesn't exist
-    const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [clientId]);
-    if (!pinRow) {
-      const newPin = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit pin
-      await run('INSERT INTO sandbox_client_pins (client_id, activation_pin, created_at) VALUES (?, ?, datetime("now"))', [clientId, newPin]);
-    }
-    
-    res.json({ success: true, message: 'Configuration saved' });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/activation/activate', async (req, res) => {
-  try {
-    const { client_id, activation_pin, fingerprint } = req.body;
-    if (!client_id || !activation_pin || !fingerprint) {
-      return res.status(400).json({ success: false, error: 'Missing required activation parameters' });
-    }
-
-    // Verify pin
-    const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [client_id]);
-    if (!pinRow || pinRow.activation_pin !== activation_pin) {
-      return res.status(401).json({ success: false, error: 'Invalid client ID or activation PIN' });
-    }
-
-    // Verify machine limit (max 3)
-    const machineCountRow = await get('SELECT COUNT(*) as count FROM sandbox_activated_machines WHERE client_id = ?', [client_id]);
-    if (machineCountRow && machineCountRow.count >= 3) {
-      // Check if this fingerprint is already one of the 3
-      const existing = await get('SELECT token FROM sandbox_activated_machines WHERE client_id = ? AND machine_fingerprint = ?', [client_id, fingerprint]);
-      if (!existing) {
-        return res.status(403).json({ success: false, error: 'Activation limit reached (Max 3 machines).' });
-      }
-    }
-
-    // Generate token (crypto random for sandbox)
-    const token = crypto.randomBytes(32).toString('hex');
-    
-    await run(`
-      INSERT INTO sandbox_activated_machines (client_id, machine_fingerprint, token, activated_at)
-      VALUES (?, ?, ?, datetime('now'))
-      ON CONFLICT(client_id, machine_fingerprint) DO UPDATE SET token = excluded.token, activated_at = excluded.activated_at
-    `, [client_id, fingerprint, token]);
-
-    // Check if this is the first activation (to guide user creation on the frontend)
-    const isFirstActivation = machineCountRow.count === 0;
-
-    res.json({ success: true, token, isFirstActivation });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/sandbox-dashboard/client/:clientId/users', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const { email, role } = req.body;
-    if (!email || !role) return res.status(400).json({ success: false, error: 'Missing user details' });
-
-    await run(`
-      INSERT INTO sandbox_client_users (client_id, user_email, role, created_at)
-      VALUES (?, ?, ?, datetime('now'))
-      ON CONFLICT(client_id, user_email) DO UPDATE SET role = excluded.role
-    `, [clientId, email, role]);
-
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/sandbox-dashboard/client/:clientId/user/:email', async (req, res) => {
-  try {
-    const { clientId, email } = req.params;
-    await run('DELETE FROM sandbox_client_users WHERE client_id = ? AND user_email = ?', [clientId, email]);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/activate/:clientId/:fingerprint', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const fingerprint = req.params.fingerprint;
-    await run('DELETE FROM sandbox_activated_machines WHERE client_id = ? AND machine_fingerprint = ?', [clientId, fingerprint]);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/build/global', async (req, res) => {
-  try {
-    // Empty version = fresh build (artifact only). The workflow gates its S3
-    // publish step on a non-empty target_version, so don't default it here.
-    const targetVersion = (req.body.targetVersion || '').trim();
-    const githubToken = process.env.GITHUB_TOKEN;
-    const githubOwner = process.env.GITHUB_OWNER || 'your-github-username';
-    const githubRepo = process.env.GITHUB_REPO || 'core-erp';
-
-    if (!githubToken) {
-      return res.status(500).json({ success: false, error: 'GITHUB_TOKEN is not set in environment variables.' });
-    }
-
-    const url = `https://api.github.com/repos/${githubOwner}/${githubRepo}/actions/workflows/build-desktop.yml/dispatches`;
-    
-    // Using global fetch (Node 18+)
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${githubToken}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        ref: 'main',
-        inputs: {
-          target_version: targetVersion
-        }
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({ success: false, error: `GitHub API error: ${errorText}` });
-    }
-
-    res.json({
-      success: true,
-      message: targetVersion
-        ? `Global Build v${targetVersion} dispatched successfully!`
-        : 'Fresh build dispatched (no version, not published).',
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/sandbox-dashboard/client/:clientId/replays', async (req, res) => {
-  try {
-    const clientId = req.params.clientId;
-    const rows = await all('SELECT id, session_id, created_at, length(events_json) as size FROM sandbox_replays WHERE client_id = ? ORDER BY created_at DESC', [clientId]);
-    res.json({ success: true, replays: rows });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/sandbox-dashboard/replay/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    const row = await get('SELECT session_id, events_json, created_at FROM sandbox_replays WHERE id = ?', [id]);
-    if (!row) return res.status(404).json({ success: false, error: 'Replay not found' });
-    res.json({
-      success: true,
-      sessionId: row.session_id,
-      events: JSON.parse(row.events_json),
-      createdAt: row.created_at
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Serve the beautiful Dashboard UI
-app.get('/dashboard', (req, res) => {
-  const dashboardPath = path.join(__dirname, 'dashboard.html');
-  if (fs.existsSync(dashboardPath)) {
-    res.sendFile(dashboardPath);
-  } else {
-    res.status(404).send('Dashboard UI file not found');
-  }
+const registerSandboxKernelRoutes = require('./kernel/routes/sandbox');
+registerSandboxKernelRoutes({
+  app,
+  get,
+  all,
+  run,
 });
 
 
@@ -24426,34 +22516,20 @@ async function createFreelancerJobWithTasks({ item_id, quantity }) {
 
 
 
-app.get('/api/freelancer-portal/data', async (req, res) => {
-  try {
-    const token = req.query.token;
-    if (!token) return res.status(400).json({ success: false, error: 'Missing token' });
-    
-    const crypto = require('crypto');
-    const SECRET = 'my-very-secret-key-32charslong!!'; 
-    let barcode_id;
-    try {
-      const parts = token.split(':');
-      const iv = Buffer.from(parts[0], 'hex');
-      const encryptedText = Buffer.from(parts[1], 'hex');
-      const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(SECRET), iv);
-      let decrypted = decipher.update(encryptedText);
-      decrypted = Buffer.concat([decrypted, decipher.final()]);
-      barcode_id = decrypted.toString();
-    } catch (e) {
-      return res.status(400).json({ success: false, error: 'Invalid or tampered token' });
-    }
-
-    const employee = await get('SELECT id FROM employees WHERE barcode_id = ?', [barcode_id]);
-    if (!employee) return res.status(404).json({ success: false, error: 'Freelancer not found' });
-    
+const registerFreelancerPortalModuleRoutes = require('./modules/freelancer_portal/routes');
+registerFreelancerPortalModuleRoutes({
+  app,
+  get,
+  all,
+  getFreelancerEmployee: async (barcode_id) => {
+    return await get('SELECT id FROM employees WHERE barcode_id = ?', [barcode_id]);
+  },
+  getFreelancerPortalData: async (employeeId) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const isoDate = thirtyDaysAgo.toISOString();
 
-    const batches = await all('SELECT * FROM freelancer_job_batches WHERE freelancer_id = ? AND created_at >= ?', [employee.id, isoDate]);
+    const batches = await all('SELECT * FROM freelancer_job_batches WHERE freelancer_id = ? AND created_at >= ?', [employeeId, isoDate]);
     const batchIds = batches.map(b => b.id);
     let jobs = [];
     let tasks = [];
@@ -24464,193 +22540,37 @@ app.get('/api/freelancer-portal/data', async (req, res) => {
         tasks = await all(`SELECT * FROM freelancer_job_tasks WHERE job_id IN (${jobIds.join(',')})`);
       }
     }
-    
-    res.json({ success: true, batches, jobs, tasks });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return { batches, jobs, tasks };
   }
 });
 
-
-
-app.post('/api/mobile/stage-item', requireAuth, async (req, res) => {
-  try {
-    if (io) io.emit('item_staged', req.body);
-    changeEmitter.emit('custom-event', { event: 'item_staged', data: req.body });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+const registerMobileModuleRoutes = require('./modules/mobile/routes');
+registerMobileModuleRoutes({
+  app,
+  requireAuth,
+  getIo: () => io,
+  changeEmitter,
 });
 
-app.post('/api/mobile/remove-staged-item', requireAuth, async (req, res) => {
-  try {
-    if (io) io.emit('item_removed', req.body);
-    changeEmitter.emit('custom-event', { event: 'item_removed', data: req.body });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/mobile/lock-inventory', requireAuth, async (req, res) => {
-  try {
-    if (io) io.emit('inventory_locked', req.body);
-    changeEmitter.emit('custom-event', { event: 'inventory_locked', data: req.body });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/mobile/challan-generated', requireAuth, async (req, res) => {
-  try {
-    if (io) io.emit('challan_generated_ok', req.body);
-    changeEmitter.emit('custom-event', { event: 'challan_generated_ok', data: req.body });
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-
-
-// ==========================================
-// B2B PORTAL APIs
-// ==========================================
-
-
-
-app.post('/api/portal/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    
-    // Check real portal users first
-    const user = await get('SELECT * FROM portal_users WHERE email = ? AND is_active = 1', [email]);
-    if (user && user.password_hash === password) { // simple string match for now
-      return res.json({ 
-        success: true, 
-        user: { 
-          id: user.id, 
-          email: user.email,
-          client_id: user.client_id 
-        } 
-      });
-    }
-
-    // Fallback to mock
-    if (email === 'test@example.com' && password === 'password') {
-      return res.json({ success: true, user: { id: 1, name: 'Test Client User', client_id: 1 } });
-    }
-    return res.status(401).json({ success: false, error: 'Invalid credentials' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/portal/catalog', async (req, res) => {
-  try {
-    const clientId = req.query.client_id;
-    if (!clientId) {
-      return res.status(400).json({ success: false, error: 'client_id query parameter is required' });
-    }
-    
-    // Only return items that aren't archived AND are in the client_portal_catalog
-    const items = await all(`
+const registerPortalModuleRoutes = require('./modules/portal/routes');
+registerPortalModuleRoutes({
+  app,
+  get,
+  all,
+  run,
+  saveOrder,
+  getPortalCatalog: async (clientId) => {
+    return await all(`
       SELECT i.id, i.name, i.display_name, i.alias, i.quantity, i.naming_format 
       FROM items i
       JOIN client_portal_catalog cpc ON i.id = cpc.item_id
       WHERE i.is_archived = 0 AND cpc.client_id = ?
       ORDER BY i.display_name ASC
     `, [clientId]);
-    
-    res.json({ success: true, items });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/portal/cart', async (req, res) => {
-  try {
-    const { portal_user_id, item_id, quantity } = req.body;
-    if (!portal_user_id || !item_id) {
-      return res.status(400).json({ success: false, error: 'Missing required fields' });
-    }
-    
-    const existing = await get('SELECT * FROM portal_carts WHERE portal_user_id = ? AND item_id = ?', [portal_user_id, item_id]);
-    if (existing) {
-      await run('UPDATE portal_carts SET quantity = quantity + ? WHERE id = ?', [quantity, existing.id]);
-    } else {
-      await run('INSERT INTO portal_carts (portal_user_id, item_id, quantity) VALUES (?, ?, ?)', 
-        [portal_user_id, item_id, quantity]);
-    }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/portal/orders', async (req, res) => {
-  try {
-    const { portal_user_id, items, notes } = req.body;
-    if (!portal_user_id || !items || !items.length) {
-      return res.status(400).json({ success: false, error: 'Missing required fields' });
-    }
-    
-    const pUser = await get('SELECT * FROM portal_users WHERE id = ?', [portal_user_id]);
-    if (!pUser) return res.status(404).json({ success: false, error: 'Portal user not found' });
-    
-    await run('BEGIN TRANSACTION');
-    
-    const orderNo = 'B2B-ORD-' + Date.now();
-    
-    // Create header
+  },
+  createPortalOrderHeader: async (orderNo, clientId) => {
     await run('INSERT INTO order_headers (order_no, client_id, created_at, updated_at) VALUES (?, ?, ?, ?)', 
-      [orderNo, pUser.client_id, new Date().toISOString(), new Date().toISOString()]);
-      
-    // Save items
-    for (const item of items) {
-      await saveOrder({
-        orderNo,
-        clientId: pUser.client_id,
-        itemId: item.item_id,
-        quantity: item.quantity,
-        status: 'draft',
-        createdByPortalUserId: portal_user_id,
-      }, { returnMeta: false });
-    }
-    
-    // Clear cart
-    await run('DELETE FROM portal_carts WHERE portal_user_id = ?', [portal_user_id]);
-    
-    await run('COMMIT');
-    res.json({ success: true, orderNo });
-  } catch (error) {
-    await run('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/delete-s3-object', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { url } = req.body;
-    if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
-    try {
-      const parsedUrl = new URL(url);
-      const objectKey = parsedUrl.pathname.substring(1);
-      const s3Client = getS3Client();
-      await s3Client.send(new DeleteObjectCommand({
-        Bucket: process.env.S3_BUCKET,
-        Key: objectKey,
-      }));
-      // Update db status to deleted just in case
-      await run("UPDATE uploaded_assets SET status = 'deleted' WHERE object_key = ?", [objectKey]);
-      res.json({ success: true, error: null });
-    } catch (e) {
-      res.status(500).json({ success: false, error: 'Failed to delete S3 object: ' + e.message });
-    }
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+      [orderNo, clientId, new Date().toISOString(), new Date().toISOString()]);
   }
 });
 
@@ -24705,31 +22625,7 @@ function guardContract(contract) {
   };
 }
 
-// Guard alert feed. Admin-gated: it exposes payload shapes and actor identity.
-app.get('/api/kernel/guard-alerts', requireRoles('super_admin', 'admin'), async (req, res) => {
-  try {
-    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-    const rows = await all(
-      "SELECT id, entity_id, actor_name, actor_role, details_json, created_at FROM entity_activity_log WHERE entity_type = 'kernel_guard' ORDER BY id DESC LIMIT ?",
-      [limit],
-    );
-    res.json({
-      success: true,
-      enforcing: CONTRACT_ENFORCE,
-      alerts: rows.map((row) => ({
-        id: row.id,
-        route: row.entity_id,
-        actorName: row.actor_name,
-        actorRole: row.actor_role,
-        details: parseJson(row.details_json, {}),
-        createdAt: row.created_at,
-      })),
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, alerts: [], error: error.message });
-  }
-});
+
 
 
 
@@ -24980,6 +22876,26 @@ registerClientsModuleRoutes({
   trackDelete,
   trashAndDelete,
   getIo: () => io,
+  upsertPortalUser: async (clientId, email, passwordHash) => {
+    const existing = await get('SELECT id FROM portal_users WHERE client_id = ?', [clientId]);
+    if (existing) {
+      await run('UPDATE portal_users SET email = ?, password_hash = ? WHERE client_id = ?', [email, passwordHash, clientId]);
+    } else {
+      await run('INSERT INTO portal_users (client_id, email, password_hash) VALUES (?, ?, ?)', [clientId, email, passwordHash]);
+    }
+  },
+  getClientPortalCatalog: async (clientId) => {
+    const rows = await all('SELECT item_id FROM client_portal_catalog WHERE client_id = ?', [clientId]);
+    return rows.map(r => r.item_id);
+  },
+  setClientPortalCatalog: async (clientId, itemIds) => {
+    await run('BEGIN TRANSACTION');
+    await run('DELETE FROM client_portal_catalog WHERE client_id = ?', [clientId]);
+    for (const itemId of itemIds) {
+      await run('INSERT INTO client_portal_catalog (client_id, item_id) VALUES (?, ?)', [clientId, itemId]);
+    }
+    await run('COMMIT');
+  },
 });
 
 const registerPeopleModuleRoutes = require('./modules/people/routes');
@@ -25070,6 +22986,18 @@ registerInventoryModuleRoutes({
   getMaterialActivity,
   rowToMaterialActivityDto,
   currentActor,
+  itemsPorts: () => itemsPorts,
+  lookupBarcode: async (code) => {
+    return await get(`
+      SELECT pb.*, 
+             ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight, ci.note,
+             c.order_no, c.type as challan_type, c.vendor_name
+      FROM piece_barcodes pb
+      JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+      JOIN delivery_challans c ON ci.challan_id = c.id
+      WHERE pb.parent_code = ? OR pb.child_code = ?
+    `, [code, code]);
+  },
 });
 
 const registerOrdersModuleRoutes = require('./modules/orders/routes');
@@ -25159,61 +23087,7 @@ registerProductionModuleRoutes({
   recordProductionScrap,
 });
 
-const { computeTerritory } = require("./kernel/territory");
-// Kernel introspection is infrastructure, not business data: it exposes the
-// deployment's internal shape, so it is admin-gated rather than merely
-// authenticated (/api/kernel/* is otherwise unmapped by the module gate).
-app.get("/api/kernel/territory", requireRoles('super_admin', 'admin'), async (req, res) => {
-  try {
-    const result = await computeTerritory({
-      app,
-      allRows: all,
-      runtime: {
-        items: {
-          portCalls: itemsPorts.stats()
-        },
-        challans: {
-          portCalls: challansPorts.stats()
-        }
-      }
-    });
-    res.json({ success: true, territory: result });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// Reconciler v0 — DRIFT REPORT. Answers "does reality match what we declared?"
-// across four axes: manifests vs mounted routes/present tables, evacuation
-// claims vs module packages on disk, migrations on disk vs applied, and
-// deployment config flags vs the registry's module vocabulary. Read-only:
-// converging (plan/apply) is v1.
-const { reconcile } = require('./kernel/reconcile');
-app.get('/api/kernel/reconcile', requireRoles('super_admin', 'admin'), async (req, res) => {
-  try {
-    const migrationsDir = path.join(__dirname, 'migrations');
-    const modulesDir = path.join(__dirname, 'modules');
-    const migrationFiles = fs.existsSync(migrationsDir)
-      ? fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql') || f.endsWith('.js')).sort()
-      : [];
-    const moduleDirs = fs.existsSync(modulesDir)
-      ? fs.readdirSync(modulesDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-      : [];
-    const report = await reconcile({
-      app,
-      allRows: all,
-      getRow: get,
-      migrationFiles,
-      moduleDirs,
-      clientId: String(req.query.clientId || 'default'),
-    });
-    res.json({ success: true, reconcile: report, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, reconcile: null, error: error.message });
-  }
-});
 
 let io = null;
 let bonjour = null;

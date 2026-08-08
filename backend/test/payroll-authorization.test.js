@@ -40,15 +40,12 @@ test('payroll data is not readable without an explicit grant', async () => {
   await backend.resetAndSeedDemoData();
 
   // Give the probe something real to leak, so this measures AUTHORIZATION
-  // rather than a missing table.
+  // rather than a missing table. The table itself now comes from initDb's
+  // bootstrap parity with migrations/005 — this test used to have to invent it,
+  // which is how it ended up asserting against a schema that did not exist.
   await backend.run(
-    `CREATE TABLE IF NOT EXISTS payroll_components (
-       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT,
-       calculation_type TEXT, value REAL, is_active INTEGER DEFAULT 1
-     )`,
-  );
-  await backend.run(
-    "INSERT INTO payroll_components (name, type, calculation_type, value) VALUES ('Basic Salary','earning','fixed',50000)",
+    `INSERT INTO payroll_components (name, type, calculation_method, config_json)
+     VALUES ('Basic Salary', 'earning', 'fixed', '{"value":50000}')`,
   );
 
   const { server, port } = await listen(backend.app);
@@ -114,7 +111,7 @@ test('payroll data is not readable without an explicit grant', async () => {
     assert.equal(allowed.status, 200, 'super admin must still read payroll');
     const allowedBody = await allowed.json();
     assert.ok(
-      allowedBody.components.some((c) => Number(c.value) === 50000),
+      allowedBody.components.some((c) => String(c.config_json || '').includes('50000')),
       'expected the seeded component for an authorized reader',
     );
 

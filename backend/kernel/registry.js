@@ -205,6 +205,37 @@ const MODULES = {
     tables: ['pipeline_templates'],
     evacuated: true,
   },
+  company_profile: {
+    label: 'Company Profile',
+    sensitive: true,
+    pathSegments: ['company-profile'],
+    tables: ['company_profiles'],
+    evacuated: true,
+  },
+  search: {
+    label: 'Search',
+    pathSegments: ['search'],
+    tables: ['search_history', 'search_clicks'],
+    evacuated: true,
+  },
+  mobile: {
+    label: 'Mobile',
+    pathSegments: ['mobile'],
+    tables: [],
+    evacuated: true,
+  },
+  portal: {
+    label: 'Portal',
+    pathSegments: ['portal'],
+    tables: ['portal_users', 'portal_carts', 'client_portal_catalog'],
+    evacuated: true,
+  },
+  freelancer_portal: {
+    label: 'Freelancer Portal',
+    pathSegments: ['freelancer-portal'],
+    tables: [],
+    evacuated: true,
+  },
 };
 
 // Path segments the central CRUD gate deliberately skips — auth, account
@@ -216,6 +247,28 @@ const MODULE_GATE_EXCLUDED_SEGMENTS = new Set([
   'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
   'record-options',
 ]);
+
+// PUBLIC endpoints: reachable with no ERP bearer token at all.
+//
+// Declared ONCE and honoured by BOTH requireAuth and the central module gate,
+// because those two disagreeing is a real failure mode: bypassing auth for
+// /portal/login while `portal` was also a declared CRUD module left the login
+// answering 403 — the gate demanded `portal.create`, which an external portal
+// client can never hold. Public must mean public at every border, or not at all.
+//
+// Deliberately path-exact, not segment-wide: the rest of /api/portal (catalog,
+// cart, orders) identifies its caller by a `client_id` QUERY PARAMETER with no
+// session verification, so opening the whole segment would expose any client's
+// data to anyone. Those stay gated until the portal has a real session model.
+const PUBLIC_API_PATHS = [
+  '/portal/login',
+  '/freelancer-portal',
+];
+
+function isPublicApiPath(apiPath) {
+  const p = String(apiPath || '');
+  return PUBLIC_API_PATHS.some((pub) => p === pub || p.startsWith(`${pub}/`));
+}
 
 // Capability keys — signed off individually, NOT part of the module CRUD grid.
 const CAPABILITY_DESCRIPTORS = {
@@ -448,6 +501,8 @@ module.exports = {
   ASSET_ENTITY_PERMISSIONS,
   PATH_SEGMENT_TO_MODULE,
   MODULE_GATE_EXCLUDED_SEGMENTS,
+  PUBLIC_API_PATHS,
+  isPublicApiPath,
   RECORD_OPTION_SOURCES,
   TRACK_ENTITY_LABELS,
 };

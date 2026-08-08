@@ -243,12 +243,8 @@ app.post('/api/clients/:id/portal-credentials', async (req, res) => {
     }
     const hash = password; // Should hash password in production
     
-    // UPSERT portal_users for this client
-    const existing = await get('SELECT id FROM portal_users WHERE client_id = ?', [clientId]);
-    if (existing) {
-      await run('UPDATE portal_users SET email = ?, password_hash = ? WHERE client_id = ?', [email, hash, clientId]);
-    } else {
-      await run('INSERT INTO portal_users (client_id, email, password_hash) VALUES (?, ?, ?)', [clientId, email, hash]);
+    if (ctx.upsertPortalUser) {
+      await ctx.upsertPortalUser(clientId, email, hash);
     }
     res.json({ success: true });
   } catch (err) {
@@ -258,8 +254,8 @@ app.post('/api/clients/:id/portal-credentials', async (req, res) => {
 
 app.get('/api/clients/:id/portal-catalog', async (req, res) => {
   try {
-    const rows = await all('SELECT item_id FROM client_portal_catalog WHERE client_id = ?', [req.params.id]);
-    res.json({ success: true, itemIds: rows.map(r => r.item_id) });
+    const itemIds = ctx.getClientPortalCatalog ? await ctx.getClientPortalCatalog(req.params.id) : [];
+    res.json({ success: true, itemIds });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -270,16 +266,11 @@ app.post('/api/clients/:id/portal-catalog', async (req, res) => {
     const clientId = req.params.id;
     const { itemIds } = req.body; // Array of item IDs
     
-    await run('BEGIN TRANSACTION');
-    await run('DELETE FROM client_portal_catalog WHERE client_id = ?', [clientId]);
-    
-    for (const itemId of itemIds) {
-      await run('INSERT INTO client_portal_catalog (client_id, item_id) VALUES (?, ?)', [clientId, itemId]);
+    if (ctx.setClientPortalCatalog) {
+      await ctx.setClientPortalCatalog(clientId, itemIds || []);
     }
-    await run('COMMIT');
     res.json({ success: true });
   } catch (err) {
-    await run('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, error: err.message });
   }
 });

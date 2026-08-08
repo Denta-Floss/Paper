@@ -9,6 +9,10 @@ const test = require('node:test');
 // deployments and the app disagree about what exists.
 test('config defaults stay structurally identical across server.js and config_service.dart', () => {
   const serverJs = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
+  const sandboxJs = fs.existsSync(path.join(__dirname, '../kernel/routes/sandbox.js'))
+    ? fs.readFileSync(path.join(__dirname, '../kernel/routes/sandbox.js'), 'utf8')
+    : '';
+  const configSources = serverJs + '\n' + sandboxJs;
   const configService = fs.readFileSync(
     path.join(__dirname, '../../packages/core_erp/lib/core/services/config_service.dart'),
     'utf8',
@@ -19,11 +23,11 @@ test('config defaults stay structurally identical across server.js and config_se
     'config_service.dart lost the units.families default',
   );
   assert.ok(
-    serverJs.includes('"units": {\n      "families": true\n    }'),
+    configSources.includes('"units": {\n      "families": true\n    }'),
     'server.js six-space config default block lost units.families',
   );
   assert.ok(
-    serverJs.includes('"units": {\n        "families": true\n      }'),
+    configSources.includes('"units": {\n        "families": true\n      }'),
     'server.js eight-space config default block lost units.families',
   );
 });

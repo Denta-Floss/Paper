@@ -57,6 +57,7 @@ app.post('/api/production-scrap', requirePermission('config.write'), async (req,
 
     res.status(201).json({ success: true });
   } catch (error) {
+    console.error('Scrap error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
