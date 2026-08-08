@@ -192,7 +192,7 @@ const MODULES = {
     recordSource: { table: 'dies', idCol: 'id', label: "COALESCE(NULLIF(TRIM(tool_code), ''), 'Die ' || id)" },
     trackTables: { dies: 'Die' },
     tables: ['dies'],
-    evacuated: false,
+    evacuated: true,
   },
   pipelines: {
     label: 'Pipelines',
