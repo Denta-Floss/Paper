@@ -104,7 +104,7 @@ const MODULES = {
     // central gate, so the jobs.* CRUD keys could never gate anything.
     pathSegments: ['freelancer-jobs'],
     tables: ['freelancer_jobs', 'freelancer_job_batches', 'freelancer_job_tasks'],
-    evacuated: false,
+    evacuated: true,
   },
   action_center: {
     label: 'Action Center',
