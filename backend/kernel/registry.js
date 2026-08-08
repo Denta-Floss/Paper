@@ -174,7 +174,7 @@ const MODULES = {
     recordSource: { table: 'units', idCol: 'id', label: 'name' },
     trackTables: { units: 'Unit' },
     tables: ['units', 'unit_groups'],
-    evacuated: false,
+    evacuated: true,
   },
   machines: {
     label: 'Machines',
