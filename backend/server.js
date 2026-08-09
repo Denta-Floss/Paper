@@ -1905,75 +1905,6 @@ function normalizeUnitValue(value = '') {
   return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-function rowToMaterialDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  const unitLabel = String(row.unit || '').trim();
-  const displayStock = String(row.display_stock || '').trim() ||
-    (unitLabel
-      ? `${Number(row.on_hand_qty || 0)} ${unitLabel}`
-      : `${Number(row.on_hand_qty || 0)}`);
-
-  return {
-    id: row.id,
-    barcode: row.barcode,
-    name: row.name,
-    type: row.type,
-    grade: row.grade || '',
-    thickness: row.thickness || '',
-    supplier: row.supplier || '',
-    location: row.location || '',
-    unitId: row.unit_id || null,
-    unit: row.unit || '',
-    notes: row.notes || '',
-    groupMode: row.group_mode || null,
-    inheritanceEnabled: Number(row.inheritance_enabled || 0) === 1,
-    isParent: row.kind === 'parent',
-    parentBarcode: row.parent_barcode || null,
-    numberOfChildren: row.number_of_children || 0,
-    linkedChildBarcodes: parseJson(row.linked_child_barcodes, []),
-    scanCount: row.scan_count || 0,
-    createdAt: row.created_at,
-    linkedGroupId: row.linked_group_id || null,
-    linkedItemId: row.linked_item_id || null,
-    linkedVariationLeafNodeId: row.linked_variation_leaf_node_id || null,
-    displayStock,
-    createdBy: row.created_by || 'Demo Admin',
-    workflowStatus: row.workflow_status || 'notStarted',
-    materialClass: row.material_class || 'raw_material',
-    inventoryState: row.inventory_state || 'available',
-    procurementState: row.procurement_state || 'not_ordered',
-    traceabilityMode: row.traceability_mode || 'bulk',
-    onHand: Number(row.on_hand_qty || 0),
-    reserved: Number(row.reserved_qty || 0),
-    availableToPromise: Number(row.available_to_promise_qty || 0),
-    incoming: Number(row.incoming_qty || 0),
-    linkedOrderCount: Number(row.linked_order_count || 0),
-    linkedPipelineCount: Number(row.linked_pipeline_count || 0),
-    pendingAlertCount: Number(row.pending_alert_count || 0),
-    updatedAt: row.updated_at || row.created_at,
-    lastScannedAt: row.last_scanned_at || null,
-  };
-}
-
-function rowToMaterialActivityDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    barcode: row.barcode || '',
-    type: row.event_type || '',
-    label: row.event_label || '',
-    description: row.event_description || '',
-    actor: row.actor || '',
-    createdAt: row.created_at,
-  };
-}
-
 function rowToUnitDto(row) {
   if (!row) {
     return null;
@@ -2138,20 +2069,6 @@ function rowToGroupDto(row) {
   };
 }
 
-function rowToInventorySetDto(row, lines = []) {
-  if (!row) {
-    return null;
-  }
-  return {
-    id: row.id,
-    name: row.name || '',
-    totalItemCount: Number(row.total_item_count || 0),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lines,
-  };
-}
-
 function rowToClientDto(row) {
   if (!row) {
     return null;
@@ -2167,65 +2084,6 @@ function rowToClientDto(row) {
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-
-function rowToOrderDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    orderNo: row.order_no || '',
-    clientId: row.client_id || 0,
-    subContractorId: row.sub_contractor_id || null,
-    clientName: row.client_name || '',
-    poNumber: row.po_number || '',
-    clientCode: row.client_code || '',
-    itemId: row.item_id || 0,
-    itemName: row.item_name || '',
-    variationLeafNodeId: row.variation_leaf_node_id || 0,
-    variationPathLabel: row.variation_path_label || '',
-    variationPathNodeIds: parseJson(row.variation_path_node_ids_json, []),
-    customVariationValues: parseJson(row.custom_variation_values_json, {}),
-    quantity: Number(row.quantity || 0),
-    unitId: row.unit_id || null,
-    unitName: row.unit_name || '',
-    unitSymbol: row.unit_symbol || '',
-    unitPrice: Number(row.unit_price || 0),
-    totalInvoicedQty: Number(row.total_invoiced_qty || 0),
-    totalDeliveredQty: Number(row.total_delivered_qty || 0),
-    status: row.status || 'notStarted',
-    createdAt: row.created_at,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    hsnCode: row.hsn_code || '',
-    taxableValue: Number(row.taxable_value || 0),
-    cgstRate: Number(row.cgst_rate || 0),
-    sgstRate: Number(row.sgst_rate || 0),
-    cgstAmount: Number(row.cgst_amount || 0),
-    sgstAmount: Number(row.sgst_amount || 0),
-  };
-}
-
-function rowToPoDocumentDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    fileName: row.file_name || '',
-    contentType: row.content_type || '',
-    sizeBytes: Number(row.size_bytes || 0),
-    sha256: row.sha256 || '',
-    objectKey: row.object_key || '',
-    status: row.status || 'uploaded',
-    createdAt: row.created_at,
-    uploadedAt: row.uploaded_at,
-    linkedAt: row.linked_at || null,
   };
 }
 
@@ -2265,39 +2123,6 @@ async function rowToUploadedAssetDto(row, includeReadUrls = true) {
     }
   }
   return rowToAssetDto(row, payload);
-}
-
-function rowToOrderActivityDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    orderId: row.order_id || 0,
-    activityType: row.activity_type || row.event_type || '',
-    actorUserId: row.actor_user_id || null,
-    actorName: row.actor_name || '',
-    actorRole: row.actor_role || '',
-    source: row.source || '',
-    details: parseJson(row.details_json || row.metadata_json, null),
-    createdAt: row.created_at,
-  };
-}
-
-function rowToOrderStatusHistoryDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    orderId: row.order_id || 0,
-    previousStatus: row.previous_status || null,
-    newStatus: row.new_status || '',
-    changedByUserId: row.changed_by_user_id || null,
-    changedAt: row.changed_at,
-  };
 }
 
 async function rowToItemDto(row) {
@@ -6749,62 +6574,6 @@ async function migrateOrderActivityLogCompatibilityColumns() {
   }
 }
 
-function orderActivityTitle(activityType) {
-  return String(activityType || '')
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Order Activity';
-}
-
-// Cache order_activity_log column set once at startup to avoid repeated PRAGMA
-// calls on every order save/lifecycle update (H-5 fix).
-let _orderActivityLogColumns = null;
-async function getOrderActivityLogColumns() {
-  if (!_orderActivityLogColumns) {
-    const columns = await all('PRAGMA table_info(order_activity_log)');
-    _orderActivityLogColumns = new Set(columns.map((col) => col.name));
-  }
-  return _orderActivityLogColumns;
-}
-
-async function insertOrderActivityLog({
-  orderId,
-  activityType,
-  actor = null,
-  source = 'api',
-  details = {},
-  createdAt = new Date().toISOString(),
-}) {
-  const available = await getOrderActivityLogColumns();
-  const detailsJson = JSON.stringify(details || {});
-  const valuesByColumn = {
-    order_id: orderId,
-    activity_type: activityType,
-    event_type: activityType,
-    title: orderActivityTitle(activityType),
-    description: '',
-    actor_user_id: actor?.id || null,
-    actor_name: actor?.name || 'System',
-    actor_role: actor?.role || 'system',
-    source: actor?.source || source || 'api',
-    details_json: detailsJson,
-    metadata_json: detailsJson,
-    created_at: createdAt,
-  };
-  const insertColumns = Object.keys(valuesByColumn).filter((column) =>
-    available.has(column),
-  );
-  const placeholders = insertColumns.map(() => '?').join(', ');
-  await run(
-    `
-    INSERT INTO order_activity_log (${insertColumns.join(', ')})
-    VALUES (${placeholders})
-    `,
-    insertColumns.map((column) => valuesByColumn[column]),
-  );
-}
-
 async function seedMaterialsIfEmpty() {
   // Intentionally left empty. The semantic demo inventory dataset is seeded
   // later via ensureDemoMaterialsPresent() after groups/items are available.
@@ -7069,135 +6838,6 @@ async function seedTemplatesIfEmpty() {
 
   for (const template of templates) {
     await insertSeedTemplate(template);
-  }
-}
-
-async function createParentWithChildren(payload) {
-  const resolvedUnit = await resolveUnitPayload(payload);
-  const actor = String(payload?.actor || '').trim() || 'Demo Admin';
-  const normalizedGroupMode = String(payload.groupMode || '').trim() || null;
-  const shouldCreateMasterGroup = (
-    String(payload.type || '').trim() === 'Group' ||
-    normalizedGroupMode === 'item_group_authoring' ||
-    normalizedGroupMode === 'standalone_group' ||
-    normalizedGroupMode === 'nested_group'
-  );
-  const parentBarcode = generateParentBarcode();
-  const childBarcodes = Array.from(
-    { length: Number(payload.numberOfChildren || 0) },
-    (_, index) => generateChildBarcode(parentBarcode, index + 1),
-  );
-  const createdAt = new Date().toISOString();
-
-  await run('BEGIN TRANSACTION');
-  try {
-    let linkedGroupId = null;
-    if (shouldCreateMasterGroup && resolvedUnit.unitId) {
-      const group = await saveGroup({
-        name: payload.name,
-        parentGroupId: payload.parentGroupId ?? null,
-        unitId: resolvedUnit.unitId,
-      });
-      linkedGroupId = group.id;
-    }
-    const parentResult = await run(
-      `
-      INSERT INTO materials (
-        barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes, group_mode, inheritance_enabled,
-        created_at, kind, parent_barcode, number_of_children,
-        linked_child_barcodes, scan_count, linked_group_id, linked_item_id,
-        display_stock, created_by, workflow_status, updated_at, last_scanned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0, ?, NULL, ?, ?, ?, ?, NULL)
-      `,
-      [
-        parentBarcode,
-        payload.name,
-        payload.type,
-        payload.grade || '',
-        payload.thickness || '',
-        payload.supplier || '',
-        String(payload.location || '').trim(),
-        resolvedUnit.unitId,
-        resolvedUnit.unit,
-        payload.notes || '',
-        normalizedGroupMode,
-        payload.inheritanceEnabled ? 1 : 0,
-        createdAt,
-        Number(payload.numberOfChildren || 0),
-        JSON.stringify(childBarcodes),
-        linkedGroupId,
-        resolvedUnit.unit ? `0 ${resolvedUnit.unit}` : '0',
-        actor,
-        'inProgress',
-        createdAt,
-      ],
-    );
-
-    for (let index = 0; index < childBarcodes.length; index += 1) {
-      await run(
-        `
-        INSERT INTO materials (
-          barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes, group_mode, inheritance_enabled,
-          created_at, kind, parent_barcode, number_of_children,
-          linked_child_barcodes, scan_count, linked_group_id, linked_item_id,
-          display_stock, created_by, workflow_status, updated_at, last_scanned_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, ?, 0, NULL, NULL, ?, ?, ?, ?, NULL)
-        `,
-        [
-          childBarcodes[index],
-          `${payload.name} - Child ${index + 1}`,
-          payload.type,
-          payload.grade || '',
-          payload.thickness || '',
-          payload.supplier || '',
-          String(payload.location || '').trim(),
-          resolvedUnit.unitId,
-          resolvedUnit.unit,
-          payload.notes || '',
-          normalizedGroupMode,
-          payload.inheritanceEnabled ? 1 : 0,
-          createdAt,
-          parentBarcode,
-          JSON.stringify([]),
-          resolvedUnit.unit ? `0 ${resolvedUnit.unit}` : '0',
-          actor,
-          'notStarted',
-          createdAt,
-        ],
-      );
-      await logMaterialActivity({
-        barcode: childBarcodes[index],
-        type: 'created',
-        label: 'Item created',
-        description: `Inventory item ${payload.name} - Child ${index + 1} was created.`,
-        actor,
-        createdAt,
-      });
-    }
-
-    await logMaterialActivity({
-      barcode: parentBarcode,
-      type: 'created',
-      label: 'Group created',
-      description: `Inventory group ${payload.name} was created.`,
-      actor,
-      createdAt,
-    });
-
-    await persistMaterialGroupGovernance(parentResult.lastID, payload, createdAt);
-    await recomputeMaterialInventorySummary(parentBarcode, createdAt);
-    for (const childBarcode of childBarcodes) {
-      await recomputeMaterialInventorySummary(childBarcode, createdAt);
-    }
-
-    await run('COMMIT');
-    const parentRow = await get('SELECT * FROM materials WHERE id = ?', [
-      parentResult.lastID,
-    ]);
-    return rowToMaterialDto(parentRow);
-  } catch (error) {
-    await run('ROLLBACK');
-    throw error;
   }
 }
 
@@ -7666,59 +7306,6 @@ async function resolveOrderVariationSelection({
     variationPathNodeIds: pathNodeIdsWithCustom.length > 0 ? pathNodeIdsWithCustom : leafSelection.nodeIds,
     variationPathNodeIdsJson: JSON.stringify(pathNodeIdsWithCustom.length > 0 ? pathNodeIdsWithCustom : leafSelection.nodeIds),
     variationPathLabel: variationPathLabel ? String(variationPathLabel).trim() : buildVariationPathLabel(leafSelection.segments),
-  };
-}
-
-async function resolveOrderUnitSelection({ item, unitId = null }) {
-  const itemUnitId = Number(item?.unit_id || 0);
-  const requestedUnitId = Number(unitId || 0);
-  const normalizedUnitId = requestedUnitId > 0 ? requestedUnitId : itemUnitId;
-  if (!normalizedUnitId) {
-    return {
-      unitId: null,
-      unitName: 'Pieces',
-      unitSymbol: 'Pieces',
-    };
-  }
-
-  const unit = await get('SELECT * FROM units WHERE id = ?', [
-    normalizedUnitId,
-  ]);
-  if (!unit || unit.is_archived) {
-    const error = new Error(
-      'That unit is no longer active. Pick another unit or restore it in Masters → Units.',
-    );
-    error.statusCode = 400;
-    throw error;
-  }
-
-  let factorToPrimary = 1;
-
-  if (requestedUnitId > 0 && requestedUnitId !== itemUnitId) {
-    const conversion = await get(
-      `
-      SELECT factor_to_primary
-      FROM item_unit_conversions
-      WHERE item_id = ? AND unit_id = ?
-      LIMIT 1
-      `,
-      [item.id, requestedUnitId],
-    );
-    if (!conversion) {
-      const error = new Error(
-        'This item does not use that unit yet. Add the conversion in the order line, then save again.',
-      );
-      error.statusCode = 400;
-      throw error;
-    }
-    factorToPrimary = Number(conversion.factor_to_primary || 1);
-  }
-
-  return {
-    unitId: unit.id,
-    unitName: unit.name || '',
-    unitSymbol: unit.symbol || unit.name || '',
-    factorToPrimary,
   };
 }
 
@@ -8560,179 +8147,6 @@ async function getOrderProductionReport(orderNo) {
 async function getClientNameAndAlias(clientId) {
   return get('SELECT name, alias FROM clients WHERE id = ?', [clientId]);
 }
-
-async function deleteOrderAndRecoverMovements(orderId, body, actorName, userId) {
-  await run('BEGIN TRANSACTION');
-  try {
-    const wipBarcode = body?.wip_barcode;
-    const wipQty = Number(body?.wip_qty || 0);
-    const recoveredMovements = [];
-
-    const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
-    for (const assignment of assignments) {
-      const runId = assignment.pipeline_run_id;
-
-      const consumedMovements = await all(
-        "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
-        [runId]
-      );
-
-      for (const move of consumedMovements) {
-        const qty = move.qty;
-        if (qty > 0) {
-          await applyInventoryMovementCore({
-            barcode: move.material_barcode,
-            movementType: 'adjust_in',
-            qty: qty,
-            actor: actorName,
-            referenceType: 'pipeline_dissolution',
-            referenceId: String(orderId),
-            reasonCode: 'ORDER_DELETED',
-            toLocationId: move.from_location_id || 'MAIN'
-          }, { useTransaction: false });
-          recoveredMovements.push({ barcode: move.material_barcode, qty, reason: 'Raw Material Recovery' });
-        }
-      }
-
-      await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
-      await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
-    }
-
-    if (wipBarcode && wipQty > 0) {
-      await applyInventoryMovementCore({
-        barcode: wipBarcode,
-        movementType: 'adjust_in',
-        qty: wipQty,
-        actor: actorName,
-        referenceType: 'pipeline_dissolution',
-        referenceId: String(orderId),
-        reasonCode: 'WIP_RECOVERY',
-        toLocationId: 'MAIN'
-      }, { useTransaction: false });
-      recoveredMovements.push({ barcode: wipBarcode, qty: wipQty, reason: 'WIP Recovery' });
-    }
-
-    await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
-    await run('DELETE FROM order_status_history WHERE order_id = ?', [orderId]);
-    await run('DELETE FROM order_activity_log WHERE order_id = ?', [orderId]);
-    await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);
-    await run('DELETE FROM order_po_documents WHERE order_id = ?', [orderId]);
-
-    const item = await get('SELECT order_no FROM order_items WHERE id = ?', [orderId]);
-    if (item) {
-      await run('DELETE FROM order_items WHERE id = ?', [orderId]);
-      const otherItems = await get('SELECT id FROM order_items WHERE order_no = ?', [item.order_no]);
-      if (!otherItems) {
-        await run('DELETE FROM order_headers WHERE order_no = ?', [item.order_no]);
-      }
-    }
-
-    await run(
-      "INSERT INTO activity_logs (entity_type, entity_id, action, actor_id, actor_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ['order', String(orderId), 'deleted', userId, actorName, JSON.stringify({ reason: 'User requested Undo' }), new Date().toISOString()]
-    ).catch(() => {});
-
-    await run('COMMIT');
-    return recoveredMovements;
-  } catch (err) {
-    await run('ROLLBACK').catch(() => {});
-    throw err;
-  }
-}
-
-async function getInventoryStockList() {
-  const rows = await all(`
-    SELECT
-      vs.id as stock_id,
-      vs.item_id,
-      vs.variation_leaf_node_id,
-      vs.quantity,
-      vs.location_id,
-      vs.variation_path_label,
-      vs.variation_path_node_ids_json,
-      vs.custom_variation_values_json AS stock_custom_variation_values_json,
-      vs.updated_at
-    FROM variation_stock vs
-    ORDER BY vs.item_id ASC, vs.variation_leaf_node_id ASC
-  `);
-  const stock = [];
-  for (const row of rows) {
-    const itemDesc = await itemsPorts.describe(row.item_id);
-    row.item_name = itemDesc?.name || 'Unknown Item';
-    row.unit_id = itemDesc?.unitId || null;
-    row.naming_format = itemDesc?.namingFormat || '[]';
-    const selection = await resolveLeafSelectionFromDb(row.variation_leaf_node_id);
-    const storedPathNodeIds = parseJson(row.variation_path_node_ids_json, []);
-    const effectivePathNodeIds = storedPathNodeIds.length > 0
-      ? storedPathNodeIds
-      : (selection?.nodeIds || []);
-    const customVariationRows = await all(
-      `
-      SELECT ? AS custom_variation_values_json
-      UNION ALL
-      SELECT custom_variation_values_json
-      FROM materials
-      WHERE linked_item_id = ?
-        AND COALESCE(linked_variation_leaf_node_id, 0) = ?
-        AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
-      UNION ALL
-      SELECT custom_variation_values_json
-      FROM order_items
-      WHERE item_id = ?
-        AND COALESCE(variation_leaf_node_id, 0) = ?
-        AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
-      UNION ALL
-      SELECT custom_variation_values_json
-      FROM delivery_challan_items
-      WHERE item_id = ?
-        AND COALESCE(variation_leaf_node_id, 0) = ?
-        AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
-      `,
-      [
-        row.stock_custom_variation_values_json || '{}',
-        row.item_id,
-        row.variation_leaf_node_id,
-        row.item_id,
-        row.variation_leaf_node_id,
-        row.item_id,
-        row.variation_leaf_node_id,
-      ],
-    );
-    stock.push({
-      ...row,
-      custom_variation_values: mergeCustomVariationValueJsonRows(customVariationRows),
-      variation_path_label: row.variation_path_label || '',
-      variation_path_node_ids: effectivePathNodeIds,
-      variation_path: effectivePathNodeIds.map((nodeId, index) => ({
-        node_id: nodeId,
-        value: selection?.nodeIds?.includes(nodeId)
-          ? (selection?.segments?.[selection.nodeIds.indexOf(nodeId)] || '')
-          : '',
-      })),
-    });
-  }
-  return stock;
-}
-
-async function resetMaterialScanCount(barcode, actor = 'Demo Admin') {
-  const row = await getMaterialRowByBarcode(barcode);
-  if (!row) return null;
-  await run(
-    'UPDATE materials SET scan_count = 0, updated_at = ?, last_scanned_at = NULL WHERE id = ?',
-    [new Date().toISOString(), row.id],
-  );
-  await run('DELETE FROM scan_history WHERE barcode = ?', [row.barcode]);
-  await logMaterialActivity({
-    barcode: row.barcode,
-    type: 'scanReset',
-    label: 'Trace reset',
-    description: 'Scan history was cleared for this material.',
-    actor: row.created_by || actor,
-  });
-  return get('SELECT * FROM materials WHERE id = ?', [row.id]);
-}
-
-
 
 const DEFAULT_COMPANY_PROFILE = Object.freeze({
   companyName: 'Shree Ganesh Metal Works',
@@ -13500,10 +12914,8 @@ async function buildClientStatementReport(input = {}) {
   };
 }
 
-async function getOrderRowById(id) {
-  // total_delivered_qty lives in challans territory: asked through the port
-  // and merged back on, so callers see the same row shape as before.
-  const row = await get(`
+async function getOrderRowWithEnrichedStatus(id) {
+  return get(`
     SELECT o.*,
       COALESCE(
         (SELECT 
@@ -13521,13 +12933,10 @@ async function getOrderRowById(id) {
     FROM order_items o 
     WHERE o.id = ?
   `, [id]);
-  if (!row) return row;
-  row.total_delivered_qty = await challansPorts.delivery.qtyForOrderItem(row.id);
-  return row;
 }
 
-async function getOrders() {
-  const rows = await all(`
+async function getOrderRowsWithEnrichedStatus() {
+  return all(`
     SELECT o.*,
       COALESCE(
         (SELECT 
@@ -13545,13 +12954,6 @@ async function getOrders() {
     FROM order_items o 
     ORDER BY datetime(o.created_at) DESC, o.id DESC
   `);
-  // ONE batched port call for the whole list — a per-row call here would
-  // turn the orders list into N+1.
-  const delivered = await challansPorts.delivery.qtyByOrderItems(rows.map((r) => r.id));
-  for (const row of rows) {
-    row.total_delivered_qty = delivered.get(Number(row.id)) || 0;
-  }
-  return rows;
 }
 
 const ALLOWED_PO_CONTENT_TYPES = new Set([
@@ -13917,114 +13319,6 @@ async function readS3ObjectBuffer(objectKey) {
   return Buffer.concat(chunks);
 }
 
-async function createPoUploadIntent(input) {
-  await cleanupStaleUnlinkedPoDocuments();
-  const normalized = assertValidPoUploadInput(input || {});
-  const existing = await get(
-    "SELECT * FROM po_documents WHERE sha256 = ? AND status = 'uploaded'",
-    [normalized.sha256],
-  );
-  if (existing) {
-    return {
-      alreadyUploaded: true,
-      document: rowToPoDocumentDto(existing),
-      upload: null,
-    };
-  }
-
-  const objectKey = buildS3ObjectKey({
-    uploadType: normalized.uploadType,
-    fileName: normalized.fileName,
-    sha256: normalized.sha256,
-  });
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
-  const uploadSessionId = `po-upload-${now.getTime()}-${crypto
-    .randomBytes(8)
-    .toString('hex')}`;
-  await run(
-    `
-    INSERT INTO po_upload_sessions (
-      id, file_name, content_type, size_bytes, sha256, object_key, status, expires_at, created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-    `,
-    [
-      uploadSessionId,
-      normalized.fileName,
-      normalized.contentType,
-      normalized.sizeBytes,
-      normalized.sha256,
-      objectKey,
-      expiresAt,
-      now.toISOString(),
-    ],
-  );
-
-  return {
-    alreadyUploaded: false,
-    document: null,
-    upload: {
-      uploadSessionId,
-      objectKey,
-      uploadUrl: await presignS3Url({
-        method: 'PUT',
-        objectKey,
-        contentType: normalized.contentType,
-        expiresSeconds: 900,
-      }),
-      expiresAt,
-      headers: {
-        'Content-Type': normalized.contentType,
-      },
-    },
-  };
-}
-
-async function completePoUpload({ uploadSessionId, objectKey }) {
-  const session = await get('SELECT * FROM po_upload_sessions WHERE id = ?', [
-    uploadSessionId,
-  ]);
-  if (!session || session.object_key !== objectKey) {
-    const error = new Error('Upload session not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-  if (new Date(session.expires_at).getTime() < Date.now()) {
-    const error = new Error('Upload session expired.');
-    error.statusCode = 410;
-    throw error;
-  }
-  await assertS3ObjectExists(session.object_key);
-
-  const now = new Date().toISOString();
-  await run(
-    `
-    INSERT OR IGNORE INTO po_documents (
-      file_name, content_type, size_bytes, sha256, object_key, status, created_at, uploaded_at
-    )
-    VALUES (?, ?, ?, ?, ?, 'uploaded', ?, ?)
-    `,
-    [
-      session.file_name,
-      session.content_type,
-      Number(session.size_bytes || 0),
-      session.sha256,
-      session.object_key,
-      session.created_at || now,
-      now,
-    ],
-  );
-  await run(
-    "UPDATE po_upload_sessions SET status = 'completed', completed_at = ? WHERE id = ?",
-    [now, uploadSessionId],
-  );
-  const document = await get('SELECT * FROM po_documents WHERE sha256 = ?', [
-    session.sha256,
-  ]);
-  return rowToPoDocumentDto(document);
-}
-
 async function createChallanTemplateUploadIntent(input) {
   const normalized = assertValidChallanTemplateUploadInput(input || {});
   if (normalized.uploadType === 'CHALLAN_TEMPLATE_BACKGROUND') {
@@ -14212,91 +13506,6 @@ async function completeChallanTemplateUpload({ uploadSessionId, objectKey }) {
     canvasWidth: Number(dimensions.width || 0),
     canvasHeight: Number(dimensions.height || 0),
     uploadedAt: now,
-  };
-}
-
-async function linkPoDocumentsToOrder(orderId, documentIds = []) {
-  const uniqueIds = [...new Set((Array.isArray(documentIds) ? documentIds : []).map(Number))]
-    .filter((id) => Number.isInteger(id) && id > 0);
-  if (uniqueIds.length === 0) {
-    return { linked: [], newlyLinkedIds: [] };
-  }
-  const now = new Date().toISOString();
-  const linked = [];
-  const newlyLinkedIds = [];
-  for (const documentId of uniqueIds) {
-    const document = await get(
-      "SELECT * FROM po_documents WHERE id = ? AND status = 'uploaded'",
-      [documentId],
-    );
-    if (!document) {
-      const error = new Error('One or more PO documents were not uploaded.');
-      error.statusCode = 400;
-      throw error;
-    }
-    const result = await run(
-      'INSERT OR IGNORE INTO order_po_documents (order_id, document_id, linked_at) VALUES (?, ?, ?)',
-      [orderId, documentId, now],
-    );
-    if (result.changes > 0) {
-      newlyLinkedIds.push(documentId);
-    }
-    linked.push(rowToPoDocumentDto(document));
-  }
-  return { linked, newlyLinkedIds };
-}
-
-async function assertPoDocumentsUploaded(documentIds = []) {
-  const uniqueIds = [...new Set((Array.isArray(documentIds) ? documentIds : []).map(Number))]
-    .filter((id) => Number.isInteger(id) && id > 0);
-  if (uniqueIds.length === 0) {
-    return;
-  }
-  for (const documentId of uniqueIds) {
-    const document = await get(
-      "SELECT id FROM po_documents WHERE id = ? AND status = 'uploaded'",
-      [documentId],
-    );
-    if (!document) {
-      const error = new Error('One or more PO documents were not uploaded.');
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-}
-
-async function getPoDocumentsForOrder(orderId) {
-  const rows = await all(
-    `
-    SELECT d.*, od.linked_at
-    FROM po_documents d
-    INNER JOIN order_po_documents od ON od.document_id = d.id
-    WHERE od.order_id = ?
-    ORDER BY datetime(od.linked_at) DESC, d.id DESC
-    `,
-    [orderId],
-  );
-  return rows.map(rowToPoDocumentDto);
-}
-
-async function createPoDocumentReadUrl(documentId) {
-  const document = await get(
-    "SELECT * FROM po_documents WHERE id = ? AND status = 'uploaded'",
-    [documentId],
-  );
-  if (!document) {
-    const error = new Error('PO document not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-  return {
-    document: rowToPoDocumentDto(document),
-    readUrl: await presignS3Url({
-      method: 'GET',
-      objectKey: document.object_key,
-      expiresSeconds: 300,
-    }),
-    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
   };
 }
 
@@ -14604,535 +13813,6 @@ async function deleteAsset(assetId) {
       ]);
     }
   }
-}
-
-function normalizeMaterialRequirementNumber(value, fieldName) {
-  if (value == null || value === '') {
-    return 0;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    const error = new Error(`Invalid material requirement ${fieldName}.`);
-    error.statusCode = 400;
-    throw error;
-  }
-  return parsed;
-}
-
-function normalizeOptionalDate(value, fieldName) {
-  if (value == null || value === '') {
-    return null;
-  }
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    const error = new Error(`Invalid ${fieldName}.`);
-    error.statusCode = 400;
-    throw error;
-  }
-  // M-2 fix: always store as ISO date-only (YYYY-MM-DD) so merge-match
-  // comparisons using SQLite 'IS' work consistently regardless of how the
-  // date was originally supplied (full ISO string vs date-only string).
-  return new Date(parsed).toISOString().slice(0, 10);
-}
-
-async function saveOrder({
-  orderNo,
-  clientId,
-  subContractorId = null,
-  clientName = '',
-  poNumber = '',
-  clientCode = '',
-  itemId,
-  itemName = '',
-  variationLeafNodeId = 0,
-  variationPathLabel = '',
-  variationPathNodeIds = [],
-  customVariationValues = {},
-  quantity,
-  unitId = null,
-  unitName = '',
-  unitSymbol = '',
-  unitPrice = 0,
-  totalInvoicedQty,
-  status = 'notStarted',
-  startDate = null,
-  endDate = null,
-  poDocumentIds = [],
-  materialRequirements = [],
-  actor = null,
-} = {}, { returnMeta = false } = {}) {
-  const trimmedOrderNo = String(orderNo || '').trim();
-  const normalizedClientId = Number(clientId);
-  let normalizedSubContractorId = null;
-  if (subContractorId) {
-    normalizedSubContractorId = Number(subContractorId);
-  }
-  const normalizedItemId = Number(itemId);
-  const normalizedQuantity = Number(quantity || 0);
-  const normalizedUnitPrice = Number(unitPrice || 0);
-  const hasInvoicedQtyInput =
-    totalInvoicedQty !== undefined && totalInvoicedQty !== null;
-  const normalizedTotalInvoicedQty = Number(totalInvoicedQty || 0);
-  const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
-  const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
-  const trimmedPoNumber = String(poNumber || '').trim();
-  let trimmedClientName = String(clientName || '').trim();
-  let trimmedClientCode = String(clientCode || '').trim();
-  let trimmedItemName = String(itemName || '').trim();
-  const allowedStatuses = new Set([
-    'draft',
-    'notStarted',
-    'inProgress',
-    'completed',
-    'delayed',
-  ]);
-  const normalizedStatus = allowedStatuses.has(status) ? status : 'notStarted';
-
-  if (!trimmedOrderNo) {
-    const error = new Error('Order number is required.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!normalizedClientId || !normalizedItemId) {
-    const error = new Error('Client and item are required.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const client = await getClientRowById(normalizedClientId);
-  if (!client || client.is_archived) {
-    const error = new Error('Selected client is not available.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (normalizedSubContractorId) {
-    const subContractor = await get('SELECT client_id FROM sub_contractors WHERE id = ?', [normalizedSubContractorId]);
-    if (!subContractor) {
-      const error = new Error('Selected sub-contractor is not available.');
-      error.statusCode = 400;
-      throw error;
-    }
-    if (subContractor.client_id !== normalizedClientId) {
-      const error = new Error('Selected sub-contractor does not belong to the selected client.');
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-  if (!Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
-    const error = new Error('Quantity must be greater than zero.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!Number.isInteger(normalizedQuantity)) {
-    const error = new Error('Quantity must be a whole number.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!Number.isFinite(normalizedUnitPrice) || normalizedUnitPrice < 0) {
-    const error = new Error('Unit price cannot be negative.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (
-    hasInvoicedQtyInput &&
-    (!Number.isFinite(normalizedTotalInvoicedQty) ||
-      normalizedTotalInvoicedQty < 0)
-  ) {
-    const error = new Error('Total invoiced quantity cannot be negative.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const variationSelection = await itemsPorts.resolveSelection({
-    itemId: normalizedItemId,
-    variationLeafNodeId,
-    variationPathNodeIds,
-    variationPathLabel,
-    status: normalizedStatus,
-  });
-  const unitSelection = await resolveOrderUnitSelection({
-    item: variationSelection.item,
-    unitId,
-  });
-  const factorToPrimary = unitSelection.factorToPrimary || 1;
-
-  if (!trimmedClientName && client) {
-    trimmedClientName = String(client.name || '').trim();
-  }
-  if (!trimmedClientCode && client) {
-    trimmedClientCode = String(client.alias || '').trim();
-  }
-  if (!trimmedItemName && variationSelection && variationSelection.item) {
-    trimmedItemName = String(variationSelection.item.name || '').trim();
-  }
-  const normalizedUnitName =
-    unitSelection.unitName || String(unitName || '').trim() || 'Pieces';
-  const normalizedUnitSymbol =
-    unitSelection.unitSymbol || String(unitSymbol || '').trim() || normalizedUnitName;
-  const normalizedLeafId = variationSelection.variationLeafNodeId;
-  const normalizedVariationPathJson = variationSelection.variationPathNodeIdsJson;
-  const canonicalVariationPathLabel = variationSelection.variationPathLabel;
-  const normalizedCustomVariationValuesJson = JSON.stringify(customVariationValues || {});
-  await assertPoDocumentsUploaded(poDocumentIds);
-
-  const now = new Date().toISOString();
-  await run('BEGIN TRANSACTION');
-  try {
-    const existing = await get(
-      `
-      SELECT * FROM order_items
-      WHERE LOWER(TRIM(order_no)) = LOWER(TRIM(?))
-        AND client_id = ?
-        AND item_id = ?
-        AND variation_leaf_node_id = ?
-        AND variation_path_node_ids_json = ?
-        AND unit_id IS ?
-        AND LOWER(TRIM(po_number)) = LOWER(TRIM(?))
-        AND start_date IS ?
-        AND end_date IS ?
-      `,
-      [
-        trimmedOrderNo,
-        normalizedClientId,
-        normalizedItemId,
-        normalizedLeafId,
-        normalizedVariationPathJson,
-        unitSelection.unitId,
-        trimmedPoNumber,
-        normalizedStartDate,
-        normalizedEndDate,
-      ],
-    );
-
-    let orderId;
-    let merged = false;
-    let quantityBefore = 0;
-    let finalStatus = normalizedStatus;
-    if (existing) {
-      merged = true;
-      quantityBefore = Number(existing.quantity || 0);
-      const newTotalQty = quantityBefore + normalizedQuantity;
-      const currentInvoiced = hasInvoicedQtyInput 
-        ? normalizedTotalInvoicedQty 
-        : Number(existing.total_invoiced_qty || 0);
-        
-      if (currentInvoiced > newTotalQty) {
-        const error = new Error(`Cannot merge: Invoiced quantity (${currentInvoiced}) exceeds new requested quantity (${newTotalQty}).`);
-        error.statusCode = 400;
-        throw error;
-      }
-
-      // C-1 fix: never downgrade an order's status during a quantity-merge.
-      // The lifecycle priority order is: draft < notStarted < inProgress < delayed < completed.
-      // Merging additional quantity should not reset a running/completed order.
-      const STATUS_RANK = { draft: 0, notStarted: 1, inProgress: 2, delayed: 2, completed: 3 };
-      const existingRank = STATUS_RANK[existing.status] ?? 1;
-      const incomingRank = STATUS_RANK[normalizedStatus] ?? 1;
-      const mergedStatus = incomingRank > existingRank ? normalizedStatus : existing.status;
-      finalStatus = mergedStatus;
-      await run(
-        `
-        UPDATE order_items
-        SET quantity = ?,
-            client_name = ?,
-            client_code = ?,
-            item_name = ?,
-            variation_path_label = ?,
-            variation_path_node_ids_json = ?,
-            unit_id = ?,
-            unit_name = ?,
-            unit_symbol = ?,
-            unit_price = ?,
-            total_invoiced_qty = ?,
-            status = ?,
-            start_date = ?,
-            end_date = ?,
-            custom_variation_values_json = ?,
-            sub_contractor_id = ?,
-            factor_to_primary_at_creation = ?,
-            updated_at = ?
-        WHERE id = ?
-        `,
-        [
-          newTotalQty,
-          trimmedClientName,
-          trimmedClientCode,
-          trimmedItemName,
-          canonicalVariationPathLabel,
-          normalizedVariationPathJson,
-          unitSelection.unitId,
-          normalizedUnitName,
-          normalizedUnitSymbol,
-          normalizedUnitPrice > 0 ? normalizedUnitPrice : Number(existing.unit_price || 0),
-          hasInvoicedQtyInput
-            ? normalizedTotalInvoicedQty
-            : Number(existing.total_invoiced_qty || 0),
-          mergedStatus,
-          normalizedStartDate,
-          normalizedEndDate,
-          normalizedCustomVariationValuesJson,
-          normalizedSubContractorId,
-          factorToPrimary,
-          now,
-          existing.id,
-        ],
-      );
-      if (existing.status !== mergedStatus) {
-        await run(`
-          INSERT INTO order_status_history (
-            order_id, previous_status, new_status, changed_by_user_id, changed_at
-          ) VALUES (?, ?, ?, ?, ?)
-        `, [
-          existing.id,
-          existing.status,
-          mergedStatus,
-          actor?.id || null,
-          now,
-        ]);
-      }
-      orderId = existing.id;
-    } else {
-      await run(
-        `
-        INSERT INTO order_headers (order_no, client_id, po_number, sub_contractor_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(order_no) DO NOTHING
-        `,
-        [trimmedOrderNo, normalizedClientId, trimmedPoNumber, normalizedSubContractorId, now, now]
-      );
-      
-      // Update order headers for existing orders to ensure sub_contractor_id is correctly set
-      await run(
-        `UPDATE order_headers SET sub_contractor_id = ?, updated_at = ? WHERE order_no = ?`,
-        [normalizedSubContractorId, now, trimmedOrderNo]
-      );
-      
-      const result = await run(
-        `
-        INSERT INTO order_items (
-          order_no, client_id, client_name, po_number, client_code, item_id, item_name,
-          variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
-          unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
-          custom_variation_values_json, sub_contractor_id,
-          created_at, updated_at, start_date, end_date, factor_to_primary_at_creation
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          trimmedOrderNo,
-          normalizedClientId,
-          trimmedClientName,
-          trimmedPoNumber,
-          trimmedClientCode,
-          normalizedItemId,
-          trimmedItemName,
-          normalizedLeafId,
-          canonicalVariationPathLabel,
-          normalizedVariationPathJson,
-          normalizedQuantity,
-          unitSelection.unitId,
-          normalizedUnitName,
-          normalizedUnitSymbol,
-          normalizedUnitPrice,
-          hasInvoicedQtyInput ? normalizedTotalInvoicedQty : 0,
-          normalizedStatus,
-          normalizedCustomVariationValuesJson,
-          normalizedSubContractorId,
-          now,
-          now,
-          normalizedStartDate,
-          normalizedEndDate,
-          factorToPrimary,
-        ],
-      );
-      orderId = result.lastID;
-    }
-
-    const { newlyLinkedIds } = await linkPoDocumentsToOrder(orderId, poDocumentIds);
-    const normalizedMaterialRequirements = Array.isArray(materialRequirements)
-      ? materialRequirements
-      : [];
-    if (normalizedMaterialRequirements.length > 0) {
-      await run('DELETE FROM order_material_requirements WHERE order_id = ?', [
-        orderId,
-      ]);
-    }
-    for (const req of normalizedMaterialRequirements) {
-      await run(`
-        INSERT INTO order_material_requirements (
-          order_id, item_id, material_barcode,
-          material_name, required_qty, allocated_qty, consumed_qty, shortage_qty,
-          unit_id, unit_symbol, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        orderId,
-        req.itemId || null,
-        String(req.materialBarcode || '').trim(),
-        String(req.materialName || '').trim(),
-        normalizeMaterialRequirementNumber(req.requiredQty, 'required quantity'),
-        normalizeMaterialRequirementNumber(req.allocatedQty, 'allocated quantity'),
-        normalizeMaterialRequirementNumber(req.consumedQty, 'consumed quantity'),
-        normalizeMaterialRequirementNumber(req.shortageQty, 'shortage quantity'),
-        req.unitId || null,
-        String(req.unitSymbol || '').trim(),
-        req.status || 'pending',
-        now,
-        now
-      ]);
-    }
-
-    const activityType = existing ? 'order_updated' : 'order_created';
-    await insertOrderActivityLog({
-      orderId,
-      activityType,
-      actor,
-      details: {
-        merged,
-        previousQuantity: quantityBefore,
-        quantityAfter: quantityBefore + normalizedQuantity,
-        status: finalStatus,
-        quantity: normalizedQuantity,
-        newlyLinkedDocs: newlyLinkedIds.length,
-        requirementsCount: normalizedMaterialRequirements.length,
-      },
-      createdAt: now,
-    });
-
-    if (newlyLinkedIds.length > 0) {
-      await insertOrderActivityLog({
-        orderId,
-        activityType: 'po_documents_linked',
-        actor,
-        details: { documentIds: newlyLinkedIds },
-        createdAt: now,
-      });
-    }
-
-    const saved = await getOrderRowById(orderId);
-    await run('COMMIT');
-    if (returnMeta) {
-      return {
-        orderRow: saved,
-        merged,
-        quantityBefore,
-        quantityAdded: normalizedQuantity,
-        quantityAfter: quantityBefore + normalizedQuantity,
-      };
-    }
-    return saved;
-  } catch (error) {
-    await run('ROLLBACK');
-    throw error;
-  }
-}
-
-// C-4 fix: valid lifecycle transitions. 'completed' is terminal and can only
-// be changed by an admin (checked in the route layer via requirePermission).
-// Keys are current status → Set of statuses the order is allowed to move to.
-const ORDER_LIFECYCLE_TRANSITIONS = {
-  draft:      new Set(['notStarted', 'inProgress']),
-  notStarted: new Set(['draft', 'inProgress', 'delayed']),
-  inProgress: new Set(['notStarted', 'completed', 'delayed']),
-  delayed:    new Set(['inProgress', 'completed', 'notStarted']),
-  completed:  new Set(['inProgress', 'delayed']), // admin-only reversal handled below
-};
-
-async function updateOrderLifecycle({
-  id,
-  status = null,
-  startDate = null,
-  endDate = null,
-  actor = null,
-}) {
-  const existing = await getOrderRowById(id);
-  if (!existing) {
-    const error = new Error('Order not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-  
-  const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
-  const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
-  const now = new Date().toISOString();
-
-  let targetStatus = existing.status;
-  let statusChanged = false;
-  if (status && status !== existing.status) {
-    const isAdmin = actor?.role === 'admin';
-    if (existing.status === 'completed' && !isAdmin) {
-      const error = new Error(`Only admins can reverse completed orders.`);
-      error.statusCode = 403;
-      throw error;
-    }
-    const allowed = ORDER_LIFECYCLE_TRANSITIONS[existing.status];
-    if (!allowed || !allowed.has(status)) {
-      if (!isAdmin) {
-        const error = new Error(`Invalid lifecycle transition from ${existing.status} to ${status}.`);
-        error.statusCode = 400;
-        throw error;
-      }
-    }
-    targetStatus = status;
-    statusChanged = true;
-  }
-
-  await run('BEGIN TRANSACTION');
-  try {
-    await run(
-      'UPDATE order_items SET status = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
-      [targetStatus, normalizedStartDate, normalizedEndDate, now, id],
-    );
-
-    if (statusChanged) {
-      await run(
-        'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by_user_id, changed_at) VALUES (?, ?, ?, ?, ?)',
-        [id, existing.status, targetStatus, actor?.id || null, now],
-      );
-    }
-
-    await insertOrderActivityLog({
-      orderId: id,
-      activityType: 'lifecycle_updated',
-      actor,
-      details: {
-        status: targetStatus,
-        startDate: normalizedStartDate,
-        endDate: normalizedEndDate,
-      },
-      createdAt: now,
-    });
-
-    const updated = await getOrderRowById(id);
-    await run('COMMIT');
-    return updated;
-  } catch (error) {
-    await run('ROLLBACK');
-    throw error;
-  }
-}
-
-async function getOrderActivity(orderId) {
-  const order = await getOrderRowById(orderId);
-  if (!order) {
-    const error = new Error('Order not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-  return all(
-    'SELECT * FROM order_activity_log WHERE order_id = ? ORDER BY datetime(created_at) ASC, id ASC',
-    [orderId],
-  );
-}
-
-async function getOrderStatusHistory(orderId) {
-  const order = await getOrderRowById(orderId);
-  if (!order) {
-    const error = new Error('Order not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-  return all(
-    'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY datetime(changed_at) ASC, id ASC',
-    [orderId],
-  );
 }
 
 async function findGroupDuplicate({ name, parentGroupId = null, excludeId = null }) {
@@ -16931,29 +15611,6 @@ function areUnitsCompatible(groupUnitRow, itemUnitRow) {
   );
 }
 
-async function getMaterialRowByBarcode(barcode) {
-  const normalized = normalizeBarcode(barcode);
-  const rows = await all('SELECT * FROM materials');
-  return rows.find((item) => normalizeBarcode(item.barcode) === normalized) || null;
-}
-
-async function getGroupMaterialRowByGroupId(groupId) {
-  const normalizedGroupId = Number(groupId);
-  if (!Number.isInteger(normalizedGroupId) || normalizedGroupId <= 0) {
-    return null;
-  }
-  return get(
-    `
-    SELECT *
-    FROM materials
-    WHERE linked_group_id = ?
-    ORDER BY id ASC
-    LIMIT 1
-    `,
-    [normalizedGroupId],
-  );
-}
-
 function normalizePropertyKey(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -17348,1755 +16005,6 @@ async function getEffectiveSchema(groupId) {
     lineageGroupIds: lineageRows.map((row) => Number(row.id)),
     lineageGroupNames: lineageRows.map((row) => row.name || ''),
   };
-}
-
-function mergeInventorySetLines(lines = []) {
-  const merged = new Map();
-  for (const [index, rawLine] of (Array.isArray(lines) ? lines : []).entries()) {
-    const itemId = Number(rawLine?.itemId || 0);
-    const variationLeafNodeId = Number(rawLine?.variationLeafNodeId || 0);
-    const quantity = Math.trunc(Number(rawLine?.quantity || 0));
-    const position = Number.isFinite(Number(rawLine?.position))
-      ? Number(rawLine.position)
-      : index;
-    if (!Number.isInteger(itemId) || itemId <= 0) {
-      const error = new Error(`Set line ${index + 1} requires a valid item.`);
-      error.statusCode = 400;
-      throw error;
-    }
-    if (!Number.isInteger(variationLeafNodeId) || variationLeafNodeId < 0) {
-      const error = new Error(`Set line ${index + 1} requires a valid variation path.`);
-      error.statusCode = 400;
-      throw error;
-    }
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      const error = new Error(`Set line ${index + 1} requires quantity greater than 0.`);
-      error.statusCode = 400;
-      throw error;
-    }
-    const key = `${itemId}:${variationLeafNodeId}`;
-    const existing = merged.get(key);
-    merged.set(key, {
-      itemId,
-      variationLeafNodeId,
-      quantity: (existing?.quantity || 0) + quantity,
-      position: existing?.position ?? position,
-    });
-  }
-  return [...merged.values()].sort((a, b) => a.position - b.position);
-}
-
-async function getInventorySetLineDtos(setId) {
-  const rows = await all(
-    `
-    SELECT lines.*
-    FROM inventory_set_lines lines
-    WHERE lines.set_id = ?
-    ORDER BY lines.position ASC, lines.id ASC
-    `,
-    [setId],
-  );
-  const lines = [];
-  for (const row of rows) {
-    const itemDesc = await itemsPorts.describe(row.item_id);
-    const itemTree = await getItemVariationTree(Number(row.item_id));
-    const selection = activeValueSelectionForLeaf(
-      itemTree,
-      Number(row.variation_leaf_node_id),
-    );
-    lines.push({
-      id: row.id,
-      itemId: Number(row.item_id || 0),
-      variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
-      quantity: Number(row.quantity || 0),
-      position: Number(row.position || 0),
-      itemName: itemDesc?.name || '',
-      itemDisplayName: itemDesc?.displayName || itemDesc?.name || '',
-      variationPathLabel: selection ? buildVariationPathLabel(selection.segments) : 'Base item',
-      variationPathNodeIds: selection?.nodeIds || [],
-    });
-  }
-  return lines;
-}
-
-async function getInventorySetById(setId) {
-  const row = await get(
-    `
-    SELECT
-      inventory_sets.*,
-      COALESCE((
-        SELECT SUM(quantity)
-        FROM inventory_set_lines
-        WHERE inventory_set_lines.set_id = inventory_sets.id
-      ), 0) AS total_item_count
-    FROM inventory_sets
-    WHERE inventory_sets.id = ?
-    `,
-    [setId],
-  );
-  if (!row) {
-    return null;
-  }
-  return rowToInventorySetDto(row, await getInventorySetLineDtos(row.id));
-}
-
-async function getInventorySets() {
-  const rows = await all(
-    `
-    SELECT
-      inventory_sets.*,
-      COALESCE((
-        SELECT SUM(quantity)
-        FROM inventory_set_lines
-        WHERE inventory_set_lines.set_id = inventory_sets.id
-      ), 0) AS total_item_count
-    FROM inventory_sets
-    ORDER BY LOWER(inventory_sets.name) ASC, inventory_sets.id ASC
-    `,
-  );
-  const sets = [];
-  for (const row of rows) {
-    sets.push(await getInventorySetById(row.id));
-  }
-  return sets.filter(Boolean);
-}
-
-async function validateInventorySetLine(line) {
-  const itemId = Number(line.itemId || 0);
-  const variationLeafNodeId = Number(line.variationLeafNodeId || 0);
-  const quantity = Math.trunc(Number(line.quantity || 0));
-  if (!Number.isInteger(itemId) || itemId <= 0) {
-    const error = new Error('Each set line requires a valid item.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!Number.isInteger(variationLeafNodeId) || variationLeafNodeId < 0) {
-    const error = new Error('Each set line requires a valid variation path.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!Number.isInteger(quantity) || quantity <= 0) {
-    const error = new Error('Each set line requires quantity greater than 0.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const item = await getItemRowById(itemId);
-  if (!item || item.is_archived) {
-    const error = new Error('Selected item is not available.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const itemTree = await getItemVariationTree(itemId);
-  const hasOrderableLeaves = activeTopLevelVariationProperties(itemTree).some((propertyNode) =>
-    activeChildrenForNode(propertyNode).some((child) => String(child.kind) === 'value'),
-  );
-  if (variationLeafNodeId === 0) {
-    if (hasOrderableLeaves) {
-      const error = new Error('Each set line requires a valid variation path.');
-      error.statusCode = 400;
-      throw error;
-    }
-    return {
-      itemId,
-      variationLeafNodeId: 0,
-      quantity,
-      position: Number(line.position || 0),
-    };
-  }
-  const leafNode = await get(
-    `
-    SELECT id, item_id, kind, is_archived
-    FROM item_variation_nodes
-    WHERE id = ?
-    `,
-    [variationLeafNodeId],
-  );
-  if (
-    !leafNode ||
-    Number(leafNode.item_id) !== itemId ||
-    String(leafNode.kind || '') !== 'value' ||
-    Number(leafNode.is_archived || 0) === 1
-  ) {
-    const error = new Error('Selected variation path is not valid for this item.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const selection = activeValueSelectionForLeaf(
-    itemTree,
-    variationLeafNodeId,
-  );
-  if (!selection) {
-    const error = new Error('Selected variation path is incomplete for this item.');
-    error.statusCode = 400;
-    throw error;
-  }
-  return {
-    itemId,
-    variationLeafNodeId,
-    quantity,
-    position: Number(line.position || 0),
-  };
-}
-
-async function saveInventorySet(payload = {}) {
-  const id = payload.id == null ? null : Number(payload.id);
-  const name = String(payload.name || '').trim();
-  if (!name) {
-    const error = new Error('Set name is required.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const mergedLines = mergeInventorySetLines(payload.lines || []);
-  if (mergedLines.length === 0) {
-    const error = new Error('Add at least one item to the set.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const validatedLines = [];
-  for (const [index, line] of mergedLines.entries()) {
-    validatedLines.push(
-      await validateInventorySetLine({
-        ...line,
-        position: index,
-      }),
-    );
-  }
-  const now = new Date().toISOString();
-  await run('BEGIN');
-  try {
-    let setId = id;
-    if (setId == null) {
-      const result = await run(
-        'INSERT INTO inventory_sets (name, created_at, updated_at) VALUES (?, ?, ?)',
-        [name, now, now],
-      );
-      setId = result.lastID;
-    } else {
-      const existing = await get(
-        'SELECT id FROM inventory_sets WHERE id = ?',
-        [setId],
-      );
-      if (!existing) {
-        const error = new Error('Set not found.');
-        error.statusCode = 404;
-        throw error;
-      }
-      await run(
-        'UPDATE inventory_sets SET name = ?, updated_at = ? WHERE id = ?',
-        [name, now, setId],
-      );
-      await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
-    }
-    for (const line of validatedLines) {
-      await run(
-        `
-        INSERT INTO inventory_set_lines (
-          set_id, item_id, variation_leaf_node_id, quantity, position
-        ) VALUES (?, ?, ?, ?, ?)
-        `,
-        [
-          setId,
-          line.itemId,
-          line.variationLeafNodeId === 0 ? null : line.variationLeafNodeId,
-          line.quantity,
-          line.position,
-        ],
-      );
-    }
-    await run('COMMIT');
-    return getInventorySetById(setId);
-  } catch (error) {
-    await run('ROLLBACK');
-    throw error;
-  }
-}
-
-async function deleteInventorySet(setId) {
-  const normalizedSetId = Number(setId);
-  if (!Number.isInteger(normalizedSetId) || normalizedSetId <= 0) {
-    const error = new Error('Valid set id is required.');
-    error.statusCode = 400;
-    throw error;
-  }
-  await run('DELETE FROM inventory_sets WHERE id = ?', [normalizedSetId]);
-}
-
-function normalizeGroupUnitGovernance(rawUnit) {
-  const unitId = Number(rawUnit?.unitId);
-  if (!Number.isInteger(unitId) || unitId <= 0) {
-    return null;
-  }
-  const state = String(rawUnit?.state || 'active').trim().toLowerCase() === 'detached'
-    ? 'detached'
-    : 'active';
-  return {
-    unitId,
-    state,
-    isPrimary: Boolean(rawUnit?.isPrimary),
-  };
-}
-
-function normalizeGroupUiPreferences(rawPreferences) {
-  return {
-    commonOnlyMode: rawPreferences?.commonOnlyMode !== false,
-    showPartialMatches: rawPreferences?.showPartialMatches !== false,
-  };
-}
-
-/// Property keys that at least one item under [groupId] actually carries a
-/// value for, taken from the items' own variation trees.
-async function propertyKeysInUseByItems(groupId) {
-  const inUse = new Set();
-  if (!groupId) {
-    return inUse;
-  }
-  const rows = await all(
-    `
-    SELECT DISTINCT item_variation_nodes.name AS name
-    FROM item_variation_nodes
-    INNER JOIN items ON items.id = item_variation_nodes.item_id
-    WHERE items.group_id = ?
-      AND items.is_archived = 0
-      AND item_variation_nodes.kind = 'property'
-      AND item_variation_nodes.is_archived = 0
-    `,
-    [Number(groupId)],
-  );
-  for (const row of rows) {
-    const key = normalizePropertyKey(row.name);
-    if (key) {
-      inUse.add(key);
-    }
-  }
-  return inUse;
-}
-
-/// Abundance → scarcity.
-///
-/// When a group stops asking for a field, the values items already recorded
-/// under it must not evaporate. Any property dropped from [incomingDrafts] that
-/// items still carry is carried forward as `state: 'retired'`: kept in the
-/// schema, hidden from the active field list. A dropped property nothing uses
-/// is simply forgotten.
-async function retireMissingGroupProperties({
-  materialId,
-  groupId,
-  incomingDrafts,
-  now,
-}) {
-  const existingRows = await all(
-    'SELECT * FROM material_group_properties WHERE material_id = ?',
-    [materialId],
-  );
-  if (existingRows.length === 0) {
-    return incomingDrafts;
-  }
-
-  const incomingKeys = new Set(incomingDrafts.map((draft) => draft.propertyKey));
-  const inUseKeys = await propertyKeysInUseByItems(groupId);
-  const carriedForward = [];
-
-  for (const row of existingRows) {
-    const propertyKey = normalizePropertyKey(row.property_key);
-    if (!propertyKey || incomingKeys.has(propertyKey)) {
-      continue;
-    }
-    // Already retired earlier, or still referenced by an item: keep it.
-    const wasRetired = String(row.state || '') === 'retired';
-    if (!wasRetired && !inUseKeys.has(propertyKey)) {
-      continue;
-    }
-    carriedForward.push(
-      normalizeGroupPropertyDraft({
-        propertyKey,
-        name: row.display_name || propertyKey,
-        displayName: row.display_name || propertyKey,
-        inputType: row.input_type || 'Text',
-        mandatory: false,
-        sourceType: row.source_type || 'manual',
-        sourceItemIds: parseJson(row.source_item_ids_json, []),
-        state: 'retired',
-        unitId: row.unit_id ? Number(row.unit_id) : null,
-        unitSymbol: row.unit_symbol || null,
-        unitLabel: row.unit_label || null,
-        sourceGroupId: row.source_group_id ? Number(row.source_group_id) : null,
-        sourceGroupName: row.source_group_name || null,
-      }),
-    );
-  }
-
-  return [...incomingDrafts, ...carriedForward.filter(Boolean)];
-}
-
-async function persistMaterialGroupGovernance(materialId, payload, now = new Date().toISOString()) {
-  const selectedItemIds = Array.isArray(payload?.selectedItemIds)
-    ? [...new Set(
-      payload.selectedItemIds
-        .map((id) => Number(id))
-        .filter((id) => Number.isInteger(id) && id > 0),
-    )]
-    : [];
-  const draftsInput = Array.isArray(payload?.propertyDrafts) ? payload.propertyDrafts : [];
-  const unitGovernanceInput = Array.isArray(payload?.unitGovernance)
-    ? payload.unitGovernance
-    : [];
-  const unitGovernance = unitGovernanceInput
-    .map(normalizeGroupUnitGovernance)
-    .filter(Boolean);
-  const preferences = normalizeGroupUiPreferences(payload?.uiPreferences || {});
-  const discardedPropertyKeys = normalizeDiscardedPropertyKeys(
-    payload?.discardedPropertyKeys,
-  );
-  const drafts = draftsInput
-    .map(normalizeGroupPropertyDraft)
-    .filter(Boolean);
-  const dedupedDraftsByKey = new Map();
-  for (const draft of drafts) {
-    if (!dedupedDraftsByKey.has(draft.propertyKey)) {
-      dedupedDraftsByKey.set(draft.propertyKey, draft);
-    }
-  }
-  let dedupedDrafts = [...dedupedDraftsByKey.values()];
-
-  // Carry forward anything this save drops that items still rely on, so a
-  // group narrowing its fields hides them instead of destroying the values.
-  const materialRow = await get('SELECT linked_group_id FROM materials WHERE id = ?', [materialId]);
-  dedupedDrafts = await retireMissingGroupProperties({
-    materialId,
-    groupId: materialRow?.linked_group_id || null,
-    incomingDrafts: dedupedDrafts,
-    now,
-  });
-
-  await run('DELETE FROM material_group_item_links WHERE material_id = ?', [materialId]);
-  await run('DELETE FROM material_group_properties WHERE material_id = ?', [materialId]);
-  await run('DELETE FROM material_group_units WHERE material_id = ?', [materialId]);
-  await run('DELETE FROM material_group_preferences WHERE material_id = ?', [materialId]);
-
-  for (let index = 0; index < selectedItemIds.length; index += 1) {
-    await run(
-      `
-      INSERT INTO material_group_item_links (material_id, item_id, sort_order, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-      `,
-      [materialId, selectedItemIds[index], index, now, now],
-    );
-  }
-
-  for (const draft of dedupedDrafts) {
-    await run(
-      `
-      INSERT INTO material_group_properties (
-        material_id, property_key, display_name, input_type, mandatory,
-        source_type, source_item_ids_json, state, override_locked, has_type_conflict,
-        coverage_count, selected_item_count_at_resolution, resolution_source,
-        unit_id, unit_symbol, unit_label, source_group_id, source_group_name,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        materialId,
-        draft.propertyKey,
-        draft.displayName,
-        draft.inputType,
-        draft.mandatory ? 1 : 0,
-        draft.sourceType,
-        JSON.stringify(draft.sourceItemIds),
-        draft.state,
-        draft.overrideLocked ? 1 : 0,
-        draft.hasTypeConflict ? 1 : 0,
-        draft.coverageCount,
-        draft.selectedItemCountAtResolution,
-        draft.resolutionSource,
-        draft.unitId,
-        draft.unitSymbol,
-        draft.unitLabel,
-        draft.sourceGroupId,
-        draft.sourceGroupName,
-        now,
-        now,
-      ],
-    );
-  }
-
-  for (const unitRow of unitGovernance) {
-    await run(
-      `
-      INSERT INTO material_group_units (
-        material_id, unit_id, state, is_primary, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      [
-        materialId,
-        unitRow.unitId,
-        unitRow.state,
-        unitRow.isPrimary ? 1 : 0,
-        now,
-        now,
-      ],
-    );
-  }
-
-  await run(
-    `
-    INSERT INTO material_group_preferences (
-      material_id, common_only_mode, show_partial_matches, discarded_property_keys_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    `,
-    [
-      materialId,
-      preferences.commonOnlyMode ? 1 : 0,
-      preferences.showPartialMatches ? 1 : 0,
-      JSON.stringify(discardedPropertyKeys),
-      now,
-      now,
-    ],
-  );
-}
-
-async function getMaterialGroupGovernance(materialId) {
-  const itemLinks = await all(
-    `
-    SELECT link.item_id, link.sort_order
-    FROM material_group_item_links AS link
-    WHERE link.material_id = ?
-    ORDER BY link.sort_order ASC, link.id ASC
-    `,
-    [materialId],
-  );
-
-  const properties = await all(
-    `
-    SELECT *
-    FROM material_group_properties
-    WHERE material_id = ?
-    ORDER BY id ASC
-    `,
-    [materialId],
-  );
-  const units = await all(
-    `
-    SELECT *
-    FROM material_group_units
-    WHERE material_id = ?
-    ORDER BY is_primary DESC, id ASC
-    `,
-    [materialId],
-  );
-  const preferencesRow = await get(
-    `
-    SELECT *
-    FROM material_group_preferences
-    WHERE material_id = ?
-    LIMIT 1
-    `,
-    [materialId],
-  );
-
-  const selectedItemIds = itemLinks.map((row) => Number(row.item_id)).filter(Boolean);
-  const selectedItems = [];
-  for (const row of itemLinks) {
-    const itemDesc = await itemsPorts.describe(row.item_id);
-    selectedItems.push({
-      itemId: Number(row.item_id),
-      itemName: itemDesc?.displayName || itemDesc?.name || `Item #${row.item_id}`,
-      sortOrder: Number(row.sort_order || 0),
-    });
-  }
-  const propertyDrafts = properties.map((row) => {
-    const sourceItemIds = parseJson(row.source_item_ids_json, [])
-      .map((id) => Number(id))
-      .filter((id) => Number.isInteger(id) && id > 0);
-    const sourceNameById = new Map(selectedItems.map((item) => [item.itemId, item.itemName]));
-    const sources = sourceItemIds.map((itemId) => ({
-      itemId,
-      itemName: sourceNameById.get(itemId) || null,
-    }));
-    return {
-      propertyKey: row.property_key || '',
-      name: row.display_name || '',
-      inputType: row.input_type || 'Text',
-      nameJoin: row.name_join || '',
-      mandatory: Number(row.mandatory || 0) === 1,
-      sourceType: row.source_type || 'manual',
-      state: row.state || 'active',
-      unitId: row.unit_id ? Number(row.unit_id) : null,
-      unitSymbol: row.unit_symbol || null,
-      unitLabel: row.unit_label || null,
-      sourceGroupId: row.source_group_id ? Number(row.source_group_id) : null,
-      sourceGroupName: row.source_group_name || null,
-      overrideLocked: Number(row.override_locked || 0) === 1,
-      hasTypeConflict: Number(row.has_type_conflict || 0) === 1,
-      coverageCount: Number(row.coverage_count || 0),
-      selectedItemCountAtResolution: Number(row.selected_item_count_at_resolution || 0),
-      resolutionSource: row.resolution_source || null,
-      sources,
-    };
-  });
-  const unitGovernance = units.map((row) => ({
-    unitId: Number(row.unit_id),
-    state: row.state === 'detached' ? 'detached' : 'active',
-    isPrimary: Number(row.is_primary || 0) === 1,
-  }));
-  const uiPreferences = {
-    commonOnlyMode: Number(preferencesRow?.common_only_mode ?? 1) === 1,
-    showPartialMatches: Number(preferencesRow?.show_partial_matches ?? 1) === 1,
-  };
-  const discardedPropertyKeys = normalizeDiscardedPropertyKeys(
-    parseJson(preferencesRow?.discarded_property_keys_json, []),
-  );
-
-  return {
-    selectedItemIds,
-    selectedItems,
-    propertyDrafts,
-    unitGovernance,
-    uiPreferences,
-    discardedPropertyKeys,
-  };
-}
-
-async function incrementMaterialScanCount(barcode) {
-  const row = await getMaterialRowByBarcode(barcode);
-  if (!row) {
-    return null;
-  }
-  const now = new Date().toISOString();
-  await run('INSERT INTO scan_history (barcode, scanned_at) VALUES (?, ?)', [
-    row.barcode,
-    now,
-  ]);
-  await run(
-    'UPDATE materials SET scan_count = scan_count + 1, updated_at = ?, last_scanned_at = ? WHERE id = ?',
-    [now, now, row.id],
-  );
-  await logMaterialActivity({
-    barcode: row.barcode,
-    type: 'scan',
-    label: 'Material scanned',
-    description: `Scan trace updated to ${Number(row.scan_count || 0) + 1} total scans.`,
-    actor: 'Scanner',
-    createdAt: now,
-  });
-  return get('SELECT * FROM materials WHERE id = ?', [row.id]);
-}
-
-async function getMaterialActivity(barcode) {
-  const material = await getMaterialRowByBarcode(barcode);
-  if (!material) {
-    return [];
-  }
-  return all(
-    `
-    SELECT *
-    FROM material_activity
-    WHERE barcode = ?
-    ORDER BY datetime(created_at) DESC, id DESC
-    `,
-    [material.barcode],
-  );
-}
-
-function normalizeMovementType(value = '') {
-  const allowed = new Set([
-    'receive',
-    'issue',
-    'transfer',
-    'adjust',
-    'reserve',
-    'release',
-    'consume',
-    'split',
-    'merge',
-  ]);
-  const normalized = String(value || '').trim().toLowerCase();
-  return allowed.has(normalized) ? normalized : 'adjust';
-}
-
-function normalizeActorLabel(actor, fallback = 'System') {
-  if (actor && typeof actor === 'object') {
-    const name = String(actor.name || '').trim();
-    if (name) {
-      return name;
-    }
-  }
-  const text = String(actor || '').trim();
-  return text || fallback;
-}
-
-async function getInventoryStockPosition(materialBarcode, locationId, lotCode) {
-  return get(
-    `
-    SELECT *
-    FROM inventory_stock_positions
-    WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
-    LIMIT 1
-    `,
-    [materialBarcode, locationId, lotCode],
-  );
-}
-
-async function assertInventoryQuantityAvailable({
-  materialBarcode,
-  locationId,
-  lotCode,
-  qty,
-  column = 'on_hand_qty',
-  label = 'stock',
-}) {
-  const position = await getInventoryStockPosition(materialBarcode, locationId, lotCode);
-  const available = Number(position?.[column] || 0);
-  if (qty > available) {
-    const error = new Error(`Insufficient ${label}. Available: ${available}, requested: ${qty}.`);
-    error.statusCode = 409;
-    throw error;
-  }
-}
-
-function normalizeMaterialClassFromType(type = '') {
-  const value = String(type || '').trim().toLowerCase();
-  if (value.includes('packaging')) {
-    return 'packaging';
-  }
-  if (value.includes('finished')) {
-    return 'finished_good';
-  }
-  if (value.includes('wip') || value.includes('semi')) {
-    return 'wip';
-  }
-  if (value.includes('chemical') || value.includes('consumable')) {
-    return 'consumable';
-  }
-  return 'raw_material';
-}
-
-async function upsertInventoryStockPosition({
-  materialBarcode,
-  locationId = 'MAIN',
-  lotCode = '',
-  unitId = null,
-  onHandDelta = 0,
-  reservedDelta = 0,
-  damagedDelta = 0,
-  now = new Date().toISOString(),
-}) {
-  const normalizedLocation = String(locationId || 'MAIN').trim() || 'MAIN';
-  const normalizedLot = String(lotCode || '').trim();
-  const existing = await get(
-    `
-    SELECT *
-    FROM inventory_stock_positions
-    WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
-    LIMIT 1
-    `,
-    [materialBarcode, normalizedLocation, normalizedLot],
-  );
-
-  if (!existing) {
-    const nextOnHand = Number(onHandDelta || 0);
-    const nextReserved = Number(reservedDelta || 0);
-    const nextDamaged = Number(damagedDelta || 0);
-    if (nextOnHand < 0 || nextReserved < 0 || nextDamaged < 0) {
-      const error = new Error('Movement would result in negative stock.');
-      error.statusCode = 422;
-      throw error;
-    }
-    await run(
-      `
-      INSERT INTO inventory_stock_positions (
-        material_barcode, location_id, lot_code, unit_id,
-        on_hand_qty, reserved_qty, damaged_qty, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        materialBarcode,
-        normalizedLocation,
-        normalizedLot,
-        unitId,
-        nextOnHand,
-        nextReserved,
-        nextDamaged,
-        now,
-      ],
-    );
-    return;
-  }
-
-  const nextOnHand = Number(existing.on_hand_qty || 0) + Number(onHandDelta || 0);
-  const nextReserved = Number(existing.reserved_qty || 0) + Number(reservedDelta || 0);
-  const nextDamaged = Number(existing.damaged_qty || 0) + Number(damagedDelta || 0);
-  if (nextOnHand < 0 || nextReserved < 0 || nextDamaged < 0) {
-    const error = new Error('Movement would result in negative stock.');
-    error.statusCode = 422;
-    throw error;
-  }
-  await run(
-    `
-    UPDATE inventory_stock_positions
-    SET unit_id = COALESCE(?, unit_id),
-        on_hand_qty = ?,
-        reserved_qty = ?,
-        damaged_qty = ?,
-        updated_at = ?
-    WHERE id = ?
-    `,
-    [unitId, nextOnHand, nextReserved, nextDamaged, now, existing.id],
-  );
-}
-
-async function recomputeMaterialInventorySummary(materialBarcode, now = new Date().toISOString()) {
-  const material = await getMaterialRowByBarcode(materialBarcode);
-  if (!material) {
-    return null;
-  }
-
-  const stockRows = await all(
-    'SELECT * FROM inventory_stock_positions WHERE material_barcode = ?',
-    [material.barcode],
-  );
-  const reservationRows = await all(
-    "SELECT * FROM inventory_reservations WHERE material_barcode = ? AND status = 'active'",
-    [material.barcode],
-  );
-  const openAlerts = await all(
-    'SELECT * FROM inventory_alerts WHERE material_barcode = ? AND is_open = 1',
-    [material.barcode],
-  );
-
-  const onHand = stockRows.reduce((sum, row) => sum + Number(row.on_hand_qty || 0), 0);
-  const reservedFromPositions = stockRows.reduce(
-    (sum, row) => sum + Number(row.reserved_qty || 0),
-    0,
-  );
-  const reservedFromReservations = reservationRows.reduce(
-    (sum, row) => sum + Number(row.reserved_qty || 0),
-    0,
-  );
-  const reserved = Math.max(reservedFromPositions, reservedFromReservations);
-  const availableToPromise = onHand - reserved;
-  const linkedOrderCount = material.linked_item_id
-    ? Number(
-        (
-          await get(
-            'SELECT COUNT(*) AS count FROM order_items WHERE item_id = ?',
-            [material.linked_item_id],
-          )
-        )?.count || 0,
-      )
-    : 0;
-  const linkedPipelineCount = Number(
-    (
-      await get(
-        'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
-        [material.barcode],
-      )
-    )?.count || 0,
-  );
-  const pendingAlertCount = openAlerts.length;
-  const materialClass = normalizeMaterialClassFromType(material.type);
-  const inventoryState = pendingAlertCount > 0 ? 'reserved' : 'available';
-  const procurementState = onHand > 0 ? 'received_complete' : 'ordered';
-  const traceabilityMode = materialClass === 'raw_material' ? 'lot_tracked' : 'bulk';
-
-  await run(
-    `
-    UPDATE materials
-    SET on_hand_qty = ?,
-        reserved_qty = ?,
-        available_to_promise_qty = ?,
-        display_stock = ?,
-        material_class = ?,
-        inventory_state = ?,
-        procurement_state = ?,
-        traceability_mode = ?,
-        linked_order_count = ?,
-        linked_pipeline_count = ?,
-        pending_alert_count = ?,
-        updated_at = ?
-    WHERE id = ?
-    `,
-    [
-      onHand,
-      reserved,
-      availableToPromise,
-      String(material.unit || '').trim()
-        ? `${Number(onHand)} ${String(material.unit || '').trim()}`
-        : `${Number(onHand)}`,
-      materialClass,
-      inventoryState,
-      procurementState,
-      traceabilityMode,
-      linkedOrderCount,
-      linkedPipelineCount,
-      pendingAlertCount,
-      now,
-      material.id,
-    ],
-  );
-
-  const lowStockThreshold = 100;
-  const hasLowStock = onHand > 0 && availableToPromise <= lowStockThreshold;
-  const existingLowStockAlert = openAlerts.find((alert) => alert.alert_type === 'low_stock');
-  if (hasLowStock && !existingLowStockAlert) {
-    await run(
-      `
-      INSERT INTO inventory_alerts (
-        material_barcode, alert_type, severity, message, is_open, created_at, updated_at
-      ) VALUES (?, 'low_stock', 'warning', ?, 1, ?, ?)
-      `,
-      [
-        material.barcode,
-        `Available stock is low (${availableToPromise.toFixed(2)}).`,
-        now,
-        now,
-      ],
-    );
-  } else if (!hasLowStock && existingLowStockAlert) {
-    await run(
-      'UPDATE inventory_alerts SET is_open = 0, updated_at = ? WHERE id = ?',
-      [now, existingLowStockAlert.id],
-    );
-  }
-
-  return getMaterialRowByBarcode(material.barcode);
-}
-
-async function getMaterialControlTowerDetail(barcode) {
-  const material = await getMaterialRowByBarcode(barcode);
-  if (!material) {
-    return null;
-  }
-  const refreshed = (await recomputeMaterialInventorySummary(material.barcode)) || material;
-  const stockRows = await all(
-    `
-    SELECT *
-    FROM inventory_stock_positions
-    WHERE material_barcode = ?
-    ORDER BY datetime(updated_at) DESC, id DESC
-    `,
-    [material.barcode],
-  );
-  const movementRows = await all(
-    `
-    SELECT *
-    FROM inventory_movements
-    WHERE material_barcode = ?
-    ORDER BY datetime(created_at) DESC
-    LIMIT 20
-    `,
-    [material.barcode],
-  );
-  const challanIds = [
-    ...new Set(
-      movementRows
-        .map((row) => Number(row.source_challan_id || 0))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    ),
-  ];
-  const challanById = new Map();
-  if (challanIds.length > 0) {
-    const placeholders = challanIds.map(() => '?').join(', ');
-    const challanRows = await all(
-      `
-      SELECT id, challan_no, type
-      FROM delivery_challans
-      WHERE id IN (${placeholders})
-      `,
-      challanIds,
-    );
-    for (const row of challanRows) {
-      challanById.set(Number(row.id), row);
-    }
-  }
-  const reservationRows = await all(
-    `
-    SELECT *
-    FROM inventory_reservations
-    WHERE material_barcode = ?
-    ORDER BY datetime(updated_at) DESC, id DESC
-    `,
-    [material.barcode],
-  );
-  const alertRows = await all(
-    `
-    SELECT *
-    FROM inventory_alerts
-    WHERE material_barcode = ?
-    ORDER BY is_open DESC, datetime(updated_at) DESC, id DESC
-    `,
-    [material.barcode],
-  );
-  const linkedOrderDemand = refreshed.linked_item_id
-    ? Number(
-        (
-          await get('SELECT COALESCE(SUM(quantity), 0) AS qty FROM order_items WHERE item_id = ?', [
-            refreshed.linked_item_id,
-          ])
-        )?.qty || 0,
-      )
-    : 0;
-  const linkedPipelineDemand = Number(
-    (
-      await get(
-        'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
-        [material.barcode],
-      )
-    )?.count || 0,
-  );
-
-  const activePipelineInput = await get(
-    'SELECT run_id, node_id FROM run_barcode_inputs WHERE barcode = ? ORDER BY scanned_at DESC LIMIT 1',
-    [material.barcode]
-  );
-  
-  let activePipelineRun = null;
-  if (activePipelineInput) {
-    const runId = activePipelineInput.run_id;
-    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
-    if (runRow) {
-       const orderRows = await all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]);
-       const orderIds = orderRows.map(r => r.order_item_id);
-       
-       const template = await get('SELECT nodes_json, stage_labels_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
-       const nodes = template ? parseJson(template.nodes_json, []) : [];
-       const stageLabels = template ? parseJson(template.stage_labels_json, []) : [];
-       const node = nodes.find(n => n.id === activePipelineInput.node_id);
-       
-       let machine = null;
-       if (node?.machineId) {
-          const m = await get('SELECT name, primary_photo_url FROM machines WHERE asset_id = ? OR name = ?', [node.machineId, node.machineId]);
-          if (m) machine = { name: m.name, photoUrls: m.primary_photo_url ? [m.primary_photo_url] : [] };
-       }
-       
-       let die = null;
-       if (node?.dieId) {
-          const d = await get('SELECT tool_code, photo_urls FROM dies WHERE tool_code = ?', [node.dieId]);
-          if (d) die = { toolCode: d.tool_code, photoUrls: parseJson(d.photo_urls, []) };
-       }
-       
-       const stages = await all('SELECT * FROM stage_reconciliations WHERE run_id = ?', [runId]);
-       
-       activePipelineRun = {
-         id: runRow.id,
-         name: runRow.name || runRow.id,
-         status: runRow.status,
-         machine,
-         die,
-         orderIds,
-         currentNodeId: activePipelineInput.node_id,
-         stages: stages.map(s => ({
-            nodeId: s.node_id,
-            producedQty: s.produced_qty || 0,
-            expectedQty: s.expected_qty || 0,
-            rejectedQty: s.rejected_qty || 0
-         })),
-         nodes,
-         stageLabels
-       };
-    }
-  }
-
-  return {
-    material: rowToMaterialDto(refreshed),
-    activePipelineRun,
-    stockPositions: stockRows.map((row) => ({
-      locationId: row.location_id || 'MAIN',
-      locationName: row.location_id || 'Main Warehouse',
-      lotCode: row.lot_code || '',
-      unitId: row.unit_id || null,
-      onHandQty: Number(row.on_hand_qty || 0),
-      reservedQty: Number(row.reserved_qty || 0),
-      damagedQty: Number(row.damaged_qty || 0),
-      updatedAt: row.updated_at,
-    })),
-    movements: movementRows.map((row) => ({
-      id: String(row.id || ''),
-      materialBarcode: row.material_barcode || '',
-      movementType: row.movement_type || 'adjust',
-      qty: Number(row.qty || 0),
-      primaryQty: Number(row.primary_qty || row.qty || 0),
-      uom: String(row.uom || '').trim(),
-      fromLocationId: row.from_location_id || null,
-      toLocationId: row.to_location_id || null,
-      reasonCode: row.reason_code || null,
-      referenceType: row.reference_type || null,
-      referenceId: row.reference_id || null,
-      sourceChallanId: row.source_challan_id == null ? null : Number(row.source_challan_id || 0),
-      sourceChallanType: row.source_challan_type || null,
-      sourceChallanLineId: row.source_challan_line_id == null ? null : Number(row.source_challan_line_id || 0),
-      reversesMovementId: row.reverses_movement_id || null,
-      sourceLabel: (() => {
-        const linkedChallan = challanById.get(Number(row.source_challan_id || 0));
-        if (linkedChallan) {
-          const typeLabel = normalizeChallanType(linkedChallan.type) === 'reception' ? 'Reception' : 'Delivery';
-          if (row.reverses_movement_id || row.reference_type === 'challan-cancellation') {
-            return `Cancellation of ${typeLabel} Challan ${linkedChallan.challan_no || `#${linkedChallan.id}`}`;
-          }
-          return `${typeLabel} Challan ${linkedChallan.challan_no || `#${linkedChallan.id}`}`;
-        }
-        const referenceType = String(row.reference_type || '').trim();
-        const referenceId = String(row.reference_id || '').trim();
-        if (referenceType && referenceId) {
-          return `${referenceType} ${referenceId}`;
-        }
-        if (referenceType) {
-          return referenceType;
-        }
-        return null;
-      })(),
-      actor: row.actor || '',
-      createdAt: row.created_at,
-    })),
-    reservations: reservationRows.map((row) => ({
-      referenceType: row.reference_type || '',
-      referenceId: row.reference_id || '',
-      reservedQty: Number(row.reserved_qty || 0),
-      status: row.status || 'active',
-    })),
-    alerts: alertRows.map((row) => ({
-      alertType: row.alert_type || '',
-      severity: row.severity || 'warning',
-      message: row.message || '',
-      isOpen: Number(row.is_open || 0) === 1,
-    })),
-    linkedOrderDemand,
-    linkedPipelineDemand,
-    pendingAlertsCount: Number(refreshed.pending_alert_count || 0),
-  };
-}
-
-async function getInventoryHealthSummary() {
-  const lowStockCount = Number(
-    (
-      await get(
-        'SELECT COUNT(*) AS count FROM materials WHERE on_hand_qty > 0 AND available_to_promise_qty <= 100',
-      )
-    )?.count || 0,
-  );
-  const reservedRiskCount = Number(
-    (
-      await get(
-        'SELECT COUNT(*) AS count FROM materials WHERE reserved_qty > on_hand_qty AND reserved_qty > 0',
-      )
-    )?.count || 0,
-  );
-  const incomingTodayCount = Number(
-    (
-      await get(
-        "SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'receive' AND created_at >= ?",
-        [new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()],
-      )
-    )?.count || 0,
-  );
-  const qualityHoldCount = Number(
-    (
-      await get("SELECT COUNT(*) AS count FROM materials WHERE inventory_state = 'quality_hold'")
-    )?.count || 0,
-  );
-  const pendingReconciliationCount = Number(
-    (
-      await get('SELECT COUNT(*) AS count FROM inventory_alerts WHERE is_open = 1')
-    )?.count || 0,
-  );
-
-  return {
-    lowStockCount,
-    reservedRiskCount,
-    incomingTodayCount,
-    qualityHoldCount,
-    unitMismatchCount: pendingReconciliationCount,
-    pendingReconciliationCount,
-  };
-}
-
-async function applyInventoryMovementCore(payload, { useTransaction = true } = {}) {
-  const barcode = normalizeBarcode(payload?.barcode || '');
-  const movementType = normalizeMovementType(payload?.movementType || 'adjust');
-  const qty = Number(payload?.qty || 0);
-  if (!barcode || !Number.isFinite(qty) || qty <= 0) {
-    const error = new Error('barcode, movementType, and qty (> 0) are required.');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const material = await getMaterialRowByBarcode(barcode);
-  if (!material) {
-    const error = new Error('Material not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const fromLocationId = String(payload?.fromLocationId || '').trim() || null;
-  const defaultLocationId = String(material.location || '').trim() || 'MAIN';
-  const explicitLot = String(payload?.lotCode || '').trim();
-  let toLocationId = String(payload?.toLocationId || '').trim() || defaultLocationId;
-  let lotCode = explicitLot || barcode;
-
-  // Issuing/consuming without a caller-specified lot used to target a phantom
-  // lot==barcode bucket that's almost always empty — real stock sits under its
-  // receiving lot code. Draw from the position that actually holds stock so the
-  // assignable quantity matches what inventory shows.
-  // ponytail: picks the single fullest lot; add FIFO multi-lot consume only if a
-  // single request ever needs to span more than one lot.
-  if (!explicitLot && (movementType === 'issue' || movementType === 'consume')) {
-    const stockedPosition = await get(
-      `
-      SELECT location_id, lot_code
-      FROM inventory_stock_positions
-      WHERE material_barcode = ? AND on_hand_qty > 0
-      ORDER BY on_hand_qty DESC
-      LIMIT 1
-      `,
-      [barcode],
-    );
-    if (stockedPosition) {
-      toLocationId = stockedPosition.location_id;
-      lotCode = stockedPosition.lot_code;
-    }
-  }
-  const actor = normalizeActorLabel(payload?.actor, 'Demo Admin');
-  const sourceChallanId = payload?.sourceChallanId == null
-    ? null
-    : Number(payload.sourceChallanId || 0) || null;
-  const sourceChallanType = payload?.sourceChallanType == null
-    ? null
-    : normalizeChallanType(payload.sourceChallanType, '');
-  const sourceChallanLineId = payload?.sourceChallanLineId == null
-    ? null
-    : Number(payload.sourceChallanLineId || 0) || null;
-  const reversesMovementId = String(payload?.reversesMovementId || '').trim() || null;
-  const referenceType = String(payload?.referenceType || '').trim() || null;
-  const referenceId = String(payload?.referenceId || '').trim() || null;
-  const primaryQty = Number(payload?.primaryQty || qty);
-  const uom = String(payload?.uom || '').trim() || String(material.unit || '').trim() || 'units';
-  const linkedStockItemId = Number(material.linked_item_id || 0) || null;
-  const linkedStockLeafNodeId = Number(material.linked_variation_leaf_node_id || 0) || null;
-  const hasChallanProvenance =
-    sourceChallanId != null &&
-    !!sourceChallanType &&
-    sourceChallanLineId != null;
-  const hasManualProvenance = !!referenceType && !!referenceId;
-
-  if (movementType === 'transfer' && !fromLocationId) {
-    const error = new Error('fromLocationId is required for transfer movements.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (movementType === 'receive' && !hasChallanProvenance && !hasManualProvenance) {
-    const error = new Error('Receive movements require challan provenance or a manual reference.');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (useTransaction) {
-    await run('BEGIN TRANSACTION');
-  }
-  try {
-    if (movementType === 'receive') {
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: toLocationId,
-        lotCode,
-        unitId: material.unit_id || null,
-        onHandDelta: qty,
-        now,
-      });
-    } else if (movementType === 'transfer') {
-      await assertInventoryQuantityAvailable({
-        materialBarcode: material.barcode,
-        locationId: fromLocationId,
-        lotCode,
-        qty,
-      });
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: fromLocationId,
-        lotCode,
-        unitId: material.unit_id || null,
-        onHandDelta: -qty,
-        now,
-      });
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: toLocationId,
-        lotCode,
-        unitId: material.unit_id || null,
-        onHandDelta: qty,
-        now,
-      });
-    } else if (movementType === 'reserve') {
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: toLocationId,
-        lotCode,
-        unitId: material.unit_id || null,
-        reservedDelta: qty,
-        now,
-      });
-      await run(
-        `
-        INSERT INTO inventory_reservations (
-          material_barcode, reference_type, reference_id, reserved_qty, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'active', ?, ?)
-        `,
-        [
-          material.barcode,
-          String(payload?.referenceType || 'manual').trim() || 'manual',
-          String(payload?.referenceId || movementId).trim() || movementId,
-          qty,
-          now,
-          now,
-        ],
-      );
-    } else if (movementType === 'release') {
-      await assertInventoryQuantityAvailable({
-        materialBarcode: material.barcode,
-        locationId: toLocationId,
-        lotCode,
-        qty,
-        column: 'reserved_qty',
-        label: 'reserved stock',
-      });
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: toLocationId,
-        lotCode,
-        unitId: material.unit_id || null,
-        reservedDelta: -qty,
-        now,
-      });
-      const activeReservation = await get(
-        `
-        SELECT *
-        FROM inventory_reservations
-        WHERE material_barcode = ? AND status = 'active'
-        ORDER BY datetime(updated_at) DESC, id DESC
-        LIMIT 1
-        `,
-        [material.barcode],
-      );
-      if (activeReservation) {
-        const nextQty = Math.max(0, Number(activeReservation.reserved_qty || 0) - qty);
-        await run(
-          `
-          UPDATE inventory_reservations
-          SET reserved_qty = ?, status = ?, updated_at = ?
-          WHERE id = ?
-          `,
-          [nextQty, nextQty <= 0 ? 'released' : 'active', now, activeReservation.id],
-        );
-      }
-    } else {
-      if (movementType === 'issue' || movementType === 'consume') {
-        await assertInventoryQuantityAvailable({
-          materialBarcode: material.barcode,
-          locationId: toLocationId,
-          lotCode,
-          qty,
-        });
-      }
-      const onHandDelta = movementType === 'issue' || movementType === 'consume'
-        ? -qty
-        : qty;
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: toLocationId,
-        lotCode,
-        unitId: material.unit_id || null,
-        onHandDelta,
-        now,
-      });
-    }
-
-    await run(
-      `
-      INSERT INTO inventory_movements (
-        id, material_barcode, movement_type, qty, primary_qty, uom, from_location_id, to_location_id,
-        reason_code, reference_type, reference_id, source_challan_id, source_challan_type,
-        source_challan_line_id, reverses_movement_id, actor, lot_code, created_at,
-        item_id, variation_leaf_node_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        movementId,
-        material.barcode,
-        movementType,
-        qty,
-        primaryQty,
-        uom,
-        fromLocationId,
-        toLocationId,
-        String(payload?.reasonCode || '').trim() || null,
-        referenceType,
-        referenceId,
-        sourceChallanId,
-        sourceChallanType || null,
-        sourceChallanLineId,
-        reversesMovementId,
-        actor,
-        lotCode,
-        now,
-        linkedStockItemId,
-        linkedStockLeafNodeId,
-      ],
-    );
-
-    await recomputeMaterialInventorySummary(material.barcode, now);
-
-    if (linkedStockItemId != null && linkedStockLeafNodeId != null) {
-      if (movementType === 'receive' || (movementType === 'adjust' && qty > 0)) {
-        await itemsPorts.stock.applyDelta({
-          itemId: linkedStockItemId,
-          variationLeafNodeId: linkedStockLeafNodeId,
-          locationId: toLocationId || 'MAIN',
-          delta: qty,
-          now,
-        });
-      } else if (movementType === 'issue' || movementType === 'consume') {
-        await itemsPorts.stock.applyDelta({
-          itemId: linkedStockItemId,
-          variationLeafNodeId: linkedStockLeafNodeId,
-          locationId: toLocationId || 'MAIN',
-          delta: -qty,
-          now,
-        });
-      } else if (movementType === 'transfer') {
-        await itemsPorts.stock.applyDelta({
-          itemId: linkedStockItemId,
-          variationLeafNodeId: linkedStockLeafNodeId,
-          locationId: fromLocationId || 'MAIN',
-          delta: -qty,
-          now,
-        });
-        await itemsPorts.stock.applyDelta({
-          itemId: linkedStockItemId,
-          variationLeafNodeId: linkedStockLeafNodeId,
-          locationId: toLocationId || 'MAIN',
-          delta: qty,
-          now,
-        });
-      }
-    }
-
-    await logMaterialActivity({
-      barcode: material.barcode,
-      type: movementType,
-      label: 'Inventory movement posted',
-      description: `${movementType} ${primaryQty.toFixed(2)} ${uom}.`,
-      actor,
-      createdAt: now,
-    });
-    if (useTransaction) {
-      await run('COMMIT');
-    }
-  } catch (error) {
-    if (useTransaction) {
-      await run('ROLLBACK');
-    }
-    throw error;
-  }
-
-  return getMaterialControlTowerDetail(material.barcode);
-}
-
-async function applyInventoryMovement(payload) {
-  return applyInventoryMovementCore(payload, { useTransaction: true });
-}
-
-async function updateMaterialGroupConfiguration(barcode, payload) {
-  const material = await getMaterialRowByBarcode(barcode);
-  if (!material) {
-    throw new Error('Material not found.');
-  }
-  const now = new Date().toISOString();
-  await run(
-    'UPDATE materials SET group_mode = ?, inheritance_enabled = ?, updated_at = ? WHERE id = ?',
-    [
-      String(payload.groupMode ?? material.group_mode ?? '').trim() || null,
-      payload.inheritanceEnabled == null
-        ? Number(material.inheritance_enabled || 0)
-        : (payload.inheritanceEnabled ? 1 : 0),
-      now,
-      material.id,
-    ],
-  );
-  await persistMaterialGroupGovernance(material.id, payload, now);
-  await logMaterialActivity({
-    barcode: material.barcode,
-    type: 'governanceUpdated',
-    label: 'Inheritance governance updated',
-    description: 'Group property inheritance configuration was updated.',
-    actor: material.created_by || 'Demo Admin',
-    createdAt: now,
-  });
-  return get('SELECT * FROM materials WHERE id = ?', [material.id]);
-}
-
-async function logMaterialActivity({
-  barcode,
-  type,
-  label,
-  description = '',
-  actor = '',
-  createdAt = new Date().toISOString(),
-}) {
-  await run(
-    `
-    INSERT INTO material_activity (
-      barcode, event_type, event_label, event_description, actor, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    `,
-    [barcode, type, label, description, actor, createdAt],
-  );
-}
-
-async function createChildMaterial(parentBarcode, payload) {
-  const parent = await getMaterialRowByBarcode(parentBarcode);
-  if (!parent || parent.kind !== 'parent') {
-    throw new Error('Parent material not found.');
-  }
-  const actor = String(payload?.actor || '').trim() || parent.created_by || 'Demo Admin';
-
-  const nextIndex = Number(parent.number_of_children || 0) + 1;
-  const childBarcode = generateChildBarcode(parent.barcode, nextIndex);
-  const createdAt = new Date().toISOString();
-  const childDisplayStock = String(parent.unit || '').trim()
-    ? `0 ${String(parent.unit || '').trim()}`
-    : '0';
-
-  await run(
-    `
-    INSERT INTO materials (
-      barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes, group_mode, inheritance_enabled,
-      created_at, kind, parent_barcode, number_of_children, linked_child_barcodes,
-      scan_count, linked_group_id, linked_item_id, display_stock, created_by,
-      workflow_status, updated_at, last_scanned_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child', ?, 0, '[]', 0, NULL, NULL, ?, ?, ?, ?, NULL)
-    `,
-    [
-      childBarcode,
-      String(payload.name || '').trim(),
-      parent.type || '',
-      parent.grade || '',
-      parent.thickness || '',
-      parent.supplier || '',
-      parent.location || '',
-      parent.unit_id || null,
-      parent.unit || '',
-      String(payload.notes || '').trim(),
-      parent.group_mode || null,
-      Number(parent.inheritance_enabled || 0),
-      createdAt,
-      parent.barcode,
-      childDisplayStock,
-      actor,
-      'notStarted',
-      createdAt,
-    ],
-  );
-
-  const linkedChildren = parseJson(parent.linked_child_barcodes, []);
-  linkedChildren.push(childBarcode);
-  await run(
-    'UPDATE materials SET number_of_children = ?, linked_child_barcodes = ?, updated_at = ? WHERE id = ?',
-    [linkedChildren.length, JSON.stringify(linkedChildren), createdAt, parent.id],
-  );
-
-  await logMaterialActivity({
-    barcode: childBarcode,
-    type: 'created',
-    label: 'Sub-group created',
-    description: `Created under parent ${parent.name || parent.barcode}.`,
-    actor,
-    createdAt,
-  });
-  await recomputeMaterialInventorySummary(childBarcode, createdAt);
-  await recomputeMaterialInventorySummary(parent.barcode, createdAt);
-
-  return getMaterialRowByBarcode(childBarcode);
-}
-
-async function updateMaterialRecord(barcode, payload) {
-  const existing = await getMaterialRowByBarcode(barcode);
-  if (!existing) {
-    throw new Error('Material not found.');
-  }
-
-  const resolvedUnit = await resolveUnitPayload(payload);
-  const now = new Date().toISOString();
-  const actor = String(payload?.actor || '').trim() || existing.created_by || 'Demo Admin';
-  const existingDisplayStock = String(existing.display_stock || '').trim();
-  const nextDisplayStock = existingDisplayStock || (
-    resolvedUnit.unit
-      ? `${Number(existing.on_hand_qty || 0)} ${resolvedUnit.unit}`
-      : `${Number(existing.on_hand_qty || 0)}`
-  );
-  await run(
-    `
-    UPDATE materials
-    SET name = ?, type = ?, grade = ?, thickness = ?, supplier = ?, location = ?, unit_id = ?, unit = ?, notes = ?, group_mode = ?, inheritance_enabled = ?, display_stock = ?, updated_at = ?
-    WHERE id = ?
-    `,
-    [
-      String(payload.name || '').trim(),
-      String(payload.type || '').trim(),
-      String(payload.grade || '').trim(),
-      String(payload.thickness || '').trim(),
-      String(payload.supplier || '').trim(),
-      String(payload.location || '').trim(),
-      resolvedUnit.unitId,
-      resolvedUnit.unit,
-      String(payload.notes || '').trim(),
-      String(payload.groupMode ?? existing.group_mode ?? '').trim() || null,
-      payload.inheritanceEnabled == null
-        ? Number(existing.inheritance_enabled || 0)
-        : (payload.inheritanceEnabled ? 1 : 0),
-      nextDisplayStock,
-      now,
-      existing.id,
-    ],
-  );
-  await logMaterialActivity({
-    barcode: existing.barcode,
-    type: 'updated',
-    label: 'Record updated',
-    description: 'Material details were edited.',
-    actor,
-    createdAt: now,
-  });
-  await recomputeMaterialInventorySummary(existing.barcode, now);
-  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
-}
-
-async function deleteMaterialRecord(barcode) {
-  const existing = await getMaterialRowByBarcode(barcode);
-  if (!existing) {
-    throw new Error('Material not found.');
-  }
-
-  if (existing.kind === 'parent') {
-    const childRows = await all('SELECT barcode FROM materials WHERE parent_barcode = ?', [
-      existing.barcode,
-    ]);
-    for (const child of childRows) {
-      await run('DELETE FROM scan_history WHERE barcode = ?', [child.barcode]);
-      await run('DELETE FROM material_activity WHERE barcode = ?', [child.barcode]);
-    }
-    await run('DELETE FROM materials WHERE parent_barcode = ?', [existing.barcode]);
-  } else if (existing.parent_barcode) {
-    const parent = await getMaterialRowByBarcode(existing.parent_barcode);
-    if (parent) {
-      const linkedChildren = parseJson(parent.linked_child_barcodes, []).filter(
-        (childBarcode) => childBarcode !== existing.barcode,
-      );
-      await run(
-        'UPDATE materials SET number_of_children = ?, linked_child_barcodes = ? WHERE id = ?',
-        [linkedChildren.length, JSON.stringify(linkedChildren), parent.id],
-      );
-    }
-  }
-
-  await run('DELETE FROM scan_history WHERE barcode = ?', [existing.barcode]);
-  await run('DELETE FROM material_activity WHERE barcode = ?', [existing.barcode]);
-  await run('DELETE FROM material_group_item_links WHERE material_id = ?', [existing.id]);
-  await run('DELETE FROM material_group_properties WHERE material_id = ?', [existing.id]);
-  await run('DELETE FROM material_group_units WHERE material_id = ?', [existing.id]);
-  await run('DELETE FROM material_group_preferences WHERE material_id = ?', [existing.id]);
-  await run('DELETE FROM inventory_stock_positions WHERE material_barcode = ?', [existing.barcode]);
-  await run('DELETE FROM inventory_movements WHERE material_barcode = ?', [existing.barcode]);
-  await run('DELETE FROM inventory_reservations WHERE material_barcode = ?', [existing.barcode]);
-  await run('DELETE FROM inventory_alerts WHERE material_barcode = ?', [existing.barcode]);
-  await run('DELETE FROM materials WHERE id = ?', [existing.id]);
-}
-
-async function linkMaterialRecordToGroup(barcode, groupId) {
-  const existing = await getMaterialRowByBarcode(barcode);
-  if (!existing) {
-    throw new Error('Material not found.');
-  }
-  const group = await getGroupRowById(Number(groupId));
-  if (!group || group.is_archived) {
-    throw new Error('Selected group is not available.');
-  }
-  await run(
-    'UPDATE materials SET linked_group_id = ?, linked_item_id = NULL, linked_variation_leaf_node_id = NULL, updated_at = ? WHERE id = ?',
-    [group.id, new Date().toISOString(), existing.id],
-  );
-  await logMaterialActivity({
-    barcode: existing.barcode,
-    type: 'linked',
-    label: 'Inheritance linked',
-    description: `Linked to group ${group.name || group.id}.`,
-    actor: existing.created_by || 'Demo Admin',
-  });
-  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
-}
-
-async function linkMaterialRecordToItem(barcode, itemId, variationLeafNodeId = null) {
-  const existing = await getMaterialRowByBarcode(barcode);
-  if (!existing) {
-    throw new Error('Material not found.');
-  }
-  const item = await getItemRowById(Number(itemId));
-  if (!item || item.is_archived) {
-    throw new Error('Selected item is not available.');
-  }
-  const tree = await getItemVariationTree(item.id);
-  const hasActiveVariationProperties = activeTopLevelVariationProperties(tree).length > 0;
-  const normalizedLeafId = variationLeafNodeId == null ? null : Number(variationLeafNodeId);
-  if (hasActiveVariationProperties) {
-    const leafPath = activeValuePathForLeaf(tree, normalizedLeafId);
-    const leafNode = findVariationNodeById(tree, normalizedLeafId);
-    if (
-      !Number.isFinite(normalizedLeafId) ||
-      normalizedLeafId <= 0 ||
-      !leafNode ||
-      leafNode.isArchived ||
-      String(leafNode.kind) !== 'value' ||
-      !leafPath
-    ) {
-      const error = new Error('Select an orderable variation leaf before linking this item.');
-      error.statusCode = 400;
-      throw error;
-    }
-  } else if (normalizedLeafId != null && normalizedLeafId > 0) {
-    const error = new Error('Simple items cannot be linked to a variation leaf.');
-    error.statusCode = 400;
-    throw error;
-  }
-  await run(
-    'UPDATE materials SET linked_group_id = NULL, linked_item_id = ?, linked_variation_leaf_node_id = ?, updated_at = ? WHERE id = ?',
-    [item.id, hasActiveVariationProperties ? normalizedLeafId : null, new Date().toISOString(), existing.id],
-  );
-  await logMaterialActivity({
-    barcode: existing.barcode,
-    type: 'linked',
-    label: 'Inheritance linked',
-    description: `Linked to item ${item.display_name || item.name || item.id}${hasActiveVariationProperties ? ' (Variation ' + normalizedLeafId + ')' : ''}.`,
-    actor: existing.created_by || 'Demo Admin',
-  });
-  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
-}
-
-async function unlinkMaterialRecord(barcode) {
-  const existing = await getMaterialRowByBarcode(barcode);
-  if (!existing) {
-    throw new Error('Material not found.');
-  }
-  await run(
-    'UPDATE materials SET linked_group_id = NULL, linked_item_id = NULL, linked_variation_leaf_node_id = NULL, updated_at = ? WHERE id = ?',
-    [new Date().toISOString(), existing.id],
-  );
-  await logMaterialActivity({
-    barcode: existing.barcode,
-    type: 'unlinked',
-    label: 'Inheritance removed',
-    description: 'Removed inheritance link.',
-    actor: existing.created_by || 'Demo Admin',
-  });
-  return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
 function firstActiveOrderableLeafIdFromTree(tree) {
@@ -22346,63 +19254,8 @@ async function createFreelancerJobWithTasks({ item_id, quantity }) {
 
 
 
-const registerFreelancerPortalModuleRoutes = require('./modules/freelancer_portal/routes');
-registerFreelancerPortalModuleRoutes({
-  app,
-  get,
-  all,
-  getFreelancerEmployee: async (barcode_id) => {
-    return await get('SELECT id FROM employees WHERE barcode_id = ?', [barcode_id]);
-  },
-  getFreelancerPortalData: async (employeeId) => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const isoDate = thirtyDaysAgo.toISOString();
 
-    const batches = await all('SELECT * FROM freelancer_job_batches WHERE freelancer_id = ? AND created_at >= ?', [employeeId, isoDate]);
-    const batchIds = batches.map(b => b.id);
-    let jobs = [];
-    let tasks = [];
-    if (batchIds.length > 0) {
-      jobs = await all(`SELECT * FROM freelancer_jobs WHERE batch_id IN (${batchIds.join(',')})`);
-      const jobIds = jobs.map(j => j.id);
-      if (jobIds.length > 0) {
-        tasks = await all(`SELECT * FROM freelancer_job_tasks WHERE job_id IN (${jobIds.join(',')})`);
-      }
-    }
-    return { batches, jobs, tasks };
-  }
-});
 
-const registerMobileModuleRoutes = require('./modules/mobile/routes');
-registerMobileModuleRoutes({
-  app,
-  requireAuth,
-  getIo: () => io,
-  changeEmitter,
-});
-
-const registerPortalModuleRoutes = require('./modules/portal/routes');
-registerPortalModuleRoutes({
-  app,
-  get,
-  all,
-  run,
-  saveOrder,
-  getPortalCatalog: async (clientId) => {
-    return await all(`
-      SELECT i.id, i.name, i.display_name, i.alias, i.quantity, i.naming_format 
-      FROM items i
-      JOIN client_portal_catalog cpc ON i.id = cpc.item_id
-      WHERE i.is_archived = 0 AND cpc.client_id = ?
-      ORDER BY i.display_name ASC
-    `, [clientId]);
-  },
-  createPortalOrderHeader: async (orderNo, clientId) => {
-    await run('INSERT INTO order_headers (order_no, client_id, created_at, updated_at) VALUES (?, ?, ?, ?)', 
-      [orderNo, clientId, new Date().toISOString(), new Date().toISOString()]);
-  }
-});
 
 
 // --- Contract guards (kernel rule K4) -------------------------------------
@@ -22822,6 +19675,225 @@ registerDiesModuleRoutes({
   isDieAssignedToActiveRun,
 });
 
+const createInventoryService = require('./modules/inventory/service');
+const {
+  rowToMaterialDto,
+  rowToMaterialActivityDto,
+  rowToInventorySetDto,
+  getMaterialRowByBarcode,
+  getGroupMaterialRowByGroupId,
+  getInventoryStockList,
+  getInventoryHealthSummary,
+  getInventoryStockPosition,
+  assertInventoryQuantityAvailable,
+  upsertInventoryStockPosition,
+  recomputeMaterialInventorySummary,
+  getMaterialControlTowerDetail,
+  applyInventoryMovementCore,
+  applyInventoryMovement,
+  logMaterialActivity,
+  getMaterialActivity,
+  incrementMaterialScanCount,
+  resetMaterialScanCount,
+  mergeInventorySetLines,
+  getInventorySetLineDtos,
+  getInventorySetById,
+  getInventorySets,
+  validateInventorySetLine,
+  saveInventorySet,
+  deleteInventorySet,
+  retireMissingGroupProperties,
+  persistMaterialGroupGovernance,
+  getMaterialGroupGovernance,
+  createParentWithChildren,
+  createChildMaterial,
+  updateMaterialRecord,
+  updateMaterialGroupConfiguration,
+  deleteMaterialRecord,
+  linkMaterialRecordToGroup,
+  linkMaterialRecordToItem,
+  unlinkMaterialRecord,
+} = createInventoryService({
+  all,
+  get,
+  run,
+  itemsPorts,
+  logChange,
+  parseJson,
+  normalizeBarcode,
+  normalizeChallanType,
+  saveGroup,
+  getItemRowById,
+  getGroupRowById,
+  getItemVariationTree,
+  activeValueSelectionForLeaf,
+  activeValuePathForLeaf,
+  findVariationNodeById,
+  activeTopLevelVariationProperties,
+  activeChildrenForNode,
+  buildVariationPathLabel,
+  resolveUnitPayload: async (payload) => {
+    if (!payload?.unitId) {
+      return {
+        unitId: null,
+        unit: String(payload?.unit || '').trim(),
+      };
+    }
+    const unitRow = await get('SELECT * FROM units WHERE id = ?', [payload.unitId]);
+    if (!unitRow) {
+      throw new Error('Selected unit does not exist.');
+    }
+    return {
+      unitId: unitRow.id,
+      unit: unitRow.symbol || '',
+    };
+  },
+  propertyKeysInUseByItems: async (groupId) => {
+    const inUse = new Set();
+    if (!groupId) {
+      return inUse;
+    }
+    const rows = await all(
+      `
+      SELECT DISTINCT item_variation_nodes.name AS name
+      FROM item_variation_nodes
+      INNER JOIN items ON items.id = item_variation_nodes.item_id
+      WHERE items.group_id = ?
+        AND items.is_archived = 0
+        AND item_variation_nodes.kind = 'property'
+        AND item_variation_nodes.is_archived = 0
+      `,
+      [Number(groupId)],
+    );
+    for (const row of rows) {
+      const key = normalizePropertyKey(row.name);
+      if (key) {
+        inUse.add(key);
+      }
+    }
+    return inUse;
+  },
+  getChallansByIds: async (challanIds) => {
+    const challanById = new Map();
+    if (challanIds.length > 0) {
+      const placeholders = challanIds.map(() => '?').join(', ');
+      const challanRows = await all(
+        `
+        SELECT id, challan_no, type
+        FROM delivery_challans
+        WHERE id IN (${placeholders})
+        `,
+        challanIds,
+      );
+      for (const row of challanRows) {
+        challanById.set(Number(row.id), row);
+      }
+    }
+    return challanById;
+  },
+  getActivePipelineRunForMaterial: async (barcode) => {
+    const activePipelineInput = await get(
+      'SELECT run_id, node_id FROM run_barcode_inputs WHERE barcode = ? ORDER BY scanned_at DESC LIMIT 1',
+      [barcode],
+    );
+    if (!activePipelineInput) return null;
+    const runId = activePipelineInput.run_id;
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
+    if (!runRow) return null;
+    const orderRows = await all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]);
+    const orderIds = orderRows.map((r) => r.order_item_id);
+    const template = await get('SELECT nodes_json, stage_labels_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+    const nodes = template ? parseJson(template.nodes_json, []) : [];
+    const stageLabels = template ? parseJson(template.stage_labels_json, []) : [];
+    const node = nodes.find((n) => n.id === activePipelineInput.node_id);
+    let machine = null;
+    if (node?.machineId) {
+      const m = await get('SELECT name, primary_photo_url FROM machines WHERE asset_id = ? OR name = ?', [node.machineId, node.machineId]);
+      if (m) machine = { name: m.name, photoUrls: m.primary_photo_url ? [m.primary_photo_url] : [] };
+    }
+    let die = null;
+    if (node?.dieId) {
+      const d = await get('SELECT tool_code, photo_urls FROM dies WHERE tool_code = ?', [node.dieId]);
+      if (d) die = { toolCode: d.tool_code, photoUrls: parseJson(d.photo_urls, []) };
+    }
+    const stages = await all('SELECT * FROM stage_reconciliations WHERE run_id = ?', [runId]);
+    return {
+      id: runRow.id,
+      name: runRow.name || runRow.id,
+      status: runRow.status,
+      machine,
+      die,
+      orderIds,
+      currentNodeId: activePipelineInput.node_id,
+      stages: stages.map((s) => ({
+        nodeId: s.node_id,
+        producedQty: s.produced_qty || 0,
+        expectedQty: s.expected_qty || 0,
+        rejectedQty: s.rejected_qty || 0,
+      })),
+      nodes,
+      stageLabels,
+    };
+  },
+  getLinkedOrderItemDemand: async (itemId) => {
+    const row = await get('SELECT COALESCE(SUM(quantity), 0) AS qty FROM order_items WHERE item_id = ?', [itemId]);
+    return Number(row?.qty || 0);
+  },
+  getLinkedOrderCount: async (itemId) => {
+    const row = await get('SELECT COUNT(*) AS count FROM order_items WHERE item_id = ?', [itemId]);
+    return Number(row?.count || 0);
+  },
+  getLinkedPipelineCount: async (barcode) => {
+    const row = await get('SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?', [barcode]);
+    return Number(row?.count || 0);
+  },
+  getVariationStockRows: async () => {
+    return await all(`
+      SELECT
+        vs.id as stock_id,
+        vs.item_id,
+        vs.variation_leaf_node_id,
+        vs.quantity,
+        vs.location_id,
+        vs.variation_path_label,
+        vs.variation_path_node_ids_json,
+        vs.custom_variation_values_json AS stock_custom_variation_values_json,
+        vs.updated_at
+      FROM variation_stock vs
+      ORDER BY vs.item_id ASC, vs.variation_leaf_node_id ASC
+    `);
+  },
+  resolveLeafSelectionFromDb,
+  queryForeignCustomVariationRows: async (itemId, leafNodeId) => {
+    return await all(
+      `
+      SELECT custom_variation_values_json
+      FROM order_items
+      WHERE item_id = ?
+        AND COALESCE(variation_leaf_node_id, 0) = ?
+        AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+      UNION ALL
+      SELECT custom_variation_values_json
+      FROM delivery_challan_items
+      WHERE item_id = ?
+        AND COALESCE(variation_leaf_node_id, 0) = ?
+        AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+      `,
+      [itemId, leafNodeId, itemId, leafNodeId],
+    );
+  },
+  getVariationLeafNodeById: async (id) => {
+    return await get(
+      `
+      SELECT id, item_id, kind, is_archived
+      FROM item_variation_nodes
+      WHERE id = ?
+      `,
+      [id],
+    );
+  },
+});
+
 const registerInventoryModuleRoutes = require('./modules/inventory/routes');
 registerInventoryModuleRoutes({
   app,
@@ -22864,6 +19936,124 @@ registerInventoryModuleRoutes({
       WHERE pb.parent_code = ? OR pb.child_code = ?
     `, [code, code]);
   },
+});
+
+const registerFreelancerPortalModuleRoutes = require('./modules/freelancer_portal/routes');
+registerFreelancerPortalModuleRoutes({
+  app,
+  get,
+  all,
+  getFreelancerEmployee: async (barcode_id) => {
+    return await get('SELECT id FROM employees WHERE barcode_id = ?', [barcode_id]);
+  },
+  getFreelancerPortalData: async (employeeId) => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const isoDate = thirtyDaysAgo.toISOString();
+
+    const batches = await all('SELECT * FROM freelancer_job_batches WHERE freelancer_id = ? AND created_at >= ?', [employeeId, isoDate]);
+    const batchIds = batches.map(b => b.id);
+    let jobs = [];
+    let tasks = [];
+    if (batchIds.length > 0) {
+      jobs = await all(`SELECT * FROM freelancer_jobs WHERE batch_id IN (${batchIds.join(',')})`);
+      const jobIds = jobs.map(j => j.id);
+      if (jobIds.length > 0) {
+        tasks = await all(`SELECT * FROM freelancer_job_tasks WHERE job_id IN (${jobIds.join(',')})`);
+      }
+    }
+    return { batches, jobs, tasks };
+  }
+});
+
+const registerMobileModuleRoutes = require('./modules/mobile/routes');
+registerMobileModuleRoutes({
+  app,
+  requireAuth,
+  getIo: () => io,
+  changeEmitter,
+});
+
+const createOrdersService = require('./modules/orders/service');
+const {
+  rowToOrderDto,
+  rowToPoDocumentDto,
+  rowToOrderActivityDto,
+  rowToOrderStatusHistoryDto,
+  getOrderRowById,
+  getOrders,
+  insertOrderActivityLog,
+  linkPoDocumentsToOrder,
+  getPoDocumentsForOrder,
+  createPoUploadIntent,
+  completePoUpload,
+  createPoDocumentReadUrl,
+  saveOrder,
+  updateOrderLifecycle,
+  getOrderActivity,
+  getOrderStatusHistory,
+  deleteOrderAndRecoverMovements,
+} = createOrdersService({
+  all,
+  get,
+  run,
+  parseJson,
+  itemsPorts,
+  challansPorts,
+  buildS3ObjectKey,
+  presignS3Url,
+  assertS3ObjectExists,
+  cleanupStaleUnlinkedPoDocuments,
+  assertValidPoUploadInput,
+  getClientRowById,
+  getClientNameAndAlias,
+  getSubContractorById: async (id) => get('SELECT client_id FROM sub_contractors WHERE id = ?', [id]),
+  getUnitRowById: async (id) => get('SELECT * FROM units WHERE id = ?', [id]),
+  getItemUnitConversion: async (itemId, unitId) => get(
+    'SELECT factor_to_primary FROM item_unit_conversions WHERE item_id = ? AND unit_id = ? LIMIT 1',
+    [itemId, unitId],
+  ),
+  getOrderRowsWithEnrichedStatus,
+  getOrderRowWithEnrichedStatus,
+  getOrderPipelineRunsFromSeam: getOrderPipelineRuns,
+  getOrderProductionReportFromSeam: getOrderProductionReport,
+  getConsumedMovementsForPipelineRun: async (runId) => all(
+    "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
+    [runId],
+  ),
+  deletePipelineRunFromSeam: async (runId) => {
+    await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
+    await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
+  },
+  applyInventoryMovementCore,
+  recordActivityLog: async ({ entityType, entityId, action, userId, actorName, details }) => {
+    await run(
+      'INSERT INTO activity_logs (entity_type, entity_id, action, actor_id, actor_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [entityType, entityId, action, userId, actorName, JSON.stringify(details || {}), new Date().toISOString()],
+    ).catch(() => {});
+  },
+});
+
+const registerPortalModuleRoutes = require('./modules/portal/routes');
+registerPortalModuleRoutes({
+  app,
+  get,
+  all,
+  run,
+  saveOrder,
+  getPortalCatalog: async (clientId) => {
+    return await all(`
+      SELECT i.id, i.name, i.display_name, i.alias, i.quantity, i.naming_format 
+      FROM items i
+      JOIN client_portal_catalog cpc ON i.id = cpc.item_id
+      WHERE i.is_archived = 0 AND cpc.client_id = ?
+      ORDER BY i.display_name ASC
+    `, [clientId]);
+  },
+  createPortalOrderHeader: async (orderNo, clientId) => {
+    await run('INSERT INTO order_headers (order_no, client_id, created_at, updated_at) VALUES (?, ?, ?, ?)', 
+      [orderNo, clientId, new Date().toISOString(), new Date().toISOString()]);
+  }
 });
 
 const registerOrdersModuleRoutes = require('./modules/orders/routes');
