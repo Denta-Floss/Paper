@@ -1,266 +1,215 @@
 # Handoff — Kernel, Borders & Module Evacuation
 
-> **Branch:** `infra/reconciler-and-borders` (13 commits ahead of `main`, pushed).
-> **State:** green — `cd backend && npm test` → **67/67**.
-> **Last verified:** 2026-08-07.
+> **Branch:** `infra/reconciler-and-borders` (30 commits ahead of `main`, pushed).
+> **State:** green — `cd backend && npm test` → **68/68**.
+> **Last verified:** 2026-08-09.
 >
-> Read [00-kernel-and-items-evacuation.md](00-kernel-and-items-evacuation.md) for
-> the original plan and the running log. This document is what you need to
-> continue the work cold.
+> [00-kernel-and-items-evacuation.md](00-kernel-and-items-evacuation.md) holds the
+> original plan and running log. **This document is what you need to continue cold.**
 
 ---
 
 ## 1. Where things stand
 
-The monolith is being dissolved into module packages behind a thin kernel.
-
 | | |
 |---|---|
-| `backend/server.js` | **27,611 lines** (the shrinking legacy tenant) |
-| `backend/kernel/` | 1,132 lines — registry, contracts, territory, reconcile |
-| `backend/modules/` | 1,568 lines — items, challans |
-| Modules evacuated | **2 of 15** (items, challans) |
-| API routes | 188 module-claimed · 64 kernel · **15 unclaimed** |
-| Tests | 27 files, **67 tests, all passing** |
+| `backend/server.js` | **23,412 lines** (legacy remainder) |
+| `backend/kernel/` | 3,537 lines / 12 files |
+| `backend/modules/` | 4,934 lines / 24 files across **20 modules** |
+| API routes | **203 module-claimed · 64 kernel · 0 unclaimed** |
+| Tests | 28 files, **68 passing** |
 
-"Evacuated" currently means **the route registrations have moved**, not the
-domain logic. Each module's `ctx` object is the precise, enumerated measure of
-what is still coupled to legacy: **challans 43 entries, items 31**. Those
-numbers should only ever go down.
+**Routes: done. Services: barely started.** Every module has a `routes.js` and
+`server.js` has **zero `/api` route registrations**. But the domain logic mostly
+still lives in legacy and is handed to modules through a `ctx` object.
 
-### Unclaimed territory (the burn-down)
+**The `ctx` count is the real progress meter** — it is the enumerated coupling to
+the monolith, and it only goes down when a service moves:
 
-15 routes are served by no module manifest, so the central permission gate does
-not gate them: `search` (4), `mobile` (4), `portal` (4), `company-profile` (2),
-`freelancer-portal` (1). These are *deliberately* unclaimed — each needs an
-ownership decision, not a mechanical claim. Note `/api/portal/login` sits behind
-`requireAuth`, which looks like a chicken-and-egg problem worth verifying before
-touching.
+```
+challans 43 · items 31 · inventory 28 · orders 25 · people 20 · units 18
+vendors 15 (service: 13) · clients 14 · machines 13 · dies 13 · pipelines 10
+action_center 10 · production 7 · jobs 6 · portal 5 · payroll 5
+company_profile 5 · search 4 · mobile 4 · freelancer_portal 3
+```
 
-> **An undeclared path segment is ungated, not merely unmetered.** See §6.
+Per-module completeness:
+
+| Piece | Have it |
+|---|---|
+| `routes.js` | **20 / 20** |
+| `ports.js` | 2 / 20 — items, challans |
+| `contract.js` | 1 / 20 — items |
+| `service.js` | **1 / 20 — vendors** |
+
+`kernel/routes/` holds the non-business surface: `auth`, `users`, `assets`,
+`track`, `favorites`, `sandbox`, `admin`, `introspection`.
 
 ---
 
 ## 2. The kernel constitution
 
-Five rules the architecture is built on. They are enforced by tests, not honour.
+Enforced by tests, not honour.
 
-- **K1 — Inversion.** The kernel owns module identity. `kernel/registry.js` is the
-  single source: labels, UI grouping, path segments, CRUD/capability/fine
-  permission keys, per-record grant sources, Track labels, asset guards, table
-  ownership. Adding a module = one manifest entry.
-- **K2 — Legacy freeze.** No new feature lands in the legacy region of
-  `server.js`. New capability ⇒ new module, or an addition to an evacuated one.
-- **K3 — Territory metering.** `kernel/territory.js` continuously answers "how
-  much of the app is governed?" Unclaimed territory is a warning, not a norm.
+- **K1 — Inversion.** `kernel/registry.js` is the single source of module identity
+  (labels, path segments, permission keys, record sources, Track labels, table
+  ownership). Adding a module = one manifest entry.
+- **K2 — Legacy freeze.** No new feature lands in legacy `server.js`.
+- **K3 — Territory metering.** `kernel/territory.js` answers "how much is
+  governed?" Unclaimed territory is a warning, not a norm.
 - **K4 — One question, one border.** Identity → auth; module rights → the central
-  gate reading the registry; payload shape → the module's contract;
-  impossibility → DB constraints. No route-local permission logic.
+  gate; payload shape → the module contract; impossibility → DB constraints.
 - **K5 — Ports only between modules.** A module never touches another's tables or
-  helpers. It calls a named, metered port, or a kernel-side seam.
+  helpers — it calls a named, metered port or a kernel seam.
 
 ---
 
-## 3. What exists
+## 3. The two playbooks
 
-### `backend/kernel/`
+### 3a. Moving ROUTES (done for all 20 — kept for reference)
 
-| File | Role |
-|---|---|
-| `registry.js` | Module manifests + all derived permission maps. **Consumed by server.js** — do not re-declare these maps anywhere else. |
-| `contracts.js` | The one contract engine (`checkPayload`). Representation-tolerant by design: numeric strings coerce, `0/1` are booleans, `null` on an optional field is fine. Guards catch *structural impossibilities*, not JSON spelling. |
-| `territory.js` | Claimed-vs-unclaimed meter over routes and tables; also feeds per-port call counts. |
-| `reconcile.js` | **Reconciler v0** — drift report only, no convergence yet. |
+1. Route-surface snapshot must be green first.
+2. **Locate routes by paren balancing**, not by scanning for a closing `});` — that
+   heuristic found only 30 of challans' 52 routes.
+3. Diff the extracted set against `test/fixtures/route-surface.json`: zero missing
+   before touching `server.js`.
+4. Move **verbatim**; do **not** re-indent (handlers contain multi-line SQL
+   template literals); **preserve registration order** (Express matches in order —
+   `/api/challan-templates/test-print` must precede `/api/challan-templates/:id`).
+5. Compute `ctx` mechanically: identifiers used ∩ top-level declarations.
+6. Register before the `/api` 404 catch-all. Late-bound values go in as thunks
+   (`getIo: () => io`) — `io` is `null` until listen.
+7. Verify: `node --check` → route-surface test byte-identical → `npm test` → live
+   smoke on the moved endpoints.
 
-### `backend/modules/`
+### 3b. Moving a SERVICE (the current front — pattern proven on vendors)
 
-- `items/` — `contract.js` (ingress + egress declarations), `ports.js` (11 ports,
-  metered), `routes.js` (18 routes).
-- `challans/` — `routes.js` (52 routes), `ports.js` (batch-shaped: delivered
-  quantity by order item, challan counts by vendor). **No `contract.js` yet** —
-  that is the next increment.
-
-### Endpoints for operators (all admin-gated)
-
-- `GET /api/kernel/territory` — claimed/unclaimed routes and tables, per-port traffic.
-- `GET /api/kernel/reconcile` — drift report (see §5).
-- `GET /api/kernel/guard-alerts` — persisted contract violations.
-
----
-
-## 4. The evacuation playbook
-
-This is the procedure that worked twice. Follow it exactly; the ordering is the
-safety.
-
-**Step 0 — Never skip: the route snapshot must be green first.**
-```bash
-cd backend && node --test test/route-surface.test.js
-```
-
-**Step 1 — Locate routes by paren balancing, not by eyeballing.**
-Scan from each `app.method(` line and balance parentheses to find the block end.
-A "stop at the closing `});`" heuristic found **only 30 of challans' 52 routes** —
-it would have left 22 behind in a "finished" move.
-
-**Step 2 — Diff the extracted set against the committed snapshot.**
-`test/fixtures/route-surface.json` is ground truth. Extracted-vs-snapshot must
-show **zero missing** before you touch `server.js`.
-
-**Step 3 — Move verbatim.**
-- No logic edits. A move and an edit never share a commit, so any regression can
-  only be a wiring problem.
-- **Do not re-indent.** Handlers contain multi-line SQL template literals;
-  indenting changes the string contents.
-- **Preserve registration order.** Express matches in order. Real example:
-  `GET /api/challan-templates/test-print` must be registered *before*
-  `/api/challan-templates/:id`, or the literal path is swallowed.
-
-**Step 4 — Compute `ctx` mechanically.** Extract identifiers used in the moved
-code, intersect with top-level declarations in `server.js`. That list is the
-module's coupling, made visible.
-
-**Step 5 — Register near the end of `server.js`** (beside the items/challans
-registrations) but **before the `/api` 404 catch-all**. Late-bound values like
-the socket server must be passed as thunks: `getIo: () => io` — `io` is `null`
-until listen, so passing it by value hands over a permanent `null`.
-
-**Step 6 — Verify, in this order.**
-```bash
-node --check server.js
-node --test test/route-surface.test.js     # must be byte-identical
-npm test                                    # 65/65
-```
-Then a live smoke test: boot the app and hit the moved endpoints for real.
-
-**Step 7 — Mark `evacuated: true`** in the manifest and commit.
+1. **Locate the domain functions** for the module and measure their extents.
+2. **Compute the service's dependencies** the same mechanical way. Vendors needed
+   only 7: `get, all, run, logChange`, two string normalisers, and `challansPorts`.
+3. Generate `modules/<name>/service.js` as
+   `module.exports = function create<Name>Service(ctx) { … return { … } }` with the
+   bodies **verbatim**. Dependencies are **injected, never imported**, so the file
+   has no reach into the monolith.
+4. In `server.js`, construct the service and **destructure its returns under the
+   original names** — every legacy caller and the `module.exports` list keep
+   working untouched.
+5. **Placement matters.** Construct after any ports it needs and before the module's
+   route registration. In the current file that window is roughly
+   `challansPorts` (~22.7k) → route registrations (~22.8k) → `module.exports` (~23.4k).
+6. **Expect the K5 guard-rail to fail here — that is the point.** The test only
+   inspects `modules/`, so foreign-table reads that were invisible in legacy become
+   violations the instant the code lands. Vendors' `getVendorPurchaseHistory` was
+   querying `delivery_challans`/`delivery_challan_items`; it became
+   `challans.reception.linesForVendor`.
+7. Adding a port then trips "every declared port has a real implementation" until
+   you update the ports test fixture. Both guards firing in sequence is normal.
+8. Verify with `npm test` **plus a live smoke test** of the module's routes.
 
 ---
 
-## 5. Reconciler v0 — what it does
+## 4. Hazards — read before touching anything
 
-`GET /api/kernel/reconcile` compares four declarations against four realities:
+Each of these has already cost real time.
 
-| Declared | Actual |
-|---|---|
-| registry manifests | routes mounted on the Express app |
-| manifest `tables` | tables present in `sqlite_master` |
-| manifest `evacuated` | `modules/<key>/` package on disk |
-| `migrations/*.sql` | `_migrations` rows applied |
-| `sandbox_client_configs` | registry module vocabulary |
-
-It reports drift; it does **not** converge. v1 (`plan`/`apply`) is unbuilt.
-
-A live finding worth knowing: fresh databases bootstrap their schema directly
-and **never run the migration runner**, so `_migrations` is empty while 27
-migration files exist. That is why `initDb` carries "bootstrap parity" blocks
-mirroring recent migrations — **when you add a migration, add the parity block
-too**, or fresh DBs and migrated DBs diverge. This exact gap once broke `main`.
-
----
-
-## 6. Hazards — read before touching anything
-
-These are real traps, each of which has already cost real time.
-
-1. **`requirePermission('config.read'|'config.write')` does NOTHING.** Those keys
-   are in `LEGACY_GUARD_PASSTHROUGH`; the guard returns `next()` immediately.
-   Enforcement was moved to the central gate. So a route with only a `config.*`
-   guard **whose path segment is not in a manifest** is completely ungated —
-   `requireApiWritePermission` passes every GET. That combination exposed all
-   payroll salary data to any logged-in user.
-2. **SQLite has no nested transactions.** A helper that unconditionally opens one
-   cannot be called from inside a caller's transaction. `saveItem` now takes
-   `{ useTransaction }`; `saveGroup` is transaction-free and must stay that way.
-3. **Synthetic negative variation ids.** The selector mints `-propertyId` for
-   typed Gauge/Numeric values. They must be resolved to a real node **inside
+1. **`requirePermission('config.read'|'config.write')` does NOTHING.** Those keys are
+   in `LEGACY_GUARD_PASSTHROUGH`; the guard calls `next()` immediately. A route
+   whose only guard is `config.*` **and** whose segment has no manifest is entirely
+   ungated. This exposed payroll salary data, and later allowed a proven
+   **privilege escalation**: a user holding only `inventory.update` rewrote the
+   company profile (`inventory.update` is one of the disjuncts in
+   `requireApiWritePermission`).
+2. **An undeclared path segment is ungated, not merely unmetered.** Creating
+   `modules/<x>/routes.js` changes nothing about gating — only a registry manifest
+   does.
+3. **"Public" must hold at all THREE borders.** `requireAuth`, the module gate, and
+   the legacy write gate. Bypassing auth for `/portal/login` while `portal` was also
+   a declared CRUD module produced a 403 (the gate demanded `portal.create`, which
+   an external client can never hold), then a second 403 from the write gate.
+   Public paths are now declared once in the registry
+   (`PUBLIC_API_PATHS` / `isPublicApiPath`) and honoured by all three.
+4. **Bootstrap parity.** Fresh DBs build their schema in `initDb` and **never run the
+   migration runner**. 15 tables from migrations 005/006 were missing from `initDb`,
+   so the whole payroll and portal modules sat on non-existent tables and every one
+   of their routes 500'd. **Adding a migration means adding the parity block.**
+5. **SQLite has no nested transactions.** `saveItem` takes `{ useTransaction }`;
+   `saveGroup` is transaction-free and must stay so.
+6. **Synthetic negative variation ids.** The selector mints `-propertyId` for typed
+   Gauge/Numeric values. They must be resolved **inside
    `normalizeDeliveryChallanItems`** — the downstream snapshot call passes only
-   `(itemId, leafId)` and drops the path ids, so fixing it anywhere else fails
-   silently. DB triggers (migration 027) are the last line of defence.
-4. **A contract must describe the system that exists.** An `inputType` enum was
-   added that the backend never enforced (the column is free text) while the
-   desktop group editor emits `'Dropdown'`. With enforcement on, affected items
-   became permanently un-editable. Contract guards are **log-only by default**;
-   `PAPER_CONTRACT_ENFORCE=1` turns on refusal deliberately.
-5. **Express lets the FIRST duplicate registration win.** A half-finished move is
-   invisible at runtime — the old handler keeps serving while the new one looks
-   live in source. The route-surface test forbids duplicates.
-6. **A declared path segment that nothing serves gates nothing.** The jobs module
-   declared `/api/jobs` while its routes lived at `/api/freelancer-jobs`.
+   `(itemId, leafId)` and drops the path ids, so a fix anywhere else fails silently.
+   Migration 027 triggers are the last line of defence.
+7. **A contract must describe the system that exists.** An `inputType` enum the
+   backend never enforced made items with a `'Dropdown'` property permanently
+   un-editable. Contract guards are **log-only by default**; `PAPER_CONTRACT_ENFORCE=1`
+   enables refusal deliberately.
+8. **Express lets the FIRST duplicate registration win** — a half-finished move is
+   invisible at runtime.
 
 ---
 
-## 7. Open work, roughly by value
+## 5. Testing lessons worth keeping
 
-**Finish what's started**
-1. **Challans contract.** Ports now exist; the ingress contract does not.
-   Note challan payloads are far more polymorphic than items': nearly
-   every field accepts camelCase *and* snake_case *and* falls back to the
-   existing row — so almost nothing may be marked `required`, and quantities are
-   strings end-to-end.
-2. **Shrink the ctx objects** by moving domain logic into `modules/*/service.js`
-   (challans 43 → kernel facilities; items 31 → same).
-3. `bom.lines` is the one port with zero callers — two live sites still query
-   `item_bom_lines` directly.
-
-**Then**
-4. Third module. Inventory is heaviest (~33 items-territory reaches); a small
-   master (vendors, units) is a quick win that further proves the playbook.
-5. Decide ownership for the 15 unclaimed routes.
-6. Reconciler v1: `plan`/`apply` — actual expand/collapse.
-7. Fleet layer: client manifests in git, Falcon View (`control-plane/`) wiring.
-
-**Known-good to leave alone**
-- The items↔materials bridge (`ensureMaterialForItemSelection`) spans two
-  territories; ownership is a deliberate open decision, not an oversight.
+- **A green suite is not evidence for a query refactor.** When challans ports
+  replaced embedded sub-SELECTs, nothing asserted those values; the equivalence test
+  had to be written, with concrete expected numbers so it cannot pass vacuously on
+  empty fixtures. An earlier probe reported "0 mismatches" while comparing nothing.
+- **A test that invents its own fixture schema proves nothing.** The payroll test
+  created a `payroll_components` table because none existed — with a
+  `calculation_type` column the real schema doesn't have. It passed for days while
+  the real routes were 500ing.
+- **Mutation-test guard-rails.** The undefined-reference test was verified by
+  reintroducing the bug and confirming it failed and named the line.
+- **Verify consequences, don't infer them.** An analysis claimed the
+  nested-transaction bug corrupts the caller's transaction; a runtime probe showed
+  `saveItem`'s `BEGIN` sits outside its `try`, so the caller survives intact.
 
 ---
 
-## 8. Bugs found and fixed on this branch
+## 6. Open work, by value
 
-So they are not re-litigated. Each was verified at runtime, not just by reading.
-
-| Bug | Impact |
-|---|---|
-| Payroll ungated | **Any authenticated user could read salary data** (proven: HTTP 200, `"value": 50000`) |
-| Nested transaction in reconcile | In-use reconciliation failed whenever a bucket needed a new return item |
-| `prepare()` undefined | `PUT /api/invoices/:id` always 500'd — invoices could never be edited |
-| `handleAssetUploadComplete` undefined | Challan asset upload-complete always 500'd |
-| `inputType` enum too strict | Items with a `'Dropdown'` property became permanently un-editable |
-| Synthetic leaf regression | Typed-Gauge purchases could not be saved |
-| Sheet weights dropped | Mobile sent per-sheet weights; the backend discarded them on every save |
-| Registry orphaned | The permission gate and the territory meter read *different* maps |
-| Two contract engines | The tested one was unused; the untested one enforced 400s |
-| `stock.applyDelta` mis-wired | Pointed at a different function entirely (dormant, so latent) |
-| Mis-declared table owners | `stage_reconciliations`, `piece_barcodes` |
-
-One correction worth recording: an analysis claimed the nested-transaction bug
-*corrupts* the caller's transaction. A runtime probe disproved it — `saveItem`'s
-`BEGIN` sits outside its `try`, so it throws before any rollback handler runs and
-the caller's transaction survives. **Verify consequences, don't infer them.**
+1. **Continue service moves.** Suggested order: **inventory (28) → orders (25) →
+   people (20) → units (18)**, leaving **challans (43)** last — its PDF engine,
+   invoices and reconciliation are the most entangled. Each move will surface its
+   own hidden K5 violations (that is the mechanism by which the guard-rail gets
+   strong).
+2. **Ports for the modules that need them** — emerges naturally from step 1, as
+   each service move reveals its foreign reads.
+3. **Contracts** — only items has one. Challan payloads are far more polymorphic:
+   nearly every field accepts camelCase *and* snake_case *and* falls back to the
+   existing row, so almost nothing may be `required`, and quantities are strings.
+4. **Portal has no session model.** `/api/portal/catalog|cart|orders` identify the
+   caller by a `client_id` **query parameter** with no verification. They are
+   currently protected only because `portal` is a declared CRUD module, which also
+   makes them unusable by real portal clients. Needs a decision.
+5. **Reconciler v1** — `plan`/`apply`. v0 reports drift but never converges, so
+   expand/collapse still isn't real.
+6. **Fleet layer** — client manifests in git, wiring to `control-plane/` (Falcon
+   View), canary rollout.
 
 ---
 
-## 9. Commands
+## 7. Commands
 
 ```bash
 cd backend
-npm test                                   # 65/65
+npm test                                   # 68/68
 node --test test/route-surface.test.js     # API surface unchanged
 UPDATE_ROUTE_SNAPSHOT=1 npm test           # deliberately re-record the surface
 PAPER_CONTRACT_ENFORCE=1 npm test          # contract guards in refusal mode
 node --check server.js
 ```
 
-Guard-rail tests that encode the architecture (do not weaken these to make a
-change pass — they are the design):
+**Guard-rails that encode the design — do not weaken them to make a change pass:**
 
 - `test/kernel-k5-borders.test.js` — cross-module calls go through ports;
-  `variation_stock` has exactly one writer; every port has a real implementation;
-  evacuated modules read only their own tables; no table claimed twice; server.js
-  declares no registry-owned maps.
-- `test/route-surface.test.js` — the 275-route snapshot, duplicate registrations,
+  `variation_stock` has exactly one writer; every declared port has a real
+  implementation; **evacuated modules read only their own tables**; no table claimed
+  twice; `server.js` declares no registry-owned maps.
+- `test/route-surface.test.js` — the route snapshot, duplicate registrations,
   phantom segments.
 - `test/undefined-references.test.js` — every `await name(...)` resolves.
+- `test/payroll-authorization.test.js`, `test/company-profile-authorization.test.js` —
+  the two authorization holes, pinned.
 - `test/nested-transaction-safety.test.js`, `test/synthetic-leaf-normalization.test.js`,
-  `test/payroll-authorization.test.js` — regression pins for §6 and §8.
+  `test/challans-ports.test.js` — regression pins for §4 and §5.
