@@ -31,10 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c11["⟳ Change 11: inventory step 4, stock overview and the flag"]
-        c11a["GET /api/inventory/stock moved; it reads four modules' tables"]
-        c11b["items, orders and challans each grew one read port for it"]
-        c11c["inventory evacuated: 11 of 15 modules, server.js 35760 to 30580 lines"]
+      c12["⟳ Change 12: action center step 1, the trash"]
+        c12a["trashAndDelete, trashAndDeleteMany, list and restore moved; 2 routes"]
+        c12b["the 9 call sites keep the old names"]
+        c12c["action-center-api test added first: 10 tests, 325 total"]
+        c12d["two dead parameters removed from the items module"]
+      c11["Change 11: inventory step 4, stock overview and the flag"]
       c10["Change 10: inventory steps 2 and 3, materials and the ledger"]
       c9["Change 9: inventory step 1, the sets"]
       c8["Change 8: portal orders work"]
@@ -381,8 +383,35 @@ mindmap
           jl1["worker token secret is a literal in routes.js, to be fixed"]
           jl2["freelancer-* not in the inline gate map, legacy write gate only"]
           jl3["production picks the job's item, then hands it to syncAssemblyJob"]
-      Action center legacy
-        ac1["trash, delete-requests dispatcher, integrity scan"]
+      Action center ⟳ moving, step 1 of 2
+        acBiz["Business rules"]
+          acb1["a delete copies the row to the trash, then removes it with foreign keys off, so a referenced row can go"]
+          acb2["what is left dangling is found by the integrity scan, not blocked at delete time"]
+          acb3["a failed delete removes its trash row again, so nothing is stranded"]
+          acb4["restore keeps the original id and never overwrites a live row; photos come back with it"]
+          acb5["only a fixed list of tables can be restored"]
+        acApi["API surface, moved"]
+          aca1["GET /api/trash, optionally by table"]
+          aca2["POST /api/trash/restore"]
+        acOrch["Orchestration: modules/action_center/routes.js"]
+          aco1["registerActionCenterRoutes ctx"]
+          aco2["a refusal from the service becomes its status and body"]
+        acSvc["Services: modules/action_center/service.js"]
+          acs1["createTrashService"]
+          acs2["trashAndDelete, trashAndDeleteMany in chunks of 400"]
+          acs3["listTrash, restore, RESTORABLE_TABLES"]
+        acPort["Ports"]
+          acp1["offers: trashAndDelete and trashAndDeleteMany, under their old names, to vendors, clients, people, units and the item and group cascades"]
+          acp2["uses by name: runOnDelete, logChange, restoreEntityAssets"]
+        acData["Data"]
+          acd1["deleted_records, delete_requests"]
+        acTest["Tests"]
+          act1["action-center-api.test.js, 10 tests, written first"]
+        acNext["Still in server.js"]
+          acn1["step 2: delete requests (5 routes) and the issues scan"]
+          acn2["the delete connection: deleteDb, runOnDelete, closeDb"]
+          acn3["asset trash and restore helpers, deleteAsset, deleteChallanTemplate"]
+          acn4["all /api/users routes, including the user delete that also clears delete_requests"]
 ```
 
 ## Change log
@@ -400,3 +429,4 @@ mindmap
 | 9 | Inventory step 1 of 4: the sets. Adds `modules/inventory/{routes,service,ports}.js`; the four set routes and eleven set functions move; items' cascade delete, the item-usage read, the items Sets card and action center's delete-request approval reach sets through `inventoryPorts.sets.*`. Registry unchanged until step 4. | API surface (unchanged paths), Orchestration, Services, Ports |
 | 10 | Inventory steps 2 and 3, merged: the materials, group governance and the stock ledger. The service grows to about 2,500 lines; 19 more routes move (materials, scans, activity, movements, health); every outside caller of the ledger, scan count, summary recompute, governance and material delete goes through `inventoryPorts`. The items stock port is re-wired to the variation stock write (it had no callers). The two steps are one commit because the functions call each other and a split needed temporary injection both ways. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 11 | Inventory step 4: `GET /api/inventory/stock` moves into the service as `getStockOverview`, with the three reads it needed behind new ports (items `variationStockRows`, orders and challans `customVariationValueRows`). Registry: inventory `evacuated: true`. Territory meter: 11 of 15. `server.js` is 30,580 lines, down from 35,760. | API surface (unchanged paths), Services, Ports, Data ownership |
+| 12 | Action center step 1 of 2: the trash. Adds `modules/action_center/{routes,service}.js`; `trashAndDelete`, `trashAndDeleteMany`, listing and restore move, and the nine call sites keep their names via a destructure. Two dead parameters leave the items module. The ten-test action-center suite was written first against the old code. Registry unchanged until step 2. | API surface (unchanged paths), Orchestration, Services, Tests |

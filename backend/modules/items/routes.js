@@ -55,8 +55,6 @@ module.exports = function registerItemsModuleRoutes(ctx) {
     trackCreate,
     trackUpdate,
     trackDelete,
-    trashAndDelete,
-    trashAndDeleteMany,
     createAssetUploadIntent,
     completeAssetUpload,
     listAssetsForEntity,
