@@ -64,6 +64,10 @@ const registerClientPortalRoutes = require('./modules/clients/portal-routes');
 // already here; the service and routes join it.
 const { createPeopleService } = require('./modules/people/service');
 const registerPeopleRoutes = require('./modules/people/routes');
+// Pipeline templates, on both route sets. Whether a template has runs is asked
+// of the production port.
+const { createPipelineService } = require('./modules/pipelines/service');
+const registerPipelineRoutes = require('./modules/pipelines/routes');
 // A part's section tree and the entity_links it stands for (057).
 const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
@@ -3320,30 +3324,11 @@ async function rowToItemDto(row) {
   };
 }
 
-function rowToTemplate(row) {
-  if (!row) {
-    return null;
-  }
-  return {
-    id: row.id,
-    factoryId: row.factory_id || '',
-    shopFloorId: row.shop_floor_id || '',
-    name: row.name,
-    description: row.description || '',
-    version: row.version || 1,
-    status: row.status || 'draft',
-    stageLabels: parseJson(row.stage_labels_json, []),
-    laneLabels: parseJson(row.lane_labels_json, []),
-    nodes: parseJson(row.nodes_json, []),
-    flows: parseJson(row.flows_json, []),
-    intermediateNamingConvention: row.intermediate_naming_convention || '',
-    penPaperBaseline: parseJson(row.pen_paper_baseline_json, null),
-    blankWidthMm: Number(row.blank_width_mm || 0),
-    blankHeightMm: Number(row.blank_height_mm || 0),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
+// Pipeline templates left for modules/pipelines. Production still shapes the
+// templates it reads when it starts a run, so the DTO comes out of the service
+// under the name it knows.
+const pipelinesService = createPipelineService({ get, all, run, parseJson });
+const { rowToTemplate } = pipelinesService;
 
 // Metric key (API/blob) → stage_reconciliations column. One row per run+node;
 // the API keeps exposing these as `nodeMetrics` so the app needs no changes.
@@ -24334,7 +24319,7 @@ app.get('/api/delete-requests/export', requirePermission('delete_requests.review
 // live run holds a machine is asked of the production port.
 const machinesService = createMachineService({ get, all, run, parseJson });
 const { rowToMachineDto: machineRowToDto } = machinesService;
-const productionPorts = createProductionPorts({ all });
+const productionPorts = createProductionPorts({ get, all });
 
 // The die master left for modules/dies. Its DTO is still called here by the
 // production report and trace, so it comes out of the service under the name
@@ -26521,125 +26506,6 @@ app.post('/api/reports/client-statement', requirePermission('config.read'), asyn
   }
 });
 
-
-app.get('/api/production/pipeline-templates', requirePermission('config.read'), async (req, res) => {
-  try {
-    const factoryId = req.query.factoryId;
-    let rows;
-    if (factoryId) {
-      rows = await all(
-        'SELECT * FROM pipeline_templates WHERE factory_id = ? OR factory_id = "" ORDER BY created_at DESC',
-        [factoryId]
-      );
-    } else {
-      rows = await all(
-        'SELECT * FROM pipeline_templates ORDER BY created_at DESC'
-      );
-    }
-    res.json({ success: true, templates: rows.map(rowToTemplate), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, templates: [], error: error.message });
-  }
-});
-
-app.post('/api/production/pipeline-templates', requirePermission('config.write'), async (req, res) => {
-  try {
-    const data = req.body;
-    const now = new Date().toISOString();
-    
-    await run(
-      `
-      INSERT OR REPLACE INTO pipeline_templates (
-        id, factory_id, shop_floor_id, name, description, version, status,
-        stage_labels_json, lane_labels_json, nodes_json, flows_json, intermediate_naming_convention, pen_paper_baseline_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        data.id,
-        data.factoryId || '',
-        data.shopFloorId || '',
-        data.name || 'Untitled',
-        data.description || '',
-        data.version || 1,
-        data.status || 'draft',
-        JSON.stringify(data.stageLabels || []),
-        JSON.stringify(data.laneLabels || []),
-        JSON.stringify(data.nodes || []),
-        JSON.stringify(data.flows || []),
-        data.intermediateNamingConvention || '',
-        data.penPaperBaseline ? JSON.stringify(data.penPaperBaseline) : '{}',
-        now,
-        now
-      ]
-    );
-
-    const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [data.id]);
-    trackCreate('pipeline_templates', row.id, row, req);
-    res.json({ success: true, template: rowToTemplate(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, template: null, error: error.message });
-  }
-});
-
-app.put('/api/production/pipeline-templates/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = req.params.id;
-    const data = req.body;
-    const now = new Date().toISOString();
-
-    const existing = await get('SELECT * FROM pipeline_templates WHERE id = ?', [id]);
-    if (!existing) {
-      return res.status(404).json({ success: false, template: null, error: 'Not found' });
-    }
-    
-    await run(
-      `
-      UPDATE pipeline_templates
-      SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?,
-          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, intermediate_naming_convention = ?, pen_paper_baseline_json = ?, updated_at = ?
-      WHERE id = ?
-      `,
-      [
-        data.factoryId ?? existing.factory_id,
-        data.shopFloorId ?? existing.shop_floor_id,
-        data.name ?? existing.name,
-        data.description ?? existing.description,
-        data.version ?? 1,
-        data.status ?? existing.status,
-        data.stageLabels ? JSON.stringify(data.stageLabels) : existing.stage_labels_json,
-        data.laneLabels ? JSON.stringify(data.laneLabels) : existing.lane_labels_json,
-        data.nodes ? JSON.stringify(data.nodes) : existing.nodes_json,
-        data.flows ? JSON.stringify(data.flows) : existing.flows_json,
-        data.intermediateNamingConvention ?? existing.intermediate_naming_convention,
-        data.penPaperBaseline ? JSON.stringify(data.penPaperBaseline) : existing.pen_paper_baseline_json,
-        now,
-        id
-      ]
-    );
-
-    const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [id]);
-    trackUpdate('pipeline_templates', id, existing, row, req);
-    res.json({ success: true, template: rowToTemplate(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, template: null, error: error.message });
-  }
-});
-
-app.delete('/api/production/pipeline-templates/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = req.params.id;
-    const runsCount = await get('SELECT COUNT(*) as count FROM pipeline_runs WHERE template_id = ?', [id]);
-    if (runsCount && runsCount.count > 0) {
-      return res.status(400).json({ success: false, error: 'Cannot delete pipeline template: there are ongoing or historical runs using it.' });
-    }
-    const before = await get('SELECT * FROM pipeline_templates WHERE id = ?', [id]);
-    await run('DELETE FROM pipeline_templates WHERE id = ?', [id]);
-    trackDelete('pipeline_templates', id, before, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
   try {
@@ -29200,141 +29066,6 @@ app.use('/runs', (req, res, next) => {
     return;
   }
   next();
-});
-
-app.get('/templates', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await all(
-      'SELECT * FROM pipeline_templates ORDER BY updated_at DESC, name ASC',
-    );
-    res.json({ success: true, templates: rows.map(rowToTemplate) });
-  } catch (error) {
-    res.status(500).json({ success: false, templates: [], error: error.message });
-  }
-});
-
-app.post('/templates', async (req, res) => {
-  try {
-    const payload = req.body || {};
-    if (!payload.id || !payload.name) {
-      res.status(400).json({
-        success: false,
-        template: null,
-        error: 'id and name are required.',
-      });
-      return;
-    }
-    const now = new Date().toISOString();
-    await run(
-      `
-      INSERT INTO pipeline_templates (
-        id, factory_id, shop_floor_id, name, description, version, status, stage_labels_json, lane_labels_json,
-        nodes_json, flows_json, intermediate_naming_convention, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        payload.id,
-        payload.factoryId || payload.factory_id || '',
-        payload.shopFloorId || payload.shop_floor_id || '',
-        payload.name,
-        payload.description || '',
-        1,
-        payload.status || 'draft',
-        JSON.stringify(payload.stageLabels || []),
-        JSON.stringify(payload.laneLabels || []),
-        JSON.stringify(payload.nodes || []),
-        JSON.stringify(payload.flows || []),
-        payload.intermediateNamingConvention || payload.intermediate_naming_convention || '',
-        now,
-        now,
-      ],
-    );
-    const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [payload.id]);
-    res.status(201).json({ success: true, template: rowToTemplate(row) });
-  } catch (error) {
-    res.status(500).json({ success: false, template: null, error: error.message });
-  }
-});
-
-app.put('/templates/:id', async (req, res) => {
-  try {
-    const existing = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
-      req.params.id,
-    ]);
-    if (!existing) {
-      res.status(404).json({
-        success: false,
-        template: null,
-        error: 'Template not found.',
-      });
-      return;
-    }
-    const payload = req.body || {};
-    const nextVersion = (existing.version || 1) + 1;
-    const now = new Date().toISOString();
-    await run(
-      `
-      UPDATE pipeline_templates
-      SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?,
-          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, intermediate_naming_convention = ?, updated_at = ?
-      WHERE id = ?
-      `,
-      [
-        payload.factoryId || payload.factory_id || existing.factory_id || '',
-        payload.shopFloorId || payload.shop_floor_id || existing.shop_floor_id || '',
-        payload.name || existing.name,
-        payload.description || existing.description || '',
-        nextVersion,
-        payload.status || existing.status || 'draft',
-        JSON.stringify(payload.stageLabels || parseJson(existing.stage_labels_json, [])),
-        JSON.stringify(payload.laneLabels || parseJson(existing.lane_labels_json, [])),
-        JSON.stringify(payload.nodes || parseJson(existing.nodes_json, [])),
-        JSON.stringify(payload.flows || parseJson(existing.flows_json, [])),
-        payload.intermediateNamingConvention ?? payload.intermediate_naming_convention ?? existing.intermediate_naming_convention ?? '',
-        now,
-        req.params.id,
-      ],
-    );
-    const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
-      req.params.id,
-    ]);
-    res.json({ success: true, template: rowToTemplate(row) });
-  } catch (error) {
-    res.status(500).json({ success: false, template: null, error: error.message });
-  }
-});
-
-app.get('/templates/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
-      req.params.id,
-    ]);
-    if (!row) {
-      res.status(404).json({
-        success: false,
-        template: null,
-        error: 'Template not found.',
-      });
-      return;
-    }
-    res.json({ success: true, template: rowToTemplate(row) });
-  } catch (error) {
-    res.status(500).json({ success: false, template: null, error: error.message });
-  }
-});
-
-app.delete('/templates/:id', async (req, res) => {
-  try {
-    const existing = await get('SELECT * FROM pipeline_templates WHERE id = ?', [req.params.id]);
-    if (!existing) {
-      res.status(404).json({ success: false, error: 'Template not found.' });
-      return;
-    }
-    await run('DELETE FROM pipeline_templates WHERE id = ?', [req.params.id]);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
 });
 
 app.delete('/runs/:id', async (req, res) => {
@@ -32756,6 +32487,19 @@ registerPeopleRoutes({
     getRequestIp,
     getRequestUserAgent,
   },
+});
+
+// Pipeline templates. The root /templates set is outside /api: its own auth and
+// write guards are the app.use('/templates', ...) lines earlier in this file,
+// which still run before these routes, exactly as before.
+registerPipelineRoutes({
+  app,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  pipelines: pipelinesService,
+  production: productionPorts,
 });
 
 // Material types carry the one number that turns a sheet's volume into its

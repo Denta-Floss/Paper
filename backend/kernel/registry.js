@@ -199,7 +199,7 @@ const MODULES = {
     recordSource: { table: 'pipeline_templates', idCol: 'id', label: 'name' },
     trackTables: { pipeline_templates: 'Pipeline' },
     tables: ['pipeline_templates'],
-    evacuated: false,
+    evacuated: true,
   },
 };
 

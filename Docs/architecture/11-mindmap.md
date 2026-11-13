@@ -31,11 +31,13 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c6["⟳ Change 6: people leave server.js"]
-        c6a["11 routes moved: departments, employees, login links"]
-        c6b["auth helpers handed in by name, not imported"]
-        c6c["payroll stays in server.js and is NOT claimed in the registry"]
-        c6d["people-api test added: 5 tests, 303 total"]
+      c7["⟳ Change 7: pipelines leave server.js"]
+        c7a["9 routes moved on two route sets that behave differently"]
+        c7b["root /templates keeps its own auth gates in server.js"]
+        c7c["production port grows templateRunCount"]
+        c7d["pipelines-api test added: 4 tests, 307 total"]
+        c7e["round complete: 10 of 15 modules evacuated, server.js 35760 to 33347 lines"]
+      c6["Change 6: people leave server.js"]
       c5["Change 5: clients leave server.js"]
       c4["Change 4: dies leave server.js"]
       c3["Change 3: machines leave server.js"]
@@ -213,7 +215,7 @@ mindmap
           dt3["die-makers.test.js"]
         dLeft["Still in server.js"]
           dl1["direct SQL on dies from item save, photo sync, barcode resolve, seeds, delete-request approve"]
-      People ⟳ evacuated
+      People evacuated
         pBiz["Business rules"]
           pb1["a department needs a name; an employee needs a name and a department"]
           pb2["deleting a department trashes its employees with it, and records both in Track"]
@@ -252,8 +254,37 @@ mindmap
           pl1["payroll: 9 routes at /api/payroll, not claimed by the registry"]
           pl2["freelancer card route reads employees through the people port"]
           pl3["seeds, delete-request approve and the sandbox dashboard read employees"]
-      Pipelines legacy
-        pl1["templates at the app root bypass the /api gate"]
+      Pipelines ⟳ evacuated
+        plBiz["Business rules"]
+          plb1["a template with any run, ongoing or historical, cannot be deleted through the api set"]
+          plb2["the api set takes the version from the body; the root set starts at 1 and bumps on every update"]
+          plb3["only the api set stores the pen and paper baseline"]
+          plb4["a factory sees its own templates and the shared ones with no factory"]
+        plApi["API surface"]
+          pla1["api set: GET, POST /api/production/pipeline-templates; PUT, DELETE by id"]
+          pla2["root set: GET, POST /templates; GET, PUT, DELETE by id"]
+        plOrch["Orchestration: modules/pipelines/routes.js"]
+          plo1["registerPipelineRoutes ctx"]
+          plo2["the root set is outside /api, so it never meets the central gate"]
+          plo3["app.use gates for /templates and /runs stay in server.js and run first"]
+        plSvc["Services: modules/pipelines/service.js"]
+          pls1["createPipelineService"]
+          pls2["api set: apiListTemplates, apiSaveTemplate, apiUpdateTemplate"]
+          pls3["root set: rootListTemplates, rootCreateTemplate, rootUpdateTemplate"]
+          pls4["getTemplateRow, deleteTemplateRow"]
+          pls5["rowToTemplate, shared with production when it starts a run"]
+        plPort["Ports it uses"]
+          plp1["production.templateRunCount ⟳ new"]
+        plData["Data"]
+          pld1["pipeline_templates"]
+        plTest["Tests"]
+          plt1["pipelines-api.test.js"]
+          plt2["sheet-plan-persistence.test.js"]
+          plt3["assembly-job-dedupe.test.js"]
+        plLeft["Still in server.js"]
+          pll1["/runs routes and the app.use gates that cover them: production"]
+          pll2["createRunFromTemplate and seeds read templates"]
+          pll3["two implementations not merged; that is a decision, not a move"]
     Flows
       Orders legacy
         o1["18 core routes, 13 tables"]
@@ -265,7 +296,7 @@ mindmap
         ch2["⟳ challans ports file created, vendor reads only"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
-        pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, read only"]
+        pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, read only"]
       Jobs evacuated
         jBiz["Business rules"]
           jb1["one assembly job per run and node, never duplicated"]
@@ -316,3 +347,4 @@ mindmap
 | 4 | Dies leave `server.js`. Adds `modules/dies/{routes,service}.js`; the production port gains `dieAssignedToActiveRun` (machines and dies share one helper); orders report and trace keep the DTO via the service; adds `dies-api` test; registry `dies` evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 5 | Clients leave `server.js`: the master, archive and restore, sub-contractors and the B2B portal. Adds `modules/clients/{routes,portal-routes,service}.js` and `modules/orders/ports.js`; items port gains `developedForCount`; party-kit's delete check now asks ports; adds `clients-api` test; registry `clients` evacuated and claims `portal` plus its three tables. Pins a pre-existing bug: portal order placement always fails on a nested transaction. | API surface (unchanged paths), Orchestration, Services, Ports, Data ownership, Tests |
 | 6 | People leave `server.js`: departments, employees and the three login-link routes. Adds `modules/people/{routes,service}.js` beside the existing `ports.js`; auth helpers are handed in by name; adds `people-api` test (the login routes had none); registry `people` evacuated. Payroll stays and stays unclaimed: claiming it would count nine unmoved routes as evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
+| 7 | Pipelines leave `server.js`: both template route sets. Adds `modules/pipelines/{routes,service}.js`; production port gains `templateRunCount`; the root `/templates` auth gates stay where they were; adds `pipelines-api` test; registry `pipelines` evacuated. Round complete: 10 of 15 modules evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |

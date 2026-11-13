@@ -5,12 +5,12 @@
 //
 // Production (runs, node status, scrap) is still in server.js, so this is a thin
 // reader over its tables, not yet a boundary with a service behind it. It exists
-// so a module that has left (machines today) does not carry SQL against
+// so modules that have left (machines, dies, pipelines) do not carry SQL against
 // `pipeline_runs`. When production moves, this file is the contract it keeps.
 // Read-only on purpose.
 // ---------------------------------------------------------------------------
 
-function createProductionPorts({ all }) {
+function createProductionPorts({ get, all }) {
   /// Whether a live run (planned, in progress or paused) names this id in one
   /// of its per-node overrides. `id` is the id as the URL carries it, a string:
   /// that is how run overrides store it. `overrideKey` says which map to look in.
@@ -38,6 +38,16 @@ function createProductionPorts({ all }) {
     /// Whether a live run has this die assigned to any of its nodes.
     dieAssignedToActiveRun: (dieId) =>
       assignedToActiveRun(dieId, 'dieOverrideByNode'),
+
+    /// How many runs, ongoing or finished, were started from this template.
+    /// A template with any cannot be deleted: its history would lose its source.
+    async templateRunCount(templateId) {
+      const row = await get(
+        'SELECT COUNT(*) as count FROM pipeline_runs WHERE template_id = ?',
+        [templateId],
+      );
+      return Number((row && row.count) || 0);
+    },
   };
 }
 
