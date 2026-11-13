@@ -19493,6 +19493,12 @@ const inventoryService = createInventoryService({
   normalizeDiscardedPropertyKeys,
   normalizePropertyKey,
   recordLedgerEvent,
+  resolveLeafSelectionFromDb,
+  // The stock overview reads four modules' tables; three of them through ports.
+  // The items port is built at the end of this file, hence the wrapper.
+  variationStockRows: () => itemsPorts.variationStockRows(),
+  orders: ordersPorts,
+  challans: challansPorts,
 });
 // What other modules may ask of inventory.
 const inventoryPorts = createInventoryPorts({ inventory: inventoryService });
@@ -22038,114 +22044,6 @@ const diesService = createDieService({
   writeLink: (...args) => requireLinkWriter()(...args),
 });
 const { rowToDieDto: dieRowToDto } = diesService;
-
-function mergeCustomVariationValueJsonRows(rows) {
-  const valuesByKey = new Map();
-  for (const row of rows || []) {
-    const parsed = parseJson(row.custom_variation_values_json, {});
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      continue;
-    }
-    for (const [key, rawValue] of Object.entries(parsed)) {
-      const value = String(rawValue || '').trim();
-      if (!key || !value) {
-        continue;
-      }
-      if (!valuesByKey.has(key)) {
-        valuesByKey.set(key, []);
-      }
-      const values = valuesByKey.get(key);
-      if (!values.includes(value)) {
-        values.push(value);
-      }
-    }
-  }
-  const merged = {};
-  for (const [key, values] of valuesByKey.entries()) {
-    if (values.length > 0) {
-      merged[key] = values.join(' / ');
-    }
-  }
-  return merged;
-}
-
-app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req, res) => {
-  try {
-    const rows = await all(`
-      SELECT
-        vs.id as stock_id,
-        vs.item_id,
-        vs.variation_leaf_node_id,
-        vs.quantity,
-        vs.location_id,
-        vs.variation_path_label,
-        vs.variation_path_node_ids_json,
-        vs.custom_variation_values_json AS stock_custom_variation_values_json,
-        vs.updated_at
-      FROM variation_stock vs
-      ORDER BY vs.item_id ASC, vs.variation_leaf_node_id ASC
-    `);
-    const stock = [];
-    for (const row of rows) {
-      const itemDesc = await itemsPorts.describe(row.item_id);
-      row.item_name = itemDesc?.name || 'Unknown Item';
-      row.unit_id = itemDesc?.unitId || null;
-      row.naming_format = itemDesc?.namingFormat || '[]';
-      const selection = await resolveLeafSelectionFromDb(row.variation_leaf_node_id);
-      const storedPathNodeIds = parseJson(row.variation_path_node_ids_json, []);
-      const effectivePathNodeIds = storedPathNodeIds.length > 0
-        ? storedPathNodeIds
-        : (selection?.nodeIds || []);
-      const customVariationRows = await all(
-        `
-        SELECT ? AS custom_variation_values_json
-        UNION ALL
-        SELECT custom_variation_values_json
-        FROM materials
-        WHERE linked_item_id = ?
-          AND COALESCE(linked_variation_leaf_node_id, 0) = ?
-          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
-        UNION ALL
-        SELECT custom_variation_values_json
-        FROM order_items
-        WHERE item_id = ?
-          AND COALESCE(variation_leaf_node_id, 0) = ?
-          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
-        UNION ALL
-        SELECT custom_variation_values_json
-        FROM delivery_challan_items
-        WHERE item_id = ?
-          AND COALESCE(variation_leaf_node_id, 0) = ?
-          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
-        `,
-        [
-          row.stock_custom_variation_values_json || '{}',
-          row.item_id,
-          row.variation_leaf_node_id,
-          row.item_id,
-          row.variation_leaf_node_id,
-          row.item_id,
-          row.variation_leaf_node_id,
-        ],
-      );
-      stock.push({
-        ...row,
-        custom_variation_values: mergeCustomVariationValueJsonRows(customVariationRows),
-        variation_path_label: row.variation_path_label || '',
-        variation_path_node_ids: effectivePathNodeIds,
-        variation_path: effectivePathNodeIds.map((nodeId, index) => ({
-          node_id: nodeId,
-          value: selection?.nodeIds?.includes(nodeId)
-            ? (selection?.segments?.[selection.nodeIds.indexOf(nodeId)] || '')
-            : '',
-        })),
-      });
-    }
-    res.json({ success: true, stock });
-  } catch (error) {
-    res.status(500).json({ success: false, stock: [], error: error.message });
-  }
-});
 
 app.get('/api/search', requirePermission('inventory.read'), async (req, res) => {
   try {
@@ -29589,6 +29487,20 @@ const itemsPorts = createItemsPorts({
   ensureReconcilePrimary: ensureReconcilePrimaryGroup,
   ensureReconcileSub: ensureReconcileSubGroup,
   ensureForReconcile: ensureReconcileItem,
+  variationStockRows: () => all(`
+    SELECT
+      vs.id as stock_id,
+      vs.item_id,
+      vs.variation_leaf_node_id,
+      vs.quantity,
+      vs.location_id,
+      vs.variation_path_label,
+      vs.variation_path_node_ids_json,
+      vs.custom_variation_values_json AS stock_custom_variation_values_json,
+      vs.updated_at
+    FROM variation_stock vs
+    ORDER BY vs.item_id ASC, vs.variation_leaf_node_id ASC
+  `),
   developedForCount: async (clientId) => {
     const row = await get(
       'SELECT COUNT(*) AS c FROM items WHERE developed_for_client_id = ?',

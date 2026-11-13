@@ -36,6 +36,21 @@ function createChallansPorts({ get, all }) {
       return new Map(rows.map((row) => [row.vendor_id, Number(row.c || 0)]));
     },
 
+    /// The custom variation values (JSON text) typed on this item and variation's
+    /// challan lines, for the stock overview to merge. Empty ones are left out.
+    customVariationValueRows(itemId, variationLeafNodeId) {
+      return all(
+        `
+        SELECT custom_variation_values_json
+        FROM delivery_challan_items
+        WHERE item_id = ?
+          AND COALESCE(variation_leaf_node_id, 0) = ?
+          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+        `,
+        [itemId, variationLeafNodeId],
+      );
+    },
+
     /// The distinct lines this vendor has delivered to us on reception
     /// challans, newest first, capped at 100. Raw rows: the caller shapes them.
     vendorPurchaseRows(vendorId) {

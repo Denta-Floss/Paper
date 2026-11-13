@@ -26,13 +26,14 @@
 //   DELETE /api/materials/:barcode              remove it (a parent takes its children)
 //   POST   /api/inventory/movements             receive, issue, transfer
 //   GET    /api/inventory/health                the summary tiles
+//   GET    /api/inventory/stock                 stock by item and variation
 //
 // `inventory` and `materials` are first path segments, so the central CRUD gate
 // maps these to the inventory module. Handlers are the ones that lived in
 // server.js, moved whole.
 //
-// NOT here: GET /api/inventory/stock (next step), the universal barcode resolver
-// and /api/scan, the search routes. See modules/inventory/service.js.
+// NOT here: the universal barcode resolver and /api/scan, the search routes. See
+// modules/inventory/service.js.
 // ---------------------------------------------------------------------------
 
 module.exports = function registerInventoryRoutes(ctx) {
@@ -127,6 +128,14 @@ module.exports = function registerInventoryRoutes(ctx) {
         // other refusal without matching on prose.
         code: error.code ?? null,
       });
+    }
+  });
+
+  app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req, res) => {
+    try {
+      res.json({ success: true, stock: await inventory.getStockOverview() });
+    } catch (error) {
+      res.status(500).json({ success: false, stock: [], error: error.message });
     }
   });
 

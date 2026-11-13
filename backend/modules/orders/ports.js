@@ -51,6 +51,21 @@ function createOrdersPorts({ get, all, run, saveOrder }) {
       return Number(row?.count || 0);
     },
 
+    /// The custom variation values (JSON text) typed on this item and variation's
+    /// order lines, for the stock overview to merge. Empty ones are left out.
+    customVariationValueRows(itemId, variationLeafNodeId) {
+      return all(
+        `
+        SELECT custom_variation_values_json
+        FROM order_items
+        WHERE item_id = ?
+          AND COALESCE(variation_leaf_node_id, 0) = ?
+          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+        `,
+        [itemId, variationLeafNodeId],
+      );
+    },
+
     /// The header row an order's lines hang off.
     insertOrderHeader({ orderNo, clientId }) {
       const now = new Date().toISOString();

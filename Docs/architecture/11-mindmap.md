@@ -31,13 +31,11 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c10["⟳ Change 10: inventory steps 2 and 3, materials and the ledger"]
-        c10a["19 more routes moved: materials, scans, movements, activity, health"]
-        c10b["37 functions moved: materials, governance, ledger engine, read models"]
-        c10c["steps 2 and 3 merged: the functions call each other, splitting meant injecting eight both ways"]
-        c10d["outside callers of the ledger now use inventoryPorts, not the function names"]
-        c10e["itemsPorts.stock.applyDelta re-wired to the variation stock write, it had no callers"]
-        c10f["inventory-api test added: 7 tests, 315 total"]
+      c11["⟳ Change 11: inventory step 4, stock overview and the flag"]
+        c11a["GET /api/inventory/stock moved; it reads four modules' tables"]
+        c11b["items, orders and challans each grew one read port for it"]
+        c11c["inventory evacuated: 11 of 15 modules, server.js 35760 to 30580 lines"]
+      c10["Change 10: inventory steps 2 and 3, materials and the ledger"]
       c9["Change 9: inventory step 1, the sets"]
       c8["Change 8: portal orders work"]
       c7["Change 7: pipelines leave server.js"]
@@ -294,7 +292,7 @@ mindmap
         o1["18 core routes, 13 tables"]
         o3["⟳ saveOrder: useTransaction option, for callers already in a transaction"]
         o2["orders/ports.js: client line counts, insertOrderHeader, saveOrder"]
-      Inventory ⟳ moving, steps 1 to 3 of 4 done
+      Inventory ⟳ evacuated
         ivBiz["Business rules"]
           ivb1["a set is a bill of material; saving replaces its lines; a stale expectedVersion is refused as set_changed"]
           ivb2["a material is a parent with children; deleting a parent takes its children, deleting a child gives the parent its count back"]
@@ -307,6 +305,7 @@ mindmap
           iva2["materials: GET list, one, detail, activity; POST parent and child; PATCH edit, group-config, link-group, link-item, unlink, scan, scan/reset; DELETE"]
           iva3["POST /api/inventory/movements"]
           iva4["GET /api/inventory/health"]
+          iva5["GET /api/inventory/stock: stock by item and variation ⟳"]
         ivOrch["Orchestration: modules/inventory/routes.js"]
           ivo1["registerInventoryRoutes ctx"]
           ivo2["trackCreate, trackUpdate, trackDelete; currentActor stamps the movement"]
@@ -319,9 +318,11 @@ mindmap
           ivs6["ledger: applyInventoryMovementCore, stock positions, recomputeMaterialInventorySummary"]
           ivs7["read models: getMaterialControlTowerDetail, getInventoryHealthSummary, getMaterialActivity"]
           ivs8["rowToMaterialDto, rowToMaterialActivityDto, barcode generators"]
+          ivs9["getStockOverview: merges custom variation values from stock, materials, order lines and challan lines ⟳"]
         ivPort["Ports"]
           ivp1["offers: sets.*, materials.delete, governance.get and retireMissingProperties, movements.apply and applyCore, scans.increment, ledger.recomputeSummary ⟳"]
           ivp2["uses, by name: items port describe, entity links, variation readers, saveGroup, applyVariationStockDelta, recordLedgerEvent"]
+          ivp3["uses, read only: items.variationStockRows, orders.customVariationValueRows, challans.customVariationValueRows ⟳ new"]
         ivData["Data"]
           ivd1["materials, material_activity, scan_history"]
           ivd2["material_group_item_links, material_group_preferences, material_group_properties, material_group_units"]
@@ -331,7 +332,7 @@ mindmap
           ivt1["inventory-api.test.js, 7 tests, written first"]
           ivt2["inventory-sets-api, material-governance, integrity-safety, barcode-ledger-events, variation-stock"]
         ivNext["Still in server.js"]
-          ivn1["step 4: GET /api/inventory/stock and the registry flag"]
+          ivn1["the registry keeps the barcode segment, but /api/barcode/lookup is the resolver and stays"]
           ivn2["the universal barcode resolver, /api/scan, /api/barcode/lookup, recordLedgerEvent: kernel services"]
           ivn3["search routes and their tables"]
           ivn4["production and challans write inventory tables by hand: ensureTemporarySetFromAssembly, stockTemporarySet, mintReceivedMaterial, raw movement inserts"]
@@ -398,3 +399,4 @@ mindmap
 | 8 | Portal order placement fixed. `saveOrder` gains a `useTransaction` option (default true, so every other caller is unchanged); the portal route passes false and owns one transaction for header, lines and cart clear. The clients test that pinned the bug now expects success, and a new one proves a failed order leaves nothing behind. Still open: items with variations cannot be ordered through the portal. | Orchestration, Services, Tests |
 | 9 | Inventory step 1 of 4: the sets. Adds `modules/inventory/{routes,service,ports}.js`; the four set routes and eleven set functions move; items' cascade delete, the item-usage read, the items Sets card and action center's delete-request approval reach sets through `inventoryPorts.sets.*`. Registry unchanged until step 4. | API surface (unchanged paths), Orchestration, Services, Ports |
 | 10 | Inventory steps 2 and 3, merged: the materials, group governance and the stock ledger. The service grows to about 2,500 lines; 19 more routes move (materials, scans, activity, movements, health); every outside caller of the ledger, scan count, summary recompute, governance and material delete goes through `inventoryPorts`. The items stock port is re-wired to the variation stock write (it had no callers). The two steps are one commit because the functions call each other and a split needed temporary injection both ways. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
+| 11 | Inventory step 4: `GET /api/inventory/stock` moves into the service as `getStockOverview`, with the three reads it needed behind new ports (items `variationStockRows`, orders and challans `customVariationValueRows`). Registry: inventory `evacuated: true`. Territory meter: 11 of 15. `server.js` is 30,580 lines, down from 35,760. | API surface (unchanged paths), Services, Ports, Data ownership |

@@ -59,6 +59,11 @@ function createInventoryService({
   normalizePropertyKey,
   // The append-only custody ledger belongs to no module; inventory writes to it.
   recordLedgerEvent,
+  // For the stock overview, which reads across four modules' tables.
+  resolveLeafSelectionFromDb,
+  variationStockRows,
+  orders,
+  challans,
 }) {
   const {
     getItemVariationTree,
@@ -2456,6 +2461,89 @@ function createInventoryService({
     return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
   }
 
+  // --- stock overview -------------------------------------------------------
+
+  function mergeCustomVariationValueJsonRows(rows) {
+    const valuesByKey = new Map();
+    for (const row of rows || []) {
+      const parsed = parseJson(row.custom_variation_values_json, {});
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        continue;
+      }
+      for (const [key, rawValue] of Object.entries(parsed)) {
+        const value = String(rawValue || '').trim();
+        if (!key || !value) {
+          continue;
+        }
+        if (!valuesByKey.has(key)) {
+          valuesByKey.set(key, []);
+        }
+        const values = valuesByKey.get(key);
+        if (!values.includes(value)) {
+          values.push(value);
+        }
+      }
+    }
+    const merged = {};
+    for (const [key, values] of valuesByKey.entries()) {
+      if (values.length > 0) {
+        merged[key] = values.join(' / ');
+      }
+    }
+    return merged;
+  }
+
+  /// One row per item and variation that holds stock, with the item's identity,
+  /// the variation path, and every custom variation value anyone has typed for
+  /// it (on the stock row, a material, an order line or a challan line), merged
+  /// into one.
+  async function getStockOverview() {
+    const rows = await variationStockRows();
+    const stock = [];
+    for (const row of rows) {
+      const itemDesc = await describeItem(row.item_id);
+      row.item_name = itemDesc?.name || 'Unknown Item';
+      row.unit_id = itemDesc?.unitId || null;
+      row.naming_format = itemDesc?.namingFormat || '[]';
+      const selection = await resolveLeafSelectionFromDb(row.variation_leaf_node_id);
+      const storedPathNodeIds = parseJson(row.variation_path_node_ids_json, []);
+      const effectivePathNodeIds = storedPathNodeIds.length > 0
+        ? storedPathNodeIds
+        : (selection?.nodeIds || []);
+      // In the order the one query used to produce them: the stock row's own,
+      // then materials, then order lines, then challan lines. The merge keeps
+      // the first spelling of a value it meets.
+      const customVariationRows = [
+        { custom_variation_values_json: row.stock_custom_variation_values_json || '{}' },
+        ...(await all(
+          `
+          SELECT custom_variation_values_json
+          FROM materials
+          WHERE linked_item_id = ?
+            AND COALESCE(linked_variation_leaf_node_id, 0) = ?
+            AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+          `,
+          [row.item_id, row.variation_leaf_node_id],
+        )),
+        ...(await orders.customVariationValueRows(row.item_id, row.variation_leaf_node_id)),
+        ...(await challans.customVariationValueRows(row.item_id, row.variation_leaf_node_id)),
+      ];
+      stock.push({
+        ...row,
+        custom_variation_values: mergeCustomVariationValueJsonRows(customVariationRows),
+        variation_path_label: row.variation_path_label || '',
+        variation_path_node_ids: effectivePathNodeIds,
+        variation_path: effectivePathNodeIds.map((nodeId, index) => ({
+          node_id: nodeId,
+          value: selection?.nodeIds?.includes(nodeId)
+            ? (selection?.segments?.[selection.nodeIds.indexOf(nodeId)] || '')
+            : '',
+        })),
+      });
+    }
+    return stock;
+  }
+
   return {
     rowToInventorySetDto,
     mergeInventorySetLines,
@@ -2503,6 +2591,7 @@ function createInventoryService({
     linkMaterialRecordToGroup,
     linkMaterialRecordToItem,
     unlinkMaterialRecord,
+    getStockOverview,
     /// An item is going away: its lines in every set go with it. trashAndDelete
     /// removes the item with foreign keys off, so the declared cascade never
     /// fires and a set would keep a nameless ghost line.

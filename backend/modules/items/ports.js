@@ -25,6 +25,7 @@
 //   groups.ensureReconcileSub() -> creates/returns a subgroup for reconciliation
 //   ensureForReconcile()        -> creates/returns an item under a reconcile group
 //   developedForCount(clientId) -> how many parts were developed for this client
+//   variationStockRows()        -> every variation_stock row, by item then leaf
 // ---------------------------------------------------------------------------
 
 function createItemsPorts(impl) {
@@ -59,6 +60,7 @@ function createItemsPorts(impl) {
     },
     ensureForReconcile: counted('ensureForReconcile', impl.ensureForReconcile),
     developedForCount: counted('developedForCount', impl.developedForCount),
+    variationStockRows: counted('variationStockRows', impl.variationStockRows),
     stats: () => ({ ...counts }),
   };
 }
