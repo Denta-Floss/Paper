@@ -31,17 +31,18 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c1["⟳ Change 1: vendors leave server.js"]
-        c1a["6 routes, 5 service functions, 1 DTO moved"]
-        c1b["party-kit shared by clients and vendors"]
-        c1c["first challans port, read only"]
-        c1d["route-surface test added: 370 routes pinned"]
+      c2["⟳ Change 2: jobs leave server.js"]
+        c2a["6 routes, 9 service functions moved"]
+        c2b["production now calls jobs.syncAssemblyJob"]
+        c2c["first people port, read only"]
+        c2d["jobs-api test added: 4 tests, 284 total"]
+      c1["Change 1: vendors leave server.js"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
       k3["contracts.js, barcodes.js, event-logger.js"]
     Masters
-      Vendors ⟳ evacuated
+      Vendors evacuated
         vBiz["Business rules"]
           vb1["one vendor per name or GST number"]
           vb2["a vendor named on a challan cannot be deleted"]
@@ -96,6 +97,7 @@ mindmap
         d1["7 routes; die-makers already in modules/dies"]
       People legacy
         p1["departments, employees, login; payroll unclaimed by registry"]
+        p2["⟳ people/ports.js: employeeIdByBarcode, read only"]
       Pipelines legacy
         pl1["templates at the app root bypass the /api gate"]
     Flows
@@ -108,8 +110,42 @@ mindmap
         ch2["⟳ challans ports file created, vendor reads only"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
-      Jobs legacy
-        j1["6 freelancer routes, 3 tables"]
+      Jobs ⟳ evacuated
+        jBiz["Business rules"]
+          jb1["one assembly job per run and node, never duplicated"]
+          jb2["a re-synced job is only rewritten while unassigned"]
+          jb3["handing a job to a worker issues its assembled set from stock"]
+          jb4["scrap booked at reconciliation mirrors onto the job as rejections"]
+        jApi["API surface"]
+          ja1["GET /api/freelancer-jobs"]
+          ja2["POST /api/freelancer-jobs"]
+          ja3["POST /api/freelancer-jobs/batches"]
+          ja4["PUT /api/freelancer-jobs/:id"]
+          ja5["DELETE /api/freelancer-jobs/:id"]
+          ja6["GET /api/freelancer-portal/data"]
+        jOrch["Orchestration: modules/jobs/routes.js"]
+          jo1["registerJobsRoutes ctx"]
+          jo2["decrypt worker token, find employee, return their card"]
+          jo3["delete rolls back on failure"]
+        jSvc["Services: modules/jobs/service.js"]
+          js1["createJobsService"]
+          js2["createJob, createBatch, setStatus, deleteJob"]
+          js3["listAll, dataForFreelancer"]
+          js4["issueAssemblySetsForJobs"]
+          js5["syncAssemblyJob ⟳ called by production"]
+          js6["propagateAssemblyRejection ⟳ called by reconciliation"]
+        jPort["Ports it uses"]
+          jp1["people.employeeIdByBarcode ⟳ new"]
+          jp2["inventory.getMaterialRowByBarcode, applyInventoryMovementCore"]
+        jData["Data"]
+          jd1["freelancer_jobs, freelancer_job_batches, freelancer_job_tasks"]
+        jTest["Tests"]
+          jt1["jobs-api.test.js"]
+          jt2["assembly-job-dedupe.test.js"]
+        jLeft["Still in server.js"]
+          jl1["worker token secret is a literal in routes.js, to be fixed"]
+          jl2["freelancer-* not in the inline gate map, legacy write gate only"]
+          jl3["production picks the job's item, then hands it to syncAssemblyJob"]
       Action center legacy
         ac1["trash, delete-requests dispatcher, integrity scan"]
 ```
@@ -119,3 +155,4 @@ mindmap
 | # | Change | Layers touched |
 |---|---|---|
 | 1 | Vendors leave `server.js`. Adds `modules/vendors/{routes,service}.js`, `modules/parties/party-kit.js`, `modules/challans/ports.js`; adds `vendors-api` and `route-surface` tests; registry flag `evacuated: true`. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
+| 2 | Jobs leave `server.js`. Adds `modules/jobs/{routes,service}.js` and `modules/people/ports.js`; production's job write and reconciliation's rejection mirror now call the jobs service; adds `jobs-api` test; registry: jobs `evacuated: true` plus its real path segments (meter only). | API surface (unchanged paths), Orchestration, Services, Ports, Tests |

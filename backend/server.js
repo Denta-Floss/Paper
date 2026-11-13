@@ -40,6 +40,11 @@ const {
 const { createChallansPorts } = require('./modules/challans/ports');
 const { createVendorService, rowToVendorDto } = require('./modules/vendors/service');
 const registerVendorRoutes = require('./modules/vendors/routes');
+// The freelancer job pool. Its one outward reach, a worker's employee row, is a
+// people port.
+const { createPeoplePorts } = require('./modules/people/ports');
+const { createJobsService } = require('./modules/jobs/service');
+const registerJobsRoutes = require('./modules/jobs/routes');
 // A part's section tree and the entity_links it stands for (057).
 const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
@@ -3387,7 +3392,7 @@ async function upsertStageReconciliation(runId, nodeId, metrics) {
        updated_at = excluded.updated_at`,
     [runId, nodeId, ...vals],
   );
-  await propagateAssemblyRejection(runId, nodeId, metrics);
+  await jobsService.propagateAssemblyRejection(runId, nodeId, metrics);
   // Reconciling an assembly stage is the moment its output is real, so that is
   // when the temporary set lands in inventory.
   if (metrics.output !== undefined && metrics.output !== null) {
@@ -3560,71 +3565,17 @@ async function stockTemporarySet(setId, name, runId, nodeId, producedQty) {
   return barcode;
 }
 
-/**
- * Handing the job to a worker means the set physically leaves the facility, so
- * that is the OUT side of its ledger.
- */
-async function issueAssemblySetsForJobs(jobIds, freelancerId) {
-  for (const jobId of jobIds) {
-    const job = await get(
-      'SELECT id, run_id, node_id, quantity FROM freelancer_jobs WHERE id = ?',
-      [jobId],
-    );
-    if (!job?.run_id || !job?.node_id) continue;
-    const barcode = `SET-${job.run_id}-${job.node_id}`;
-    const material = await getMaterialRowByBarcode(barcode);
-    if (!material) continue;
-    const alreadyIssued = await get(
-      `SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_movements
-        WHERE material_barcode = ? AND movement_type = 'issue'
-          AND reason_code = 'issued_to_worker' AND reference_id = ?`,
-      [barcode, String(jobId)],
-    );
-    if (Number(alreadyIssued?.qty || 0) > 0) continue;
-    const qty = Math.min(
-      Number(job.quantity || 0),
-      Number(material.on_hand_qty || 0),
-    );
-    if (qty <= 0) continue;
-    try {
-      await applyInventoryMovementCore({
-        barcode,
-        movementType: 'issue',
-        qty,
-        reasonCode: 'issued_to_worker',
-        referenceType: 'freelancer_job',
-        referenceId: String(jobId),
-        actor: freelancerId ? `freelancer:${freelancerId}` : 'job-assignment',
-      }, { useTransaction: false });
-    } catch (error) {
-      console.warn(`[assembly-set] issue job ${jobId}: ${error.message}`);
-    }
-  }
-}
-
-// On an assembly step nothing is machined, so what the supervisor books as
-// scrap at reconciliation is a rejection — pieces the assembler did not get
-// right. It belongs on the worker's job, which is where the card reads it from.
-// Reconciliation is the single place rejections are recorded; the job is a
-// mirror of it, never the other way round.
-async function propagateAssemblyRejection(runId, nodeId, metrics) {
-  if (metrics.scrap === undefined || metrics.scrap === null) return;
-  const job = await get(
-    'SELECT id, quantity FROM freelancer_jobs WHERE run_id = ? AND node_id = ?',
-    [runId, nodeId],
-  );
-  if (!job) return;
-  const rejected = Math.max(0, Number(metrics.scrap) || 0);
-  const note = metrics.scrapItem
-    ? `Rejected at reconciliation → ${metrics.scrapItem}`
-    : 'Rejected at reconciliation';
-  await run(
-    `UPDATE freelancer_jobs
-        SET rejected_quantity = ?, rejection_note = ?, updated_at = ?
-      WHERE id = ?`,
-    [rejected, rejected > 0 ? note : '', new Date().toISOString(), job.id],
-  );
-}
+// The freelancer job pool left for modules/jobs. Handing a job to a worker
+// moves a set out of stock, so the two inventory functions it needs are handed
+// in by name; the employee lookup for a worker's card goes through the people
+// port. Production calls syncAssemblyJob and propagateAssemblyRejection.
+const peoplePorts = createPeoplePorts({ get });
+const jobsService = createJobsService({
+  get,
+  all,
+  run,
+  inventory: { getMaterialRowByBarcode, applyInventoryMovementCore },
+});
 
 // One-time copy of legacy pipeline_runs.node_metrics_json into the table so
 // reports can query reconciliation data with plain SQL. INSERT OR IGNORE keeps
@@ -30906,53 +30857,9 @@ app.put('/runs/:id/node-status', async (req, res) => {
             + ' feeder step carries an output item; no job raised.',
           );
         } else {
-          // A node's status can be re-set any number of times (re-queued,
-          // reopened, a second pass over the same stage), so this is keyed on
-          // (run, node) rather than inserting blind.
-          const existingJob = await get(
-            'SELECT * FROM freelancer_jobs WHERE run_id = ? AND node_id = ?',
-            [runRow.id, nodeId]
-          );
-
-          let jobId = null;
-          const stamp = new Date().toISOString();
-          if (!existingJob) {
-            const result = await run(
-              `INSERT INTO freelancer_jobs (batch_id, run_id, node_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
-               VALUES (NULL, ?, ?, ?, 0, ?, 'pending', 0, ?, ?)`,
-              [runRow.id, nodeId, itemId, qty, stamp, stamp]
-            );
-            jobId = result.lastID;
-          } else if (existingJob.status === 'pending' && existingJob.batch_id === null) {
-            // Still sitting unassigned in the pool — safe to re-sync it with
-            // the current batch quantity and rebuild its task list.
-            await run(
-              'UPDATE freelancer_jobs SET item_id = ?, quantity = ?, updated_at = ? WHERE id = ?',
-              [itemId, qty, stamp, existingJob.id]
-            );
-            await run('DELETE FROM freelancer_job_tasks WHERE job_id = ?', [existingJob.id]);
-            jobId = existingJob.id;
-          }
-          // Otherwise the job is already batched to a freelancer or under way
-          // — leave it, and their progress, alone.
-
-          if (jobId !== null) {
-            // Populate tasks from BOM
-            const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
-            for (const line of bomLines) {
-              // We map the material barcode back to an item if needed, but tasks schema requires item_id.
-              // Since item_bom_lines has material_barcode, let's find the linked item.
-              const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
-              if (mat && mat.linked_item_id) {
-                const reqQty = (line.quantity_per_unit * qty) * (1 + (line.wastage_percent / 100));
-                await run(
-                  `INSERT INTO freelancer_job_tasks (job_id, item_id, variation_leaf_node_id, required_quantity, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-                  [jobId, mat.linked_item_id, mat.linked_variation_leaf_node_id || 0, reqQty, stamp, stamp]
-                );
-              }
-            }
-          }
+          // Keyed on (run, node) inside: a node's status can be re-set any number
+          // of times and must not fan out into duplicate jobs.
+          await jobsService.syncAssemblyJob({ runId: runRow.id, nodeId, itemId, qty });
         }
       }
     }
@@ -33635,145 +33542,6 @@ app.get('/api/departments', requirePermission('config.read'), async (_req, res) 
   }
 });
 
-app.get('/api/freelancer-jobs', requirePermission('config.read'), async (req, res) => {
-  try {
-    const jobs = await all('SELECT * FROM freelancer_jobs');
-    const tasks = await all('SELECT * FROM freelancer_job_tasks');
-    const batches = await all('SELECT * FROM freelancer_job_batches');
-    res.json({ success: true, jobs, tasks, batches });
-  } catch (error) {
-    res.status(500).json({ success: false, jobs: [], error: error.message });
-  }
-});
-
-app.post('/api/freelancer-jobs/batches', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { freelancer_id, job_ids } = req.body;
-    const batch_number = 'BATCH-' + Date.now();
-    const result = await run(
-      'INSERT INTO freelancer_job_batches (freelancer_id, batch_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [freelancer_id, batch_number, 'assigned', new Date().toISOString(), new Date().toISOString()]
-    );
-    const batch_id = result.lastID;
-    
-    for (const jid of job_ids) {
-      await run('UPDATE freelancer_jobs SET batch_id = ?, updated_at = ? WHERE id = ?', [batch_id, new Date().toISOString(), jid]);
-    }
-
-    // Assigning the job hands the assembled set to the worker, which means it
-    // has left the facility — the OUT side of the set's ledger.
-    await issueAssemblySetsForJobs(job_ids || [], freelancer_id);
-
-    const batch = await get('SELECT * FROM freelancer_job_batches WHERE id = ?', [batch_id]);
-    res.json({ success: true, batch });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/freelancer-jobs', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { item_id, quantity } = req.body;
-    const result = await run(
-      `INSERT INTO freelancer_jobs (batch_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
-       VALUES (NULL, ?, 0, ?, 'pending', 0, ?, ?)`,
-      [item_id, quantity, new Date().toISOString(), new Date().toISOString()]
-    );
-    const newJobId = result.lastID;
-
-    const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [item_id]);
-    for (const line of bomLines) {
-       const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
-       if (mat && mat.linked_item_id) {
-         const reqQty = (line.quantity_per_unit * quantity) * (1 + (line.wastage_percent / 100));
-         await run(
-           `INSERT INTO freelancer_job_tasks (job_id, item_id, variation_leaf_node_id, required_quantity, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-           [newJobId, mat.linked_item_id, mat.linked_variation_leaf_node_id || 0, reqQty, new Date().toISOString(), new Date().toISOString()]
-         );
-       }
-    }
-    
-    const job = await get('SELECT * FROM freelancer_jobs WHERE id = ?', [newJobId]);
-    res.json({ success: true, job });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.put('/api/freelancer-jobs/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { status } = req.body;
-    await run(
-      'UPDATE freelancer_jobs SET status = ?, updated_at = ? WHERE id = ?',
-      [status, new Date().toISOString(), req.params.id]
-    );
-    const updated = await get('SELECT * FROM freelancer_jobs WHERE id = ?', [req.params.id]);
-    res.json({ success: true, job: updated });
-  } catch (error) {
-    res.status(500).json({ success: false, job: null, error: error.message });
-  }
-});
-
-app.delete('/api/freelancer-jobs/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = req.params.id;
-    await run('BEGIN TRANSACTION');
-    await run('DELETE FROM freelancer_job_tasks WHERE job_id = ?', [id]);
-    await run('DELETE FROM freelancer_jobs WHERE id = ?', [id]);
-    await run('COMMIT');
-    res.json({ success: true, error: null });
-  } catch (error) {
-    await run('ROLLBACK');
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/freelancer-portal/data', async (req, res) => {
-  try {
-    const token = req.query.token;
-    if (!token) return res.status(400).json({ success: false, error: 'Missing token' });
-    
-    const crypto = require('crypto');
-    const SECRET = 'my-very-secret-key-32charslong!!'; 
-    let barcode_id;
-    try {
-      const parts = token.split(':');
-      const iv = Buffer.from(parts[0], 'hex');
-      const encryptedText = Buffer.from(parts[1], 'hex');
-      const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(SECRET), iv);
-      let decrypted = decipher.update(encryptedText);
-      decrypted = Buffer.concat([decrypted, decipher.final()]);
-      barcode_id = decrypted.toString();
-    } catch (e) {
-      return res.status(400).json({ success: false, error: 'Invalid or tampered token' });
-    }
-
-    const employee = await get('SELECT id FROM employees WHERE barcode_id = ?', [barcode_id]);
-    if (!employee) return res.status(404).json({ success: false, error: 'Freelancer not found' });
-    
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const isoDate = thirtyDaysAgo.toISOString();
-
-    const batches = await all('SELECT * FROM freelancer_job_batches WHERE freelancer_id = ? AND created_at >= ?', [employee.id, isoDate]);
-    const batchIds = batches.map(b => b.id);
-    let jobs = [];
-    let tasks = [];
-    if (batchIds.length > 0) {
-      jobs = await all(`SELECT * FROM freelancer_jobs WHERE batch_id IN (${batchIds.join(',')})`);
-      const jobIds = jobs.map(j => j.id);
-      if (jobIds.length > 0) {
-        tasks = await all(`SELECT * FROM freelancer_job_tasks WHERE job_id IN (${jobIds.join(',')})`);
-      }
-    }
-    
-    res.json({ success: true, batches, jobs, tasks });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 app.post('/api/departments', requirePermission('config.write'), async (req, res) => {
   try {
     const { name, description = '', photoUrl = '' } = req.body;
@@ -34634,6 +34402,15 @@ registerVendorRoutes({
   vendors: vendorsService,
   challans: challansPorts,
   itemsPorts,
+});
+
+// The freelancer job pool. `run` is passed for the delete route's rollback.
+registerJobsRoutes({
+  app,
+  requirePermission,
+  run,
+  jobs: jobsService,
+  people: peoplePorts,
 });
 
 // Material types carry the one number that turns a sheet's volume into its

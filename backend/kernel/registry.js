@@ -85,9 +85,12 @@ const MODULES = {
   },
   jobs: {
     label: 'Jobs',
-    pathSegments: ['jobs'],
+    // The routes answer under freelancer-*, not under `jobs`. Declared here so
+    // the territory meter counts them as this module's; the inline gate in
+    // server.js still does not map them, so they keep the legacy write gate.
+    pathSegments: ['jobs', 'freelancer-jobs', 'freelancer-portal'],
     tables: ['freelancer_jobs', 'freelancer_job_batches', 'freelancer_job_tasks'],
-    evacuated: false,
+    evacuated: true,
   },
   action_center: {
     label: 'Action Center',
