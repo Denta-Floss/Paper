@@ -31,11 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c8["⟳ Change 8: portal orders work"]
-        c8a["saveOrder takes useTransaction, default true"]
-        c8b["the portal route owns one transaction: header, lines, cart clear"]
-        c8c["a failed order now leaves no header, no line, cart intact"]
-        c8d["clients-api: pinned bug flipped, failure test added, 308 total"]
+      c9["⟳ Change 9: inventory step 1 of 4, the sets"]
+        c9a["4 routes and 11 set functions moved to modules/inventory"]
+        c9b["inventory ports file created: sets.deleteById, removeLinesForItem, membershipForItem"]
+        c9c["three outside call sites now go through the port"]
+        c9d["registry flag NOT flipped yet: materials and the ledger are still in server.js"]
+      c8["Change 8: portal orders work"]
       c7["Change 7: pipelines leave server.js"]
       c6["Change 6: people leave server.js"]
       c5["Change 5: clients leave server.js"]
@@ -290,8 +291,36 @@ mindmap
         o1["18 core routes, 13 tables"]
         o3["⟳ saveOrder: useTransaction option, for callers already in a transaction"]
         o2["orders/ports.js: client line counts, insertOrderHeader, saveOrder"]
-      Inventory legacy
-        iv1["22 routes, 13 tables, ledger writes"]
+      Inventory ⟳ moving, step 1 of 4
+        ivBiz["Business rules"]
+          ivb1["a set is a bill of material: items with a variation path and a quantity"]
+          ivb2["saving a set replaces its lines; a stale expectedVersion is refused as set_changed"]
+          ivb3["a set is filed under a group through entity links; absent keeps it, null clears it"]
+          ivb4["deleting a set purges its links; it is permanent, Track is the only record"]
+        ivApi["API surface, moved"]
+          iva1["GET, POST /api/inventory/sets"]
+          iva2["PATCH, DELETE /api/inventory/sets/:id"]
+        ivOrch["Orchestration: modules/inventory/routes.js"]
+          ivo1["registerInventoryRoutes ctx"]
+          ivo2["trackCreate, trackUpdate with a before row read in the route, trackDelete"]
+        ivSvc["Services: modules/inventory/service.js"]
+          ivs1["createInventoryService"]
+          ivs2["saveInventorySet, deleteInventorySet, getInventorySets, getInventorySetById"]
+          ivs3["mergeInventorySetLines, validateInventorySetLine, getInventorySetLineDtos"]
+          ivs4["getItemSetMembership: which sets hold an item, one row per line"]
+          ivs5["rowToInventorySetDto"]
+        ivPort["Ports"]
+          ivp1["offers: sets.deleteById, sets.removeLinesForItem, sets.membershipForItem ⟳ new"]
+          ivp2["uses: items port describe, entity links, variation readers, passed by name"]
+        ivData["Data"]
+          ivd1["inventory_sets, inventory_set_lines"]
+        ivTest["Tests"]
+          ivt1["inventory-sets-api.test.js, 7 tests, unchanged and green"]
+        ivNext["Still in server.js, next steps"]
+          ivn1["step 2: materials CRUD, governance, reads"]
+          ivn2["step 3: ledger, movements, scan counts"]
+          ivn3["step 4: stock overview, registry flag"]
+          ivn4["stays for good until their modules move: universal barcode resolver, search, production and challans writes to inventory tables"]
       Challans legacy
         ch1["about 26 endpoints, each served twice, 14 tables"]
         ch2["⟳ challans ports file created, vendor reads only"]
@@ -350,3 +379,4 @@ mindmap
 | 6 | People leave `server.js`: departments, employees and the three login-link routes. Adds `modules/people/{routes,service}.js` beside the existing `ports.js`; auth helpers are handed in by name; adds `people-api` test (the login routes had none); registry `people` evacuated. Payroll stays and stays unclaimed: claiming it would count nine unmoved routes as evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 7 | Pipelines leave `server.js`: both template route sets. Adds `modules/pipelines/{routes,service}.js`; production port gains `templateRunCount`; the root `/templates` auth gates stay where they were; adds `pipelines-api` test; registry `pipelines` evacuated. Round complete: 10 of 15 modules evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 8 | Portal order placement fixed. `saveOrder` gains a `useTransaction` option (default true, so every other caller is unchanged); the portal route passes false and owns one transaction for header, lines and cart clear. The clients test that pinned the bug now expects success, and a new one proves a failed order leaves nothing behind. Still open: items with variations cannot be ordered through the portal. | Orchestration, Services, Tests |
+| 9 | Inventory step 1 of 4: the sets. Adds `modules/inventory/{routes,service,ports}.js`; the four set routes and eleven set functions move; items' cascade delete, the item-usage read, the items Sets card and action center's delete-request approval reach sets through `inventoryPorts.sets.*`. Registry unchanged until step 4. | API surface (unchanged paths), Orchestration, Services, Ports |
