@@ -28,6 +28,18 @@ const {
 // The people at a company (056). Required up here, not beside its routes,
 // because saveClient and the client DTO reads use its helpers.
 const partyContacts = require('./modules/parties/contacts');
+// How a party's name and GST compare, and what still names it on delete. Shared
+// by clients and vendors, so it lives with neither.
+const {
+  normalizePartyValue,
+  normalizeGstNumber,
+  createPartyDeleteBlockers,
+} = require('./modules/parties/party-kit');
+// Vendors left server.js (the first of the masters to). What it needs from the
+// challans module comes through a port, not a join.
+const { createChallansPorts } = require('./modules/challans/ports');
+const { createVendorService, rowToVendorDto } = require('./modules/vendors/service');
+const registerVendorRoutes = require('./modules/vendors/routes');
 // A part's section tree and the entity_links it stands for (057).
 const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
@@ -2893,29 +2905,6 @@ function rowToClientDto(row) {
     // Hung on the row by attachClientContacts — one query for any number of
     // clients. A row read without it lists nobody rather than failing.
     contacts: Array.isArray(row.contacts) ? row.contacts : [],
-    logoUrl: row.logo_url || '',
-    photoUrl: row.photo_url || '',
-    isArchived: Boolean(row.is_archived),
-    usageCount: row.usage_count || 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToVendorDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    name: row.name || '',
-    alias: row.alias || '',
-    gstNumber: row.gst_number || '',
-    address: row.address || '',
-    contactName: row.contact_name || '',
-    phone: row.phone || '',
-    email: row.email || '',
     logoUrl: row.logo_url || '',
     photoUrl: row.photo_url || '',
     isArchived: Boolean(row.is_archived),
@@ -9360,14 +9349,6 @@ async function getClientsWithUsage() {
   `);
 }
 
-function normalizePartyValue(value = '') {
-  return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function normalizeGstNumber(value = '') {
-  return String(value).trim().replace(/\s+/g, '').toUpperCase();
-}
-
 async function findClientDuplicate({ name, gstNumber = '', excludeId = null }) {
   const rows = await all('SELECT id, name, gst_number FROM clients');
   const normalizedName = normalizePartyValue(name);
@@ -9671,139 +9652,18 @@ async function ensureDemoClientsPresent() {
   }
 }
 
-async function getVendorRowById(id) {
-  return get(
-    `
-    SELECT
-      vendors.*,
-      (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
-    FROM vendors
-    WHERE vendors.id = ?
-    `,
-    [id],
-  );
-}
-
-async function getVendorsWithUsage() {
-  return all(`
-    SELECT
-      vendors.*,
-      (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
-    FROM vendors
-    ORDER BY vendors.is_archived ASC, LOWER(vendors.name) ASC, vendors.id ASC
-  `);
-}
-
-async function findVendorDuplicate({ name, gstNumber = '', excludeId = null }) {
-  const rows = await all('SELECT id, name, gst_number FROM vendors');
-  const normalizedName = normalizePartyValue(name);
-  const normalizedGst = normalizeGstNumber(gstNumber);
-  return rows.find((row) => {
-    if (excludeId != null && row.id === excludeId) {
-      return false;
-    }
-    const sameName = normalizePartyValue(row.name) === normalizedName;
-    const sameGst =
-      normalizedGst &&
-      normalizeGstNumber(row.gst_number || '') === normalizedGst;
-    return sameName || Boolean(sameGst);
-  }) || null;
-}
-
-async function saveVendor({
-  name,
-  alias = '',
-  gstNumber = '',
-  address = '',
-  contactName = '',
-  phone = '',
-  email = '',
-  // Absent keeps what is stored (the update reads it below); '' clears.
-  logoUrl,
-  photoUrl,
-  id = null,
-}) {
-  const trimmedName = String(name || '').trim();
-  const trimmedAlias = String(alias || '').trim();
-  const trimmedAddress = String(address || '').trim();
-  const trimmedContactName = String(contactName || '').trim();
-  const trimmedPhone = String(phone || '').trim();
-  const trimmedEmail = String(email || '').trim();
-  const trimmedGstNumber = normalizeGstNumber(gstNumber);
-  if (!trimmedName) {
-    const error = new Error('Vendor name is required.');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const duplicate = await findVendorDuplicate({
-    name: trimmedName,
-    gstNumber: trimmedGstNumber,
-    excludeId: id,
-  });
-  if (duplicate) {
-    const error = new Error('A vendor with the same name or GST number already exists.');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  if (id == null) {
-    const result = await run(
-      `
-      INSERT INTO vendors (
-        name, alias, gst_number, address, contact_name, phone, email, logo_url, photo_url, is_archived, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-      `,
-      [
-        trimmedName,
-        trimmedAlias,
-        trimmedGstNumber,
-        trimmedAddress,
-        trimmedContactName,
-        trimmedPhone,
-        trimmedEmail,
-        String(logoUrl || '').trim(),
-        String(photoUrl || '').trim(),
-        now,
-        now,
-      ],
-    );
-    await logChange('vendors', result.lastID, 'INSERT');
-    return getVendorRowById(result.lastID);
-  }
-
-  const existing = await getVendorRowById(id);
-  if (!existing) {
-    const error = new Error('Vendor not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  await run(
-    `
-    UPDATE vendors
-    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, logo_url = ?, photo_url = ?, updated_at = ?
-    WHERE id = ?
-    `,
-    [
-      trimmedName,
-      trimmedAlias,
-      trimmedGstNumber,
-      trimmedAddress,
-      trimmedContactName,
-      trimmedPhone,
-      trimmedEmail,
-      logoUrl !== undefined ? String(logoUrl || '').trim() : (existing.logo_url || ''),
-      photoUrl !== undefined ? String(photoUrl || '').trim() : (existing.photo_url || ''),
-      now,
-      id,
-    ],
-  );
-  await logChange('vendors', id, 'UPDATE');
-  return getVendorRowById(id);
-}
+// The vendor master left for modules/vendors; its delivery_challans reads go
+// through the challans port. Destructured under the old names because challan,
+// seed and test code still call them directly.
+const challansPorts = createChallansPorts({ get, all });
+const vendorsService = createVendorService({ get, all, run, logChange, challans: challansPorts });
+const {
+  getVendorRowById,
+  getVendorsWithUsage,
+  findVendorDuplicate,
+  saveVendor,
+} = vendorsService;
+const partyDeleteBlockers = createPartyDeleteBlockers({ get, challans: challansPorts });
 
 const DEFAULT_COMPANY_PROFILE = Object.freeze({
   companyName: 'Shree Ganesh Metal Works',
@@ -30215,28 +30075,6 @@ app.patch('/api/clients/:id/unarchive', requirePermission('config.write'), async
   }
 });
 
-/// What still names this party, as "3 order lines" phrases. Delete skipped the
-/// check archive makes, and trashAndDelete runs with foreign keys off — so a
-/// deleted client left order lines, sub-contractors and parts pointing at a
-/// row that was gone.
-async function partyDeleteBlockers(table, id) {
-  const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
-  const checks = table === 'clients'
-    ? [
-        ['SELECT COUNT(*) AS c FROM order_items WHERE client_id = ?', 'order line'],
-        ['SELECT COUNT(*) AS c FROM sub_contractors WHERE client_id = ?', 'sub-contractor'],
-        ['SELECT COUNT(*) AS c FROM items WHERE developed_for_client_id = ?', 'part'],
-      ]
-    : [['SELECT COUNT(*) AS c FROM delivery_challans WHERE vendor_id = ?', 'challan']];
-  const blockers = [];
-  for (const [sql, word] of checks) {
-    const row = await get(sql, [id]);
-    const count = Number(row?.c || 0);
-    if (count > 0) blockers.push(plural(count, word));
-  }
-  return blockers;
-}
-
 app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -30285,141 +30123,6 @@ app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res
     });
   }
 });
-
-app.get('/api/vendors', requirePermission('config.read'), async (_req, res) => {
-  try {
-    const rows = await getVendorsWithUsage();
-    res.json({ success: true, vendors: rows.map(rowToVendorDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, vendors: [], error: error.message });
-  }
-});
-
-app.get('/api/vendors/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const row = await get(`
-      SELECT
-        vendors.*,
-        (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
-      FROM vendors
-      WHERE id = ?
-    `, [req.params.id]);
-    if (!row) {
-      return res.status(404).json({ success: false, vendor: null, error: 'Not found' });
-    }
-    res.json({ success: true, vendor: rowToVendorDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, vendor: null, error: error.message });
-  }
-});
-
-app.get('/api/vendors/:id/purchase-history', requirePermission('config.read'), async (req, res) => {
-  try {
-    const vendorId = Number(req.params.id);
-    const rows = await all(`
-      SELECT DISTINCT
-        dci.item_id,
-        dci.variation_leaf_node_id,
-        dci.variation_path_label,
-        dci.variation_path_node_ids_json,
-        dci.custom_variation_values_json,
-        dci.particulars
-      FROM delivery_challans dc
-      JOIN delivery_challan_items dci ON dc.id = dci.challan_id
-      WHERE dc.vendor_id = ? AND dc.type = 'reception'
-      ORDER BY dci.created_at DESC
-      LIMIT 100
-    `, [vendorId]);
-
-    const historyItems = [];
-    for (const r of rows) {
-      const itemDesc = await itemsPorts.describe(r.item_id);
-      historyItems.push({
-        itemId: r.item_id,
-        variationLeafNodeId: r.variation_leaf_node_id,
-        variationPathLabel: r.variation_path_label,
-        variationPathNodeIds: JSON.parse(r.variation_path_node_ids_json || '[]'),
-        customVariationValues: JSON.parse(r.custom_variation_values_json || '{}'),
-        particulars: r.particulars || itemDesc?.name || 'Unknown Item'
-      });
-    }
-
-    // Deduplicate on backend just in case DISTINCT missed something due to JSON differences
-    const uniqueItems = [];
-    const seen = new Set();
-    for (const item of historyItems) {
-      const key = `${item.itemId}_${item.variationLeafNodeId}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueItems.push(item);
-      }
-    }
-
-    res.json({ success: true, history: uniqueItems, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, history: [], error: error.message });
-  }
-});
-
-app.post('/api/vendors', requirePermission('config.write'), async (req, res) => {
-  try {
-    const vendor = await saveVendor(req.body || {});
-    const vendorDto = rowToVendorDto(vendor);
-    if (io) {
-      io.emit('vendor_added', vendorDto);
-    }
-    trackCreate('vendors', vendor.id, vendor, req);
-    res.status(201).json({ success: true, vendor: vendorDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
-  }
-});
-app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM vendors WHERE id = ?', [id]);
-    const blockers = await partyDeleteBlockers('vendors', id);
-    if (blockers.length > 0) {
-      return res.status(409).json({
-        success: false,
-        code: 'vendor_in_use',
-        error: `"${before?.name || 'This vendor'}" is still named on ${blockers.join(' and ')}. `
-          + 'Archive it instead.',
-      });
-    }
-    await trashAndDelete('vendors', id, req);
-    trackDelete('vendors', id, before, req);
-    if (io) {
-      io.emit('vendor_deleted', { id });
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM vendors WHERE id = ?', [id]);
-    const vendor = await saveVendor({
-      ...(req.body || {}),
-      id,
-    });
-    const vendorDto = rowToVendorDto(vendor);
-    if (io) {
-      io.emit('vendor_updated', vendorDto);
-    }
-    const after = await get('SELECT * FROM vendors WHERE id = ?', [id]);
-    trackUpdate('vendors', id, before, after, req);
-    res.json({ success: true, vendor: vendorDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
-  }
-});
-
-
-
 
 app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req, res) => {
   try {
@@ -34913,6 +34616,24 @@ const processRoutesModule = registerProcessRoutesModule({
   requirePermission,
   trackCreate,
   trackUpdate,
+});
+
+// The vendor master. After the central /api gate like every module, so its
+// routes are gated as the legacy ones were. `io` is declared further down this
+// file, hence the getter.
+registerVendorRoutes({
+  app,
+  get,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  trashAndDelete,
+  partyDeleteBlockers,
+  getIo: () => io,
+  vendors: vendorsService,
+  challans: challansPorts,
+  itemsPorts,
 });
 
 // Material types carry the one number that turns a sheet's volume into its
