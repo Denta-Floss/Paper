@@ -50,6 +50,10 @@ const registerJobsRoutes = require('./modules/jobs/routes');
 const { createProductionPorts } = require('./modules/production/ports');
 const { createMachineService } = require('./modules/machines/service');
 const registerMachineRoutes = require('./modules/machines/routes');
+// The die master. Its code rules are in modules/dies/die-identity.js; the
+// sibling master "made by" is registered further down.
+const { createDieService } = require('./modules/dies/service');
+const registerDieRoutes = require('./modules/dies/routes');
 // A part's section tree and the entity_links it stands for (057).
 const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
@@ -24565,398 +24569,20 @@ const machinesService = createMachineService({ get, all, run, parseJson });
 const { rowToMachineDto: machineRowToDto } = machinesService;
 const productionPorts = createProductionPorts({ all });
 
-/// Free text in a JSON column, read as the one value it plainly is.
-///
-/// `produced_part_numbers` is declared as JSON, but real rows in a live
-/// workspace hold things like `Penta faceplate pierce` — typed in before the
-/// column meant anything stricter. A bare JSON.parse threw on the first such
-/// row and, because the whole list is mapped in one pass, took the entire
-/// `/api/dies` response down with it: the Dies screen showed nothing at all,
-/// and the error said only "Unexpected token 'P'".
-///
-/// One unparseable row must cost that row's structure, not everybody's data.
-function dieJsonList(value) {
-  const parsed = parseJson(value, null);
-  if (Array.isArray(parsed)) return parsed;
-  if (parsed && typeof parsed === 'object') return [parsed];
-  const text = String(value ?? '').trim();
-  return text ? [text] : [];
-}
-
-/// Dies with the client each belongs to, resolved in one pass for the list.
-///
-/// The die form's Client picker was sent on every save and stored nowhere —
-/// dies have no client column — so the choice vanished on reload. It lives in
-/// entity_links as a single die↔client link and is read back here.
-async function diesWithClients(rows) {
-  const present = rows.filter(Boolean);
-  const clients = present.length
-    ? await requireLinkResolver()('die', present.map((row) => String(row.id)), 'client')
-    : new Map();
-  return present.map((row) => {
-    const link = clients.get(String(row.id));
-    return { ...dieRowToDto(row), clientId: link ? Number(link.id) : null };
-  });
-}
-
-function dieRowToDto(r) {
-  return {
-    id: String(r.id),
-    toolCode: r.tool_code,
-    producedPartNumbers: dieJsonList(r.produced_part_numbers),
-    photoUrls: dieJsonList(r.photo_urls),
-    operationalNotes: r.operational_notes,
-    compatibleMachineGroupIds: dieJsonList(r.compatible_machine_group_ids),
-    storageLocation: r.storage_location,
-    // The die sheet (migrations/048). Null stays null: never measured and
-    // measured at zero are different answers, which is why these are not
-    // `|| 0`.
-    dieType: r.die_type || '',
-    // The words for a type the shop typed. Empty for the built-in four, whose
-    // label is looked up from the slug on either side.
-    dieTypeLabel: r.die_type_label || '',
-    // `madeBy` survives beside `dieMakerId` rather than being replaced by it:
-    // every die that existed before the master has a name and no id, and that
-    // is a legal state. A reader prefers the id and falls back to the text.
-    madeBy: r.made_by || '',
-    dieMakerId: r.die_maker_id == null ? null : Number(r.die_maker_id),
-    poAt: r.po_at || null,
-    dateInAt: r.date_in_at || null,
-    linerSizeNm: r.liner_size_nm == null ? null : Number(r.liner_size_nm),
-    linerSizeUnit: r.liner_size_unit || 'mm',
-    noOfSet: r.no_of_set == null ? null : Number(r.no_of_set),
-    storeArea: r.store_area || '',
-    rackNo: r.rack_no || '',
-    numberOfCavities: r.number_of_cavities,
-    strokeCount: r.stroke_count,
-    maxStrokes: r.max_strokes,
-    strokesPerPiece: r.strokes_per_piece,
-    setupMinutes: r.setup_minutes,
-    reportNotes: r.report_notes || '',
-    physicalSpecs: parseJson(r.physical_specs, {}) ?? {},
-    status: r.status,
-    ownership: r.ownership,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  };
-}
-
-// Dies CRUD Endpoints
-app.get('/api/dies', requirePermission('config.read'), cacheMasterData, async (req, res) => {
-  try {
-    const rows = await all('SELECT * FROM dies ORDER BY created_at DESC');
-    const dies = await diesWithClients(rows);
-    res.json({ success: true, dies, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, dies: [], error: error.message });
-  }
+// The die master left for modules/dies. Its DTO is still called here by the
+// production report and trace, so it comes out of the service under the name
+// they know. A die's client is an entity link, and the links module mounts late,
+// so the link calls are wrapped: they look the function up when they run, and
+// throw if it is not mounted yet, as requireLinkResolver/Writer always have.
+const diesService = createDieService({
+  get,
+  all,
+  run,
+  parseJson,
+  resolveLinks: (...args) => requireLinkResolver()(...args),
+  writeLink: (...args) => requireLinkWriter()(...args),
 });
-
-app.get('/api/dies/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const r = await get('SELECT * FROM dies WHERE id = ?', [req.params.id]);
-    if (!r) {
-      return res.status(404).json({ success: false, die: null, error: 'Die not found' });
-    }
-    const [die] = await diesWithClients([r]);
-    res.json({ success: true, die, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, die: null, error: error.message });
-  }
-});
-
-app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
-  try {
-    const {
-      id,
-      toolCode,
-      producedPartNumbers,
-      photoUrls,
-      operationalNotes,
-      compatibleMachineGroupIds,
-      storageLocation,
-      numberOfCavities,
-      strokeCount,
-      maxStrokes,
-      strokesPerPiece,
-      setupMinutes,
-      reportNotes,
-      physicalSpecs,
-      status,
-      ownership,
-      // The die sheet (migrations/048).
-      dieType,
-      dieTypeLabel,
-      madeBy,
-      dieMakerId,
-      poAt,
-      dateInAt,
-      linerSizeNm,
-      linerSizeUnit,
-      noOfSet,
-      storeArea,
-      rackNo,
-      // Accepted for DERIVATION ONLY and never stored: which part a die makes
-      // is item_dies, not a column here.
-      partCode,
-      // Which client the die belongs to. There is no column: it is a single
-      // die↔client link (entity_links), as a set's group is. Absent keeps it.
-      clientId,
-    } = req.body || {};
-
-    if (clientId !== undefined && clientId !== null && clientId !== '') {
-      const client = await get('SELECT id FROM clients WHERE id = ?', [Number(clientId)]);
-      if (!client) {
-        return res.status(400).json({ success: false, die: null, error: 'That client does not exist.' });
-      }
-    }
-
-    const now = new Date().toISOString();
-    const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
-    const beforeRow = isUpdate
-      ? await get('SELECT * FROM dies WHERE id = ?', [Number(id)])
-      : null;
-    if (isUpdate && !beforeRow) {
-      return res.status(404).json({ success: false, die: null, error: 'Die not found.' });
-    }
-
-    // Every field preserves what is stored when the caller does not mention
-    // it. This route is an upsert that used to write every column from the
-    // body, so the first save from the Dies screen after the wizard filled in
-    // a maker would have blanked it — the photo_url bug, one table over, and
-    // already live for the columns that were here before.
-    const kept = (value, column, fallback = null) =>
-      value !== undefined ? value : (beforeRow ? beforeRow[column] : fallback);
-    const keptText = (value, column) => {
-      const chosen = kept(value, column, '');
-      return chosen === null || chosen === undefined ? '' : String(chosen);
-    };
-    const keptJson = (value, column, empty) =>
-      value !== undefined ? JSON.stringify(value ?? empty) : (beforeRow?.[column] ?? JSON.stringify(empty));
-    const keptInt = (value, column) => {
-      const chosen = kept(value, column);
-      return chosen === null || chosen === undefined || chosen === '' ? null : Number(chosen);
-    };
-
-    const normalizedDieType = String(keptText(dieType, 'die_type')).trim();
-    // A built-in type is named by its slug, so a custom label kept from
-    // before the type was switched would only sit there stale.
-    const normalizedDieTypeLabel = DIE_TYPE_SLUGS.includes(normalizedDieType)
-      ? ''
-      : String(keptText(dieTypeLabel, 'die_type_label')).trim();
-
-    // A typed type is allowed, but only with its label.
-    //
-    // This used to refuse any slug outside the built-in four. It now refuses a
-    // slug it cannot recover a LABEL for, which is the thing that actually
-    // matters: the code is built from the label's initials, so an unknown slug
-    // with no label beside it would store a die whose code can never be
-    // re-derived — and `buildDieCode` would quietly return '' rather than
-    // anything wrong-looking.
-    if (!isUsableDieType(normalizedDieType, normalizedDieTypeLabel)) {
-      return res.status(400).json({
-        success: false,
-        die: null,
-        error: `"${normalizedDieType}" is not a die type, and no name was given for it.`,
-      });
-    }
-
-    // A maker that is not there would fail the foreign key and come back as a
-    // 500; an archived one would be linked silently. Only a NEWLY sent id is
-    // checked — a die keeps the maker it already has even once archived.
-    const resolvedDieMakerId = keptInt(dieMakerId, 'die_maker_id');
-    if (
-      dieMakerId !== undefined &&
-      resolvedDieMakerId !== null &&
-      resolvedDieMakerId !== (beforeRow ? beforeRow.die_maker_id : null)
-    ) {
-      const maker = await get('SELECT id, is_archived FROM die_makers WHERE id = ?', [
-        resolvedDieMakerId,
-      ]);
-      if (!maker || maker.is_archived) {
-        return res.status(400).json({
-          success: false,
-          die: null,
-          code: 'die_maker_unknown',
-          error: maker
-            ? 'That die maker is archived. Unarchive it first, or pick another.'
-            : 'That die maker does not exist.',
-        });
-      }
-    }
-
-    // Derived before the timestamp fallback, so a die made against a part is
-    // named after it rather than after the clock. The fallback stays for a die
-    // created from nothing, which the Dies screen can still do.
-    let finalToolCode = String(toolCode || '').trim();
-    if (!finalToolCode && !isUpdate) {
-      finalToolCode = buildDieCode({
-        dieType: normalizedDieType,
-        dieTypeLabel: normalizedDieTypeLabel,
-        partCode,
-      });
-    }
-    if (!finalToolCode) {
-      finalToolCode = isUpdate ? String(beforeRow.tool_code) : `DIE-${Date.now()}`;
-    }
-
-    // Named before the index refuses it, so the message can say who holds the
-    // code and the client can offer a free one. tool_code is unique across the
-    // whole factory while a part code is unique only within its group, so this
-    // is expected traffic rather than an edge case.
-    const clash = await get(
-      'SELECT id, tool_code FROM dies WHERE UPPER(tool_code) = ? AND (? IS NULL OR id <> ?)',
-      [finalToolCode.toUpperCase(), isUpdate ? Number(id) : null, isUpdate ? Number(id) : null],
-    );
-    if (clash) {
-      const free = await nextFreeDieCode(finalToolCode, {
-        get,
-        excludeId: isUpdate ? Number(id) : null,
-      });
-      return res.status(409).json({
-        success: false,
-        die: null,
-        code: 'die_tool_code_duplicate',
-        suggestedToolCode: free || null,
-        error: free
-          ? `Die code "${finalToolCode}" is already used by die #${clash.id}. Try "${free}".`
-          : `Die code "${finalToolCode}" is already used by die #${clash.id}.`,
-      });
-    }
-
-    const columns = [
-      finalToolCode,
-      keptJson(producedPartNumbers, 'produced_part_numbers', []),
-      keptJson(photoUrls, 'photo_urls', []),
-      kept(operationalNotes, 'operational_notes'),
-      keptJson(compatibleMachineGroupIds, 'compatible_machine_group_ids', []),
-      kept(storageLocation, 'storage_location'),
-      keptInt(numberOfCavities, 'number_of_cavities'),
-      Number(kept(strokeCount, 'stroke_count', 0) || 0),
-      Number(kept(maxStrokes, 'max_strokes', 0) || 0),
-      keptInt(strokesPerPiece, 'strokes_per_piece'),
-      keptInt(setupMinutes, 'setup_minutes'),
-      keptText(reportNotes, 'report_notes'),
-      keptJson(physicalSpecs, 'physical_specs', {}),
-      kept(status, 'status'),
-      kept(ownership, 'ownership'),
-      normalizedDieType,
-      normalizedDieTypeLabel,
-      keptText(madeBy, 'made_by').trim(),
-      resolvedDieMakerId,
-      kept(poAt, 'po_at'),
-      kept(dateInAt, 'date_in_at'),
-      keptInt(linerSizeNm, 'liner_size_nm'),
-      keptText(linerSizeUnit, 'liner_size_unit') || 'mm',
-      keptInt(noOfSet, 'no_of_set'),
-      keptText(storeArea, 'store_area').trim(),
-      keptText(rackNo, 'rack_no').trim(),
-    ];
-
-    let resultId = id;
-    try {
-      if (isUpdate) {
-        await run(
-          `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, die_type = ?, die_type_label = ?, made_by = ?, die_maker_id = ?, po_at = ?, date_in_at = ?, liner_size_nm = ?, liner_size_unit = ?, no_of_set = ?, store_area = ?, rack_no = ?, updated_at = ? WHERE id = ?`,
-          [...columns, now, Number(id)],
-        );
-      } else {
-        const info = await run(
-          `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, strokes_per_piece, setup_minutes, report_notes, physical_specs, status, ownership, die_type, die_type_label, made_by, die_maker_id, po_at, date_in_at, liner_size_nm, liner_size_unit, no_of_set, store_area, rack_no, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [...columns, now, now],
-        );
-        resultId = String(info.lastID);
-      }
-    } catch (error) {
-      // The index is the real guard and catches the race the check above
-      // cannot. Same answer, so it reads the same to the client.
-      if (String(error.message || '').includes('UNIQUE constraint failed: dies.tool_code')) {
-        return res.status(409).json({
-          success: false,
-          die: null,
-          code: 'die_tool_code_duplicate',
-          error: `Die code "${finalToolCode}" was taken a moment ago. Pick another.`,
-        });
-      }
-      throw error;
-    }
-
-    if (clientId !== undefined) {
-      await requireLinkWriter()(
-        'die',
-        String(resultId),
-        'client',
-        clientId === null || clientId === '' ? null : String(clientId),
-      );
-    }
-    const r = await get('SELECT * FROM dies WHERE id = ?', [resultId]);
-    const [die] = await diesWithClients([r]);
-    if (isUpdate) {
-      trackUpdate('dies', resultId, beforeRow, r, req);
-    } else {
-      trackCreate('dies', resultId, r, req);
-    }
-    res.json({ success: true, die, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, die: null, error: error.message });
-  }
-});
-
-app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = req.params.id;
-    const activeRuns = await all("SELECT overrides_json FROM pipeline_runs WHERE status IN ('planned', 'in_progress', 'paused')");
-    for (const run of activeRuns) {
-      if (run.overrides_json && run.overrides_json.includes(`"${id}"`)) {
-        const overrides = JSON.parse(run.overrides_json);
-        if (overrides.dieOverrideByNode && Object.values(overrides.dieOverrideByNode).includes(id)) {
-           return res.status(400).json({ success: false, error: 'Cannot delete die: assigned to an active pipeline run.' });
-        }
-      }
-    }
-    const before = await get('SELECT * FROM dies WHERE id = ?', [id]);
-    await run('DELETE FROM dies WHERE id = ?', [id]);
-    if (purgeEntityLinks) await purgeEntityLinks('die', id);
-    if (purgeEntityVariations) await purgeEntityVariations('die', id);
-    trackDelete('dies', id, before, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Dies Assets
-app.get('/api/dies/:id/assets', requirePermission('config.read'), async (req, res) => {
-  try {
-    const assets = await listAssetsForEntity('die', Number(req.params.id));
-    res.json({ success: true, assets, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, assets: [], error: error.message });
-  }
-});
-
-app.post('/api/dies/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
-  try {
-    const entityId = Number(req.params.id);
-    const intent = await createAssetUploadIntent({
-      ...(req.body || {}),
-      entityType: 'die',
-      entityId,
-    });
-    res.status(intent.alreadyUploaded ? 200 : 201).json({ success: true, intent, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, intent: null, error: error.message });
-  }
-});
-
-app.post('/api/dies/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
-  try {
-    const asset = await completeAssetUpload(req.body || {});
-    res.json({ success: true, asset, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, asset: null, error: error.message });
-  }
-});
+const { rowToDieDto: dieRowToDto } = diesService;
 
 function mergeCustomVariationValueJsonRows(rows) {
   const valuesByKey = new Map();
@@ -33119,12 +32745,6 @@ async function ensureDemoOrderRunLinks() {
 }
 
 const seedEstablishedYear = require('./modules/scenarios/established-year');
-const {
-  DIE_TYPE_SLUGS,
-  buildDieCode,
-  nextFreeDieCode,
-  isUsableDieType,
-} = require('./modules/dies/die-identity');
 const { seedStandardUnitFamilies } = require('./modules/units/service');
 const { registerUnitRoutes } = require('./modules/units/routes');
 const runPendingMigrations = require('./modules/kernel/migration-runner');
@@ -34128,6 +33748,23 @@ registerMachineRoutes({
   trackUpdate,
   trackDelete,
   machines: machinesService,
+  production: productionPorts,
+  listAssetsForEntity,
+  createAssetUploadIntent,
+  completeAssetUpload,
+  getPurgeEntityLinks: () => purgeEntityLinks,
+  getPurgeEntityVariations: () => purgeEntityVariations,
+});
+
+// The die master. Same late-bound purges as machines.
+registerDieRoutes({
+  app,
+  requirePermission,
+  cacheMasterData,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  dies: diesService,
   production: productionPorts,
   listAssetsForEntity,
   createAssetUploadIntent,

@@ -11,28 +11,33 @@
 // ---------------------------------------------------------------------------
 
 function createProductionPorts({ all }) {
-  return {
-    /// Whether a live run (planned, in progress or paused) has this machine
-    /// assigned to any of its nodes. `machineId` is the id as the URL carries
-    /// it, a string: that is how run overrides store it.
-    async machineAssignedToActiveRun(machineId) {
-      const activeRuns = await all(
-        "SELECT overrides_json FROM pipeline_runs WHERE status IN ('planned', 'in_progress', 'paused')",
-      );
-      for (const activeRun of activeRuns) {
-        if (activeRun.overrides_json && activeRun.overrides_json.includes(`"${machineId}"`)) {
-          // Double check by parsing
-          const overrides = JSON.parse(activeRun.overrides_json);
-          if (
-            overrides.machineOverrideByNode &&
-            Object.values(overrides.machineOverrideByNode).includes(machineId)
-          ) {
-            return true;
-          }
+  /// Whether a live run (planned, in progress or paused) names this id in one
+  /// of its per-node overrides. `id` is the id as the URL carries it, a string:
+  /// that is how run overrides store it. `overrideKey` says which map to look in.
+  async function assignedToActiveRun(id, overrideKey) {
+    const activeRuns = await all(
+      "SELECT overrides_json FROM pipeline_runs WHERE status IN ('planned', 'in_progress', 'paused')",
+    );
+    for (const activeRun of activeRuns) {
+      if (activeRun.overrides_json && activeRun.overrides_json.includes(`"${id}"`)) {
+        // Double check by parsing
+        const overrides = JSON.parse(activeRun.overrides_json);
+        if (overrides[overrideKey] && Object.values(overrides[overrideKey]).includes(id)) {
+          return true;
         }
       }
-      return false;
-    },
+    }
+    return false;
+  }
+
+  return {
+    /// Whether a live run has this machine assigned to any of its nodes.
+    machineAssignedToActiveRun: (machineId) =>
+      assignedToActiveRun(machineId, 'machineOverrideByNode'),
+
+    /// Whether a live run has this die assigned to any of its nodes.
+    dieAssignedToActiveRun: (dieId) =>
+      assignedToActiveRun(dieId, 'dieOverrideByNode'),
   };
 }
 
