@@ -31,11 +31,13 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c4["⟳ Change 4: dies leave server.js"]
-        c4a["7 routes moved, none left behind"]
-        c4b["client link goes through late-bound link functions"]
-        c4c["production port grows dieAssignedToActiveRun"]
-        c4d["dies-api test added: 6 tests, 294 total"]
+      c5["⟳ Change 5: clients leave server.js"]
+        c5a["19 routes moved: clients, sub-contractors, B2B portal"]
+        c5b["order counts and placing an order go through a new orders port"]
+        c5c["items port grows developedForCount"]
+        c5d["clients-api test added: 4 tests, 298 total"]
+        c5e["found: portal order placement has never worked, now pinned"]
+      c4["Change 4: dies leave server.js"]
       c3["Change 3: machines leave server.js"]
       c2["Change 2: jobs leave server.js"]
       c1["Change 1: vendors leave server.js"]
@@ -86,13 +88,56 @@ mindmap
           vl3["getVendorForChallan in the challan code"]
       Items evacuated
         i1["modules/items: routes, ports, contract, master-data, section-tree"]
+        i2["⟳ items ports grow developedForCount"]
       Units evacuated
         u1["modules/units: families and seed only; CRUD routes still legacy"]
       Process routes evacuated
         pr1["modules/process_routes: routes, service"]
-      Clients legacy
-        cl1["15 routes in three clusters plus 4 portal routes"]
-        cl2["next: reuses party-kit"]
+      Clients ⟳ evacuated
+        cBiz["Business rules"]
+          cb1["one client per name or GST number; GST is 15 characters"]
+          cb2["a client on a live order keeps its name and GST"]
+          cb3["a client something still names cannot be archived or deleted"]
+          cb4["a save that does not mention a field keeps what is stored"]
+          cb5["the client row and its primary contact land together or not at all"]
+          cb6["a sub-contractor update keeps the fields it did not mention"]
+        cApi["API surface"]
+          ca1["GET /api/clients and /api/clients/:id"]
+          ca2["POST /api/clients, PATCH /api/clients/:id"]
+          ca3["PATCH /api/clients/:id/archive and /unarchive"]
+          ca4["DELETE /api/clients/:id"]
+          ca5["sub-contractors: GET all, GET and POST per client, PUT and DELETE by id"]
+          ca6["portal: credentials, catalogue, login, catalogue read, cart, orders"]
+        cOrch["Orchestration: modules/clients/routes.js and portal-routes.js"]
+          co1["registerClientRoutes ctx"]
+          co2["registerClientPortalRoutes ctx"]
+          co3["archive result is notFound, already, or before and after"]
+          co4["emit client_added, client_updated, client_deleted"]
+        cSvc["Services: modules/clients/service.js"]
+          cs1["createClientService"]
+          cs2["saveClient, findClientDuplicate, getClientRowById, getClientsWithUsage"]
+          cs3["archiveClient, unarchiveClient"]
+          cs4["list, create, update, delete sub-contractor"]
+          cs5["rowToClientDto, rowToSubContractorDto"]
+        cKit["Shared kit: modules/parties"]
+          ck1["party-kit: normalizePartyValue, normalizeGstNumber, createPartyDeleteBlockers"]
+          ck2["contacts.js: the company's people, already out"]
+        cPort["Ports it uses"]
+          cp1["orders.clientLineCount, clientLineCounts, clientLockedLineCount ⟳ new"]
+          cp2["orders.insertOrderHeader, saveOrder ⟳ new"]
+          cp3["items.developedForCount ⟳ new"]
+        cData["Data"]
+          cd1["clients, sub_contractors, party_contacts"]
+          cd2["portal_users, portal_carts, client_portal_catalog"]
+        cTest["Tests"]
+          ct1["clients-api.test.js"]
+          ct2["client-archive.test.js"]
+          ct3["party-contacts.test.js"]
+        cLeft["Still in server.js"]
+          cl1["seeds: seedClientsIfEmpty, ensureClientRecord, ensureDemoClientsPresent"]
+          cl2["delete-request approve and action-center scans read clients"]
+          cl3["KNOWN BUG: POST /api/portal/orders opens a transaction saveOrder cannot nest in"]
+          cl4["portal passwords are stored and compared as plain text"]
       Machines evacuated
         mBiz["Business rules"]
           mb1["a machine number is the type initials plus the next in that type"]
@@ -128,7 +173,7 @@ mindmap
         mLeft["Still in server.js"]
           ml1["GET /api/machines/:id/queue reads pipeline_runs"]
           ml2["direct SQL on machines from item save, barcode resolve, seeds, delete-request approve"]
-      Dies ⟳ evacuated
+      Dies evacuated
         dBiz["Business rules"]
           db1["a die code is the type initials, then D, then the part code"]
           db2["a typed die type is allowed only with its label"]
@@ -157,7 +202,7 @@ mindmap
           ds6["die-identity.js: buildDieCode, nextFreeDieCode, isUsableDieType"]
           ds7["die-makers.js: the made-by master, already out"]
         dPort["Ports it uses"]
-          dp1["production.dieAssignedToActiveRun ⟳ new"]
+          dp1["production.dieAssignedToActiveRun"]
           dp2["links: resolveSoleEntityLinks and setSoleEntityLink, late bound"]
           dp3["assets kernel: listAssetsForEntity, createAssetUploadIntent, completeAssetUpload"]
         dData["Data"]
@@ -176,6 +221,7 @@ mindmap
     Flows
       Orders legacy
         o1["18 core routes, 13 tables"]
+        o2["⟳ orders/ports.js: client line counts, insertOrderHeader, saveOrder"]
       Inventory legacy
         iv1["22 routes, 13 tables, ledger writes"]
       Challans legacy
@@ -183,7 +229,7 @@ mindmap
         ch2["⟳ challans ports file created, vendor reads only"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
-        pd2["⟳ production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, read only"]
+        pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, read only"]
       Jobs evacuated
         jBiz["Business rules"]
           jb1["one assembly job per run and node, never duplicated"]
@@ -232,3 +278,4 @@ mindmap
 | 2 | Jobs leave `server.js`. Adds `modules/jobs/{routes,service}.js` and `modules/people/ports.js`; production's job write and reconciliation's rejection mirror now call the jobs service; adds `jobs-api` test; registry: jobs `evacuated: true` plus its real path segments (meter only). | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 3 | Machines leave `server.js`. Adds `modules/machines/{routes,service}.js` and `modules/production/ports.js`; delete asks production whether a live run holds the machine; orders report and trace keep the DTO via the service; adds `machines-api` test; registry `machines` evacuated. `/queue` deliberately stays. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 4 | Dies leave `server.js`. Adds `modules/dies/{routes,service}.js`; the production port gains `dieAssignedToActiveRun` (machines and dies share one helper); orders report and trace keep the DTO via the service; adds `dies-api` test; registry `dies` evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
+| 5 | Clients leave `server.js`: the master, archive and restore, sub-contractors and the B2B portal. Adds `modules/clients/{routes,portal-routes,service}.js` and `modules/orders/ports.js`; items port gains `developedForCount`; party-kit's delete check now asks ports; adds `clients-api` test; registry `clients` evacuated and claims `portal` plus its three tables. Pins a pre-existing bug: portal order placement always fails on a nested transaction. | API surface (unchanged paths), Orchestration, Services, Ports, Data ownership, Tests |

@@ -24,6 +24,7 @@
 //   groups.ensureReconcilePrimary() -> creates/returns the primary reconcile group
 //   groups.ensureReconcileSub() -> creates/returns a subgroup for reconciliation
 //   ensureForReconcile()        -> creates/returns an item under a reconcile group
+//   developedForCount(clientId) -> how many parts were developed for this client
 // ---------------------------------------------------------------------------
 
 function createItemsPorts(impl) {
@@ -57,6 +58,7 @@ function createItemsPorts(impl) {
       ensureReconcileSub: counted('groups.ensureReconcileSub', impl.ensureReconcileSub),
     },
     ensureForReconcile: counted('ensureForReconcile', impl.ensureForReconcile),
+    developedForCount: counted('developedForCount', impl.developedForCount),
     stats: () => ({ ...counts }),
   };
 }

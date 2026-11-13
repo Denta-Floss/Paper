@@ -54,6 +54,12 @@ const registerMachineRoutes = require('./modules/machines/routes');
 // sibling master "made by" is registered further down.
 const { createDieService } = require('./modules/dies/service');
 const registerDieRoutes = require('./modules/dies/routes');
+// The client master, its sub-contractors and the B2B portal. What it needs from
+// orders (line counts, placing an order) comes through the orders port.
+const { createOrdersPorts } = require('./modules/orders/ports');
+const { createClientService } = require('./modules/clients/service');
+const registerClientRoutes = require('./modules/clients/routes');
+const registerClientPortalRoutes = require('./modules/clients/portal-routes');
 // A part's section tree and the entity_links it stands for (057).
 const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
@@ -2893,38 +2899,6 @@ function rowToInventorySetDto(row, lines = []) {
     // Uploaded against entity_type 'inventory_set', which assets already allow.
     photoUrl: row.photo_url || row.asset_photo_url || null,
     lines,
-  };
-}
-
-function rowToClientDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    name: row.name || '',
-    alias: row.alias || '',
-    gstNumber: row.gst_number || '',
-    address: row.address || '',
-    // The person you ring FIRST about this company. Since 056 these four are a
-    // mirror of the primary row in party_contacts, kept by
-    // modules/parties/contacts.js — `contacts` below is everyone.
-    // Distinct from this client's sub-contractors, who are parties you give
-    // work TO; the same human may legitimately appear in both.
-    contactName: row.contact_name || '',
-    designation: row.designation || '',
-    phone: row.phone || '',
-    email: row.email || '',
-    // Hung on the row by attachClientContacts — one query for any number of
-    // clients. A row read without it lists nobody rather than failing.
-    contacts: Array.isArray(row.contacts) ? row.contacts : [],
-    logoUrl: row.logo_url || '',
-    photoUrl: row.photo_url || '',
-    isArchived: Boolean(row.is_archived),
-    usageCount: row.usage_count || 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
   };
 }
 
@@ -8432,19 +8406,6 @@ async function getGroupRowById(id) {
   );
 }
 
-async function getClientRowById(id) {
-  return get(
-    `
-    SELECT
-      clients.*,
-      (SELECT COUNT(*) FROM order_items WHERE order_items.client_id = clients.id) AS usage_count
-    FROM clients
-    WHERE clients.id = ?
-    `,
-    [id],
-  );
-}
-
 async function getItemVariationRows(itemId) {
   return all(
     `
@@ -9299,225 +9260,6 @@ async function getGroupsWithUsage() {
   `);
 }
 
-async function getClientsWithUsage() {
-  return all(`
-    SELECT
-      clients.*,
-      (SELECT COUNT(*) FROM order_items WHERE order_items.client_id = clients.id) AS usage_count
-    FROM clients
-    ORDER BY clients.is_archived ASC, LOWER(clients.name) ASC
-  `);
-}
-
-async function findClientDuplicate({ name, gstNumber = '', excludeId = null }) {
-  const rows = await all('SELECT id, name, gst_number FROM clients');
-  const normalizedName = normalizePartyValue(name);
-  const normalizedGst = normalizeGstNumber(gstNumber);
-  return rows.find((row) => {
-    if (excludeId != null && row.id === excludeId) {
-      return false;
-    }
-    if (normalizePartyValue(row.name) === normalizedName) {
-      return true;
-    }
-    return normalizedGst && normalizeGstNumber(row.gst_number) === normalizedGst;
-  }) || null;
-}
-
-// Every field but the name is undefined-preserving, and has to be: the PATCH
-// route spreads the request body straight in (`{...req.body, id}`), and four
-// internal callers mention only what they happen to know. Defaulting the rest
-// to '' meant a PATCH about a phone number blanked the address — exactly the
-// photo_url bug, one table over.
-//
-// logoUrl and photoUrl are stored in clients.logo_url / photo_url (migration
-// 030). They used to be accepted and dropped under a comment saying the table
-// had no column for either — it has had both since 030, so a logo uploaded in
-// the editor showed "saved" and was blank on reopen.
-async function saveClient({
-  name,
-  alias,
-  gstNumber,
-  address,
-  // The company's primary contact (migrations/047) — one person, answered here
-  // and shown on every part developed for them.
-  contactName,
-  designation,
-  phone,
-  email,
-  logoUrl,
-  photoUrl,
-  id = null,
-}) {
-  // Read before anything else, so "what is already stored" is the fallback for
-  // every field the caller left out — including the two checks below, which
-  // would otherwise compare against a blank.
-  const existing = id == null ? null : await getClientRowById(id);
-  if (id != null && !existing) {
-    const error = new Error('Client not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const kept = (value, column) =>
-    value !== undefined ? String(value || '').trim() : String(existing?.[column] || '');
-
-  const trimmedName = kept(name, 'name');
-  const trimmedAlias = kept(alias, 'alias');
-  const trimmedAddress = kept(address, 'address');
-  const trimmedContactName = kept(contactName, 'contact_name');
-  const trimmedDesignation = kept(designation, 'designation');
-  const trimmedPhone = kept(phone, 'phone');
-  const trimmedEmail = kept(email, 'email');
-  const trimmedLogoUrl = kept(logoUrl, 'logo_url');
-  const trimmedPhotoUrl = kept(photoUrl, 'photo_url');
-  const trimmedGstNumber =
-    gstNumber !== undefined
-      ? normalizeGstNumber(gstNumber)
-      : normalizeGstNumber(existing?.gst_number || '');
-
-  if (!trimmedName) {
-    // 400, not the 500 a bare Error threw here before: a missing name is the
-    // caller's mistake and the form has to be told so. saveVendor already does
-    // it this way.
-    const error = new Error('name is required.');
-    error.statusCode = 400;
-    throw error;
-  }
-  if (trimmedGstNumber && trimmedGstNumber.length !== 15) {
-    const error = new Error('GST number must be 15 characters.');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const duplicate = await findClientDuplicate({
-    name: trimmedName,
-    gstNumber: trimmedGstNumber,
-    excludeId: id,
-  });
-  if (duplicate) {
-    const duplicateByName =
-      normalizePartyValue(duplicate.name) === normalizePartyValue(trimmedName);
-    const error = new Error(
-      duplicateByName
-        ? 'A client with the same name already exists.'
-        : 'A client with the same GST number already exists.',
-    );
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  // The client row and its primary contact land together or not at all. A
-  // SAVEPOINT rather than BEGIN, because this also runs inside callers that
-  // already hold a transaction, where BEGIN would fail.
-  const together = async (work) => {
-    await run('SAVEPOINT save_client');
-    try {
-      const out = await work();
-      await run('RELEASE save_client');
-      return out;
-    } catch (error) {
-      await run('ROLLBACK TO save_client').catch(() => {});
-      await run('RELEASE save_client').catch(() => {});
-      throw error;
-    }
-  };
-
-  if (id == null) {
-    const newId = await together(async () => {
-    const result = await run(
-      `
-      INSERT INTO clients (name, alias, gst_number, address, contact_name, designation, phone, email, logo_url, photo_url, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-      `,
-      [
-        trimmedName,
-        trimmedAlias,
-        trimmedGstNumber,
-        trimmedAddress,
-        trimmedContactName,
-        trimmedDesignation,
-        trimmedPhone,
-        trimmedEmail,
-        trimmedLogoUrl,
-        trimmedPhotoUrl,
-        now,
-        now,
-      ],
-    );
-    // The form's one person lands on the company's primary contact (056).
-    await partyContacts.syncPrimaryFromFlat({ get, all, run }, result.lastID, {
-      contactName,
-      designation,
-      phone,
-      email,
-    });
-    return result.lastID;
-    });
-    await logChange('clients', newId, 'INSERT');
-    return getClientRowById(newId);
-  }
-
-  if ((existing.usage_count || 0) > 0) {
-    const lockedOrderUsage = Number(
-      (
-        await get(
-          `
-          SELECT COUNT(*) AS count
-          FROM order_items
-          WHERE client_id = ?
-            AND status IN ('inProgress', 'completed', 'delayed')
-          `,
-          [id],
-        )
-      )?.count || 0,
-    );
-    // Name and GST only. A contact person, their designation, phone or email
-    // are not the client's legal identity — those are the facts most likely to
-    // change on a client you are actively working with, and locking them would
-    // make the Contact card unusable precisely where it matters.
-    const identityChanged =
-      normalizePartyValue(existing.name) !== normalizePartyValue(trimmedName) ||
-      normalizeGstNumber(existing.gst_number) !== trimmedGstNumber;
-    if (identityChanged && lockedOrderUsage > 0) {
-      const error = new Error('Used clients cannot change name or GST number.');
-      error.statusCode = 409;
-      throw error;
-    }
-  }
-
-  await together(async () => {
-  await run(
-    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, designation = ?, phone = ?, email = ?, logo_url = ?, photo_url = ?, updated_at = ? WHERE id = ?',
-    [
-      trimmedName,
-      trimmedAlias,
-      trimmedGstNumber,
-      trimmedAddress,
-      trimmedContactName,
-      trimmedDesignation,
-      trimmedPhone,
-      trimmedEmail,
-      trimmedLogoUrl,
-      trimmedPhotoUrl,
-      now,
-      id,
-    ],
-  );
-  // Only the fields the caller sent: a PATCH about the address leaves the
-  // primary contact exactly as it was.
-  await partyContacts.syncPrimaryFromFlat({ get, all, run }, id, {
-    contactName,
-    designation,
-    phone,
-    email,
-  });
-  });
-  await logChange('clients', id, 'UPDATE');
-  return getClientRowById(id);
-}
-
 async function seedClientsIfEmpty() {
   const countRow = await get('SELECT COUNT(*) AS count FROM clients');
   if ((countRow?.count || 0) > 0) {
@@ -9623,7 +9365,28 @@ const {
   findVendorDuplicate,
   saveVendor,
 } = vendorsService;
-const partyDeleteBlockers = createPartyDeleteBlockers({ get, challans: challansPorts });
+// The client master left for modules/clients. Its usage counts and the identity
+// lock read order_items, so they come through the orders port. Callers that
+// still live here (orders, invoices, seeds, tests) get the functions under the
+// names they know.
+const ordersPorts = createOrdersPorts({ get, all, run, saveOrder });
+const clientsService = createClientService({ get, all, run, logChange, orders: ordersPorts });
+const {
+  rowToClientDto,
+  getClientRowById,
+  getClientsWithUsage,
+  findClientDuplicate,
+  saveClient,
+} = clientsService;
+// What names a party on delete: challans for a vendor; order lines and parts for
+// a client. `itemsPorts` is built at the end of this file, so it is reached
+// through a function that looks it up when called.
+const partyDeleteBlockers = createPartyDeleteBlockers({
+  get,
+  challans: challansPorts,
+  orders: ordersPorts,
+  items: { developedForCount: (id) => itemsPorts.developedForCount(id) },
+});
 
 const DEFAULT_COMPANY_PROFILE = Object.freeze({
   companyName: 'Shree Ganesh Metal Works',
@@ -25245,178 +25008,6 @@ app.delete('/api/units/:id', requirePermission('config.write'), async (req, res)
 });
 
 
-app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await partyContacts.attachClientContacts({ all }, await getClientsWithUsage());
-    res.json({ success: true, clients: rows.map(rowToClientDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, clients: [], error: error.message });
-  }
-});
-
-app.get('/api/clients/:id', requirePermission('config.read'), async (req, res) => {
-  try {
-    const row = await get(`
-      SELECT
-        clients.*,
-        (SELECT COUNT(*) FROM order_items WHERE order_items.client_id = clients.id) AS usage_count
-      FROM clients
-      WHERE id = ?
-    `, [req.params.id]);
-    if (!row) {
-      return res.status(404).json({ success: false, client: null, error: 'Not found' });
-    }
-    await partyContacts.attachClientContacts({ all }, row);
-    res.json({ success: true, client: rowToClientDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, client: null, error: error.message });
-  }
-});
-
-// --- SUB-CONTRACTORS ENDPOINTS ---
-
-function rowToSubContractorDto(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    name: row.name,
-    // So a contractor answers the same four questions a client's contact does
-    // (migrations/047) — a part developed for one prints their designation.
-    designation: row.designation || '',
-    phone: row.phone,
-    email: row.email,
-    notes: row.notes,
-    gstNumber: row.gst_number,
-    address: row.address,
-    photoUrl: row.photo_url,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    clientName: row.client_name,
-  };
-}
-
-app.get('/api/sub-contractors', requirePermission('config.read'), async (req, res) => {
-  try {
-    const rows = await get('SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'sub_contractors\'');
-    if (!rows) {
-      return res.json({ success: true, subContractors: [], error: null });
-    }
-    const dataRows = await all(`
-      SELECT s.*, c.name as client_name 
-      FROM sub_contractors s
-      LEFT JOIN clients c ON s.client_id = c.id
-      ORDER BY s.name ASC
-    `);
-    res.json({ success: true, subContractors: dataRows.map(rowToSubContractorDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, subContractors: [], error: error.message });
-  }
-});
-
-app.get('/api/clients/:clientId/sub-contractors', requirePermission('config.read'), async (req, res) => {
-  try {
-    const clientId = Number(req.params.clientId);
-    const rows = await get('SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'sub_contractors\'');
-    if (!rows) {
-      return res.json({ success: true, subContractors: [], error: null });
-    }
-    const dataRows = await all('SELECT * FROM sub_contractors WHERE client_id = ? ORDER BY name ASC', [clientId]);
-    res.json({ success: true, subContractors: dataRows.map(rowToSubContractorDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, subContractors: [], error: error.message });
-  }
-});
-
-app.post('/api/clients/:clientId/sub-contractors', requirePermission('config.write'), async (req, res) => {
-  try {
-    const clientId = Number(req.params.clientId);
-    const { name, designation, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
-    
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({ success: false, error: 'Name is required' });
-    }
-    
-    const now = new Date().toISOString();
-    const result = await run(
-      `INSERT INTO sub_contractors (client_id, name, designation, phone, email, notes, gst_number, address, photo_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, String(name).trim(), designation || '', phone || '', email || '', notes || '', gstNumber || '', address || '', photoUrl || '', now, now]
-    );
-    
-    const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [result.lastID]);
-    trackCreate('sub_contractors', result.lastID, row, req);
-    res.status(201).json({ success: true, subContractor: rowToSubContractorDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, subContractor: null, error: error.message });
-  }
-});
-
-app.put('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { name, designation, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
-    
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({ success: false, error: 'Name is required' });
-    }
-    
-    // Read first: UpdateSubContractorInput omits every field the form did not
-    // touch, and this route used to write all of them with `|| ''` — so a PATCH
-    // about a phone number blanked the GST, the address and the photo. Same
-    // undefined-preserving contract as saveClient and saveItem.
-    const existing = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
-    if (!existing) {
-      return res.status(404).json({ success: false, error: 'Not found' });
-    }
-    const kept = (value, column) =>
-      value !== undefined ? String(value || '').trim() : String(existing[column] || '');
-
-    const now = new Date().toISOString();
-    await run(
-      `UPDATE sub_contractors 
-       SET name = ?, designation = ?, phone = ?, email = ?, notes = ?, gst_number = ?, address = ?, photo_url = ?, updated_at = ?
-       WHERE id = ?`,
-      [
-        String(name).trim(),
-        kept(designation, 'designation'),
-        kept(phone, 'phone'),
-        kept(email, 'email'),
-        kept(notes, 'notes'),
-        kept(gstNumber, 'gst_number'),
-        kept(address, 'address'),
-        kept(photoUrl, 'photo_url'),
-        now,
-        id,
-      ]
-    );
-    
-    const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
-    if (!row) {
-      return res.status(404).json({ success: false, error: 'Not found' });
-    }
-    trackUpdate('sub_contractors', id, existing, row, req);
-    res.json({ success: true, subContractor: rowToSubContractorDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, subContractor: null, error: error.message });
-  }
-});
-
-app.delete('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    // Read before the row is gone — trackDelete needs it for the label, and a
-    // DELETE here is permanent (no trashAndDelete, so nothing reaches the
-    // Action Center to recover the name from).
-    const before = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
-    await run('DELETE FROM sub_contractors WHERE id = ?', [id]);
-    trackDelete('sub_contractors', id, before, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 function actorFromRequest(req) {
   return {
     id: req.user?.id || null,
@@ -29256,161 +28847,6 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
     res.status(error.statusCode || 500).json({ success: false, error: error.message });
   }
 });
-app.post('/api/clients', requirePermission('config.write'), async (req, res) => {
-  try {
-    const client = await saveClient(req.body || {});
-    await partyContacts.attachClientContacts({ all }, client);
-    const clientDto = rowToClientDto(client);
-    if (io) {
-      io.emit('client_added', clientDto);
-    }
-    trackCreate('clients', client.id, client, req);
-    res.status(201).json({ success: true, client: clientDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      client: null,
-      error: error.message,
-    });
-  }
-});
-app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const client = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    if (!client) {
-      return res.status(404).json({ success: false, error: 'Not found' });
-    }
-    if (Number(client.is_archived || 0) === 1) {
-      // Already there. Answering with the row rather than refusing keeps two
-      // clients racing the same button from showing one of them an error.
-      await partyContacts.attachClientContacts({ all }, client);
-      return res.json({ success: true, client: rowToClientDto(client), error: null });
-    }
-    const usage = await get(`
-      SELECT
-        (SELECT COUNT(*) FROM order_items WHERE client_id = ?) AS orderLines,
-        (SELECT COUNT(*) FROM sub_contractors WHERE client_id = ?) AS subContractors
-    `, [id, id]);
-    const blockers = [];
-    const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
-    if (Number(usage?.orderLines || 0) > 0) {
-      blockers.push(plural(Number(usage.orderLines), 'order line'));
-    }
-    if (Number(usage?.subContractors || 0) > 0) {
-      blockers.push(plural(Number(usage.subContractors), 'sub-contractor'));
-    }
-    if (blockers.length > 0) {
-      // It used to refuse with the bare words "Client is in use", which told
-      // nobody what to go and look at.
-      const error = new Error(
-        `"${client.name}" is still named on ${blockers.join(' and ')}. `
-        + 'Archiving it would leave those without a client.',
-      );
-      error.statusCode = 409;
-      error.code = 'client_in_use';
-      throw error;
-    }
-    await run('UPDATE clients SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
-    const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    await partyContacts.attachClientContacts({ all }, after);
-    const clientDto = rowToClientDto(after);
-    // Every other client write broadcasts; this one never did, so an archive
-    // stayed invisible to every other session until it reloaded.
-    if (io) {
-      io.emit('client_updated', clientDto);
-    }
-    trackUpdate('clients', id, client, after, req);
-    // The updated row, so the caller knows the new state without refetching
-    // the whole list.
-    res.json({ success: true, client: clientDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      client: null,
-      code: error.code || null,
-      error: error.message,
-    });
-  }
-});
-
-// Archive was a one-way door: there was no route back, so a client archived by
-// mistake could only be fixed in the database.
-app.patch('/api/clients/:id/unarchive', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const client = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    if (!client) {
-      return res.status(404).json({ success: false, error: 'Not found' });
-    }
-    await run('UPDATE clients SET is_archived = 0, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
-    const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    await partyContacts.attachClientContacts({ all }, after);
-    const clientDto = rowToClientDto(after);
-    if (io) {
-      io.emit('client_updated', clientDto);
-    }
-    trackUpdate('clients', id, client, after, req);
-    res.json({ success: true, client: clientDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      client: null,
-      code: error.code || null,
-      error: error.message,
-    });
-  }
-});
-
-app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    const blockers = await partyDeleteBlockers('clients', id);
-    if (blockers.length > 0) {
-      return res.status(409).json({
-        success: false,
-        code: 'client_in_use',
-        error: `"${before?.name || 'This client'}" is still named on ${blockers.join(' and ')}. `
-          + 'Archive it instead, or move those first.',
-      });
-    }
-    await trashAndDelete('clients', id, req);
-    trackDelete('clients', id, before, req);
-    if (io) {
-      io.emit('client_deleted', { id });
-    }
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    const client = await saveClient({
-      ...(req.body || {}),
-      id,
-    });
-    await partyContacts.attachClientContacts({ all }, client);
-    const clientDto = rowToClientDto(client);
-    if (io) {
-      io.emit('client_updated', clientDto);
-    }
-    const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
-    trackUpdate('clients', id, before, after, req);
-    res.json({ success: true, client: clientDto, error: null });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      client: null,
-      error: error.message,
-    });
-  }
-});
-
 app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req, res) => {
   try {
     const sets = await getInventorySets();
@@ -33334,171 +32770,6 @@ app.get('/api/payroll/runs/:id/summary', requirePermission('config.read'), async
   }
 });
 
-// ==========================================
-// B2B PORTAL APIs
-// ==========================================
-
-app.post('/api/clients/:id/portal-credentials', async (req, res) => {
-  try {
-    const clientId = req.params.id;
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ success: false, error: 'Email and password required' });
-    }
-    const hash = password; // Should hash password in production
-    
-    // UPSERT portal_users for this client
-    const existing = await get('SELECT id FROM portal_users WHERE client_id = ?', [clientId]);
-    if (existing) {
-      await run('UPDATE portal_users SET email = ?, password_hash = ? WHERE client_id = ?', [email, hash, clientId]);
-    } else {
-      await run('INSERT INTO portal_users (client_id, email, password_hash) VALUES (?, ?, ?)', [clientId, email, hash]);
-    }
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/clients/:id/portal-catalog', async (req, res) => {
-  try {
-    const rows = await all('SELECT item_id FROM client_portal_catalog WHERE client_id = ?', [req.params.id]);
-    res.json({ success: true, itemIds: rows.map(r => r.item_id) });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/clients/:id/portal-catalog', async (req, res) => {
-  try {
-    const clientId = req.params.id;
-    const { itemIds } = req.body; // Array of item IDs
-    
-    await run('BEGIN TRANSACTION');
-    await run('DELETE FROM client_portal_catalog WHERE client_id = ?', [clientId]);
-    
-    for (const itemId of itemIds) {
-      await run('INSERT INTO client_portal_catalog (client_id, item_id) VALUES (?, ?)', [clientId, itemId]);
-    }
-    
-    await run('COMMIT');
-    res.json({ success: true });
-  } catch (err) {
-    await run('ROLLBACK');
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/portal/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    
-    // Check real portal users first
-    const user = await get('SELECT * FROM portal_users WHERE email = ? AND is_active = 1', [email]);
-    if (user && user.password_hash === password) { // simple string match for now
-      return res.json({ 
-        success: true, 
-        user: { 
-          id: user.id, 
-          email: user.email,
-          client_id: user.client_id 
-        } 
-      });
-    }
-
-    // Fallback to mock
-    if (email === 'test@example.com' && password === 'password') {
-      return res.json({ success: true, user: { id: 1, name: 'Test Client User', client_id: 1 } });
-    }
-    return res.status(401).json({ success: false, error: 'Invalid credentials' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/portal/catalog', async (req, res) => {
-  try {
-    const clientId = req.query.client_id;
-    if (!clientId) {
-      return res.status(400).json({ success: false, error: 'client_id query parameter is required' });
-    }
-    
-    // Only return items that aren't archived AND are in the client_portal_catalog
-    const items = await all(`
-      SELECT i.id, i.name, i.display_name, i.alias, i.quantity, i.naming_format 
-      FROM items i
-      JOIN client_portal_catalog cpc ON i.id = cpc.item_id
-      WHERE i.is_archived = 0 AND cpc.client_id = ?
-      ORDER BY i.display_name ASC
-    `, [clientId]);
-    
-    res.json({ success: true, items });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/portal/cart', async (req, res) => {
-  try {
-    const { portal_user_id, item_id, quantity } = req.body;
-    if (!portal_user_id || !item_id) {
-      return res.status(400).json({ success: false, error: 'Missing required fields' });
-    }
-    
-    const existing = await get('SELECT * FROM portal_carts WHERE portal_user_id = ? AND item_id = ?', [portal_user_id, item_id]);
-    if (existing) {
-      await run('UPDATE portal_carts SET quantity = quantity + ? WHERE id = ?', [quantity, existing.id]);
-    } else {
-      await run('INSERT INTO portal_carts (portal_user_id, item_id, quantity) VALUES (?, ?, ?)', 
-        [portal_user_id, item_id, quantity]);
-    }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/portal/orders', async (req, res) => {
-  try {
-    const { portal_user_id, items, notes } = req.body;
-    if (!portal_user_id || !items || !items.length) {
-      return res.status(400).json({ success: false, error: 'Missing required fields' });
-    }
-    
-    const pUser = await get('SELECT * FROM portal_users WHERE id = ?', [portal_user_id]);
-    if (!pUser) return res.status(404).json({ success: false, error: 'Portal user not found' });
-    
-    await run('BEGIN TRANSACTION');
-    
-    const orderNo = 'B2B-ORD-' + Date.now();
-    
-    // Create header
-    await run('INSERT INTO order_headers (order_no, client_id, created_at, updated_at) VALUES (?, ?, ?, ?)', 
-      [orderNo, pUser.client_id, new Date().toISOString(), new Date().toISOString()]);
-      
-    // Save items
-    for (const item of items) {
-      await saveOrder({
-        orderNo,
-        clientId: pUser.client_id,
-        itemId: item.item_id,
-        quantity: item.quantity,
-        status: 'draft',
-        createdByPortalUserId: portal_user_id,
-      }, { returnMeta: false });
-    }
-    
-    // Clear cart
-    await run('DELETE FROM portal_carts WHERE portal_user_id = ?', [portal_user_id]);
-    
-    await run('COMMIT');
-    res.json({ success: true, orderNo });
-  } catch (error) {
-    await run('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 app.post('/api/delete-s3-object', requirePermission('config.write'), async (req, res) => {
   try {
     const { url } = req.body;
@@ -33617,6 +32888,13 @@ const itemsPorts = createItemsPorts({
   ensureReconcilePrimary: ensureReconcilePrimaryGroup,
   ensureReconcileSub: ensureReconcileSubGroup,
   ensureForReconcile: ensureReconcileItem,
+  developedForCount: async (clientId) => {
+    const row = await get(
+      'SELECT COUNT(*) AS c FROM items WHERE developed_for_client_id = ?',
+      [clientId],
+    );
+    return Number(row?.c || 0);
+  },
 });
 
 const registerItemsModuleRoutes = require('./modules/items/routes');
@@ -33772,6 +33050,24 @@ registerDieRoutes({
   getPurgeEntityLinks: () => purgeEntityLinks,
   getPurgeEntityVariations: () => purgeEntityVariations,
 });
+
+// The client master and its sub-contractors, then the portal. `io` is declared
+// further down this file, hence the getter.
+registerClientRoutes({
+  app,
+  all,
+  get,
+  requirePermission,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  trashAndDelete,
+  partyDeleteBlockers,
+  partyContacts,
+  getIo: () => io,
+  clients: clientsService,
+});
+registerClientPortalRoutes({ app, get, all, run, orders: ordersPorts });
 
 // Material types carry the one number that turns a sheet's volume into its
 // weight. Named apart from `materials`, which is barcoded physical stock.

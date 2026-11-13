@@ -111,13 +111,19 @@ const MODULES = {
   clients: {
     label: 'Clients',
     group: 'Masters',
-    pathSegments: ['clients', 'sub-contractors'],
+    // `portal` is the B2B buyer's side of a client (login, catalogue, cart,
+    // order). Declared so the meter counts it as this module's; the inline gate
+    // in server.js does not map it, so it keeps the legacy write gate.
+    pathSegments: ['clients', 'sub-contractors', 'portal'],
     recordSource: { table: 'clients', idCol: 'id', label: 'name' },
     // party_contacts (056) is generic over party_type, but only clients use it
     // today and its routes nest under /api/clients, so clients owns it.
     trackTables: { clients: 'Client', party_contacts: 'Contact' },
-    tables: ['clients', 'sub_contractors', 'party_contacts'],
-    evacuated: false,
+    tables: [
+      'clients', 'sub_contractors', 'party_contacts',
+      'portal_users', 'portal_carts', 'client_portal_catalog',
+    ],
+    evacuated: true,
   },
   vendors: {
     label: 'Vendors',

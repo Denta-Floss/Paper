@@ -24,10 +24,11 @@ function normalizeGstNumber(value = '') {
 /// deleted client left order lines, sub-contractors and parts pointing at a
 /// row that was gone.
 ///
-/// A vendor is named by challans, which another module owns, so that count is
-/// asked of the challans port rather than read from its table here. A client's
-/// blockers are still plain SQL: its own move will turn them into ports.
-function createPartyDeleteBlockers({ get, challans }) {
+/// What names a party lives in other modules' tables, so each count is asked of
+/// that module's port rather than read here: a vendor is named by challans, a
+/// client by order lines (orders) and by the parts developed for it (items). Its
+/// sub-contractors are the clients module's own and are read directly.
+function createPartyDeleteBlockers({ get, challans, orders, items }) {
   const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
   return async function partyDeleteBlockers(table, id) {
@@ -37,15 +38,10 @@ function createPartyDeleteBlockers({ get, challans }) {
     };
 
     if (table === 'clients') {
-      const checks = [
-        ['SELECT COUNT(*) AS c FROM order_items WHERE client_id = ?', 'order line'],
-        ['SELECT COUNT(*) AS c FROM sub_contractors WHERE client_id = ?', 'sub-contractor'],
-        ['SELECT COUNT(*) AS c FROM items WHERE developed_for_client_id = ?', 'part'],
-      ];
-      for (const [sql, word] of checks) {
-        const row = await get(sql, [id]);
-        note(Number(row?.c || 0), word);
-      }
+      note(await orders.clientLineCount(id), 'order line');
+      const subs = await get('SELECT COUNT(*) AS c FROM sub_contractors WHERE client_id = ?', [id]);
+      note(Number(subs?.c || 0), 'sub-contractor');
+      note(Number(await items.developedForCount(id)) || 0, 'part');
     } else {
       note(Number(await challans.vendorUsageCount(id)) || 0, 'challan');
     }
