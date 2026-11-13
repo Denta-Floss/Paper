@@ -94,9 +94,13 @@ const MODULES = {
   },
   action_center: {
     label: 'Action Center',
-    pathSegments: ['action-center', 'trash'],
+    // `delete-requests` is declared so the meter counts those routes as this
+    // module's. The central gate still excludes it (reviewers are checked by
+    // delete_requests.review and the write gate), and server.js's inline copy of
+    // the gate maps does not change.
+    pathSegments: ['action-center', 'trash', 'delete-requests'],
     tables: ['delete_requests', 'deleted_records'],
-    evacuated: false,
+    evacuated: true,
   },
   // Masters sub-entities (grouped under "Masters" in the UI tree):
   people: {

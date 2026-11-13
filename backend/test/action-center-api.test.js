@@ -263,15 +263,21 @@ test('approving: a vendor that challans still name is refused by the database as
   assert.equal(still.body.total, 1, 'and the request is still pending');
 });
 
-test('approving: a type the switch does not know is approved and deletes nothing (today)', async (t) => {
+test('approving: a type the switch does not know is refused, and the request stays pending', async (t) => {
   const ctx = await boot();
   t.after(() => closeServer(ctx.server));
   const itemId = await simpleItem(ctx, 'Untouched Item');
   const r = await request(ctx, 'spaceship', String(itemId));
+  // It used to answer 200, mark the request approved and delete nothing, which
+  // read as a successful deletion that had not happened.
   const done = await api(ctx, 'POST', `/api/delete-requests/${r.id}/approve`, {});
-  assert.equal(done.status, 200);
-  assert.equal(done.body.request.status, 'approved');
+  assert.equal(done.status, 400);
+  assert.match(done.body.error, /"spaceship" is not a kind of record/);
   assert.ok(await ctx.backend.get('SELECT id FROM items WHERE id = ?', [itemId]), 'nothing was deleted');
+  const still = await api(ctx, 'GET', '/api/delete-requests?status=pending');
+  assert.equal(still.body.total, 1, 'and it is still waiting for a decision');
+  const prototypeName = await request(ctx, 'constructor', '1');
+  assert.equal((await api(ctx, 'POST', `/api/delete-requests/${prototypeName.id}/approve`, {})).status, 400, 'a name from Object itself is not a kind either');
 });
 
 test('trash: restore refuses what it should, and a live row is never clobbered', async (t) => {
