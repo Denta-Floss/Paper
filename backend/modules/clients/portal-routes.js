@@ -19,9 +19,13 @@
 //
 // Orders are placed through the orders port: the header insert and saveOrder.
 //
-// KNOWN BUG, kept as it was: POST /api/portal/orders opens a transaction and
-// then calls saveOrder, which opens its own, and SQLite refuses the second. Placing
-// a portal order has never succeeded. See clients-api.test.js, which pins it.
+// POST /api/portal/orders owns one transaction (header, lines, cart clear); the
+// line save is told not to open its own. It used to, SQLite refused the nested
+// BEGIN, and placing a portal order never succeeded.
+//
+// Still true: a catalogue item that has variations cannot be ordered here. The
+// portal sends no variation selection and saveOrder requires one, so such an
+// order fails (400 inside, 500 out). Only variation-free items go through.
 // ---------------------------------------------------------------------------
 
 module.exports = function registerClientPortalRoutes(ctx) {
@@ -166,6 +170,9 @@ module.exports = function registerClientPortalRoutes(ctx) {
 
       // Save items
       for (const item of items) {
+        // This route owns the transaction (header, every line and the cart
+        // clear land together), and SQLite has no nested BEGIN, so the line
+        // save must not open its own.
         await orders.saveOrder({
           orderNo,
           clientId: pUser.client_id,
@@ -173,7 +180,7 @@ module.exports = function registerClientPortalRoutes(ctx) {
           quantity: item.quantity,
           status: 'draft',
           createdByPortalUserId: portal_user_id,
-        }, { returnMeta: false });
+        }, { returnMeta: false, useTransaction: false });
       }
 
       // Clear cart

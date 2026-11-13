@@ -259,20 +259,45 @@ test('clients: the portal login, catalogue, cart and order', async (t) => {
   assert.equal((await api(ctx, 'POST', '/api/portal/orders', { portal_user_id: portalUserId, items: [] })).status, 400);
   assert.equal((await api(ctx, 'POST', '/api/portal/orders', { portal_user_id: 999999, items: [{ item_id: itemId, quantity: 1 }] })).status, 404);
 
-  // KNOWN BUG, pinned as it is so the move does not change it: this route opens
-  // a transaction and then calls saveOrder, which opens its own, and SQLite
-  // refuses the second. Placing a portal order has never succeeded. Fixing it
-  // is its own change (drop the route's BEGIN, or give saveOrder a savepoint);
-  // when that lands this test flips to expecting 200, an order, and an empty
-  // cart.
+  // The route owns one transaction (header, every line, cart clear) and tells
+  // saveOrder not to open its own. It used to open one too, SQLite refused the
+  // nested BEGIN, and a portal order never went through.
   const order = await api(ctx, 'POST', '/api/portal/orders', {
     portal_user_id: portalUserId,
     items: [{ item_id: itemId, quantity: 4 }],
   });
-  assert.equal(order.status, 500);
-  assert.match(order.body.error, /cannot start a transaction within a transaction/);
-  const header = await ctx.backend.get("SELECT COUNT(*) AS c FROM order_headers WHERE order_no LIKE 'B2B-ORD-%'");
-  assert.equal(header.c, 0, 'the failed attempt leaves no header behind');
+  assert.equal(order.status, 200, JSON.stringify(order.body));
+  assert.match(order.body.orderNo, /^B2B-ORD-/);
+  const header = await ctx.backend.get('SELECT client_id FROM order_headers WHERE order_no = ?', [order.body.orderNo]);
+  assert.equal(header.client_id, client.id);
+  const line = await ctx.backend.get('SELECT quantity, status FROM order_items WHERE order_no = ?', [order.body.orderNo]);
+  assert.equal(line.quantity, 4);
+  assert.equal(line.status, 'draft');
   const left = await ctx.backend.get('SELECT COUNT(*) AS c FROM portal_carts WHERE portal_user_id = ?', [portalUserId]);
-  assert.equal(left.c, 1, 'and the cart is untouched');
+  assert.equal(left.c, 0, 'placing an order empties the cart');
+});
+
+test('clients: a portal order that fails leaves no header, no line, and the cart as it was', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+  const goodItem = await simpleItemId(ctx, 'Portal Good Item');
+
+  const client = (await api(ctx, 'POST', '/api/clients', { name: 'Rho Buyers' })).body.client;
+  await api(ctx, 'POST', `/api/clients/${client.id}/portal-credentials`, { email: 'rho@pi.test', password: 'pw' });
+  const portalUserId = (await api(ctx, 'POST', '/api/portal/login', { email: 'rho@pi.test', password: 'pw' })).body.user.id;
+  await api(ctx, 'POST', '/api/portal/cart', { portal_user_id: portalUserId, item_id: goodItem, quantity: 2 });
+
+  // The first line is fine; the second names an item that is not there. The
+  // whole order has to go, including the line that would have been saved.
+  const failed = await api(ctx, 'POST', '/api/portal/orders', {
+    portal_user_id: portalUserId,
+    items: [{ item_id: goodItem, quantity: 1 }, { item_id: 999999, quantity: 1 }],
+  });
+  assert.equal(failed.status, 500);
+  const headers = await ctx.backend.get("SELECT COUNT(*) AS c FROM order_headers WHERE order_no LIKE 'B2B-ORD-%'");
+  assert.equal(headers.c, 0, 'no header survives');
+  const lines = await ctx.backend.get("SELECT COUNT(*) AS c FROM order_items WHERE order_no LIKE 'B2B-ORD-%'");
+  assert.equal(lines.c, 0, 'and neither does the line that saved before the failure');
+  const cart = await ctx.backend.get('SELECT quantity FROM portal_carts WHERE portal_user_id = ?', [portalUserId]);
+  assert.equal(cart.quantity, 2, 'the cart is untouched');
 });

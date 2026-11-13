@@ -31,12 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c7["⟳ Change 7: pipelines leave server.js"]
-        c7a["9 routes moved on two route sets that behave differently"]
-        c7b["root /templates keeps its own auth gates in server.js"]
-        c7c["production port grows templateRunCount"]
-        c7d["pipelines-api test added: 4 tests, 307 total"]
-        c7e["round complete: 10 of 15 modules evacuated, server.js 35760 to 33347 lines"]
+      c8["⟳ Change 8: portal orders work"]
+        c8a["saveOrder takes useTransaction, default true"]
+        c8b["the portal route owns one transaction: header, lines, cart clear"]
+        c8c["a failed order now leaves no header, no line, cart intact"]
+        c8d["clients-api: pinned bug flipped, failure test added, 308 total"]
+      c7["Change 7: pipelines leave server.js"]
       c6["Change 6: people leave server.js"]
       c5["Change 5: clients leave server.js"]
       c4["Change 4: dies leave server.js"]
@@ -126,7 +126,7 @@ mindmap
           ck2["contacts.js: the company's people, already out"]
         cPort["Ports it uses"]
           cp1["orders.clientLineCount, clientLineCounts, clientLockedLineCount"]
-          cp2["orders.insertOrderHeader, saveOrder"]
+          cp2["orders.insertOrderHeader, saveOrder with useTransaction false ⟳"]
           cp3["items.developedForCount"]
         cData["Data"]
           cd1["clients, sub_contractors, party_contacts"]
@@ -138,7 +138,7 @@ mindmap
         cLeft["Still in server.js"]
           cl1["seeds: seedClientsIfEmpty, ensureClientRecord, ensureDemoClientsPresent"]
           cl2["delete-request approve and action-center scans read clients"]
-          cl3["KNOWN BUG: POST /api/portal/orders opens a transaction saveOrder cannot nest in"]
+          cl3["a portal order for an item with variations still fails: no selection is sent"]
           cl4["portal passwords are stored and compared as plain text"]
       Machines evacuated
         mBiz["Business rules"]
@@ -288,6 +288,7 @@ mindmap
     Flows
       Orders legacy
         o1["18 core routes, 13 tables"]
+        o3["⟳ saveOrder: useTransaction option, for callers already in a transaction"]
         o2["orders/ports.js: client line counts, insertOrderHeader, saveOrder"]
       Inventory legacy
         iv1["22 routes, 13 tables, ledger writes"]
@@ -348,3 +349,4 @@ mindmap
 | 5 | Clients leave `server.js`: the master, archive and restore, sub-contractors and the B2B portal. Adds `modules/clients/{routes,portal-routes,service}.js` and `modules/orders/ports.js`; items port gains `developedForCount`; party-kit's delete check now asks ports; adds `clients-api` test; registry `clients` evacuated and claims `portal` plus its three tables. Pins a pre-existing bug: portal order placement always fails on a nested transaction. | API surface (unchanged paths), Orchestration, Services, Ports, Data ownership, Tests |
 | 6 | People leave `server.js`: departments, employees and the three login-link routes. Adds `modules/people/{routes,service}.js` beside the existing `ports.js`; auth helpers are handed in by name; adds `people-api` test (the login routes had none); registry `people` evacuated. Payroll stays and stays unclaimed: claiming it would count nine unmoved routes as evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 7 | Pipelines leave `server.js`: both template route sets. Adds `modules/pipelines/{routes,service}.js`; production port gains `templateRunCount`; the root `/templates` auth gates stay where they were; adds `pipelines-api` test; registry `pipelines` evacuated. Round complete: 10 of 15 modules evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
+| 8 | Portal order placement fixed. `saveOrder` gains a `useTransaction` option (default true, so every other caller is unchanged); the portal route passes false and owns one transaction for header, lines and cart clear. The clients test that pinned the bug now expects success, and a new one proves a failed order leaves nothing behind. Still open: items with variations cannot be ordered through the portal. | Orchestration, Services, Tests |

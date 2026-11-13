@@ -16712,7 +16712,13 @@ async function saveOrder({
   sourceSetName = '',
   sourceSetMultiplier = 0,
   actor = null,
-} = {}, { returnMeta = false } = {}) {
+} = {}, {
+  returnMeta = false,
+  // A caller already inside a transaction passes false: SQLite has no nested
+  // BEGIN, and the caller then owns the commit and the rollback. The B2B portal
+  // places a header, several lines and a cart clear as one unit this way.
+  useTransaction = true,
+} = {}) {
   const trimmedOrderNo = String(orderNo || '').trim();
   const normalizedClientId = Number(clientId);
   let normalizedSubContractorId = null;
@@ -16830,7 +16836,7 @@ async function saveOrder({
   await assertPoDocumentsUploaded(poDocumentIds);
 
   const now = new Date().toISOString();
-  await run('BEGIN TRANSACTION');
+  if (useTransaction) await run('BEGIN TRANSACTION');
   try {
     const existing = await get(
       `
@@ -17073,7 +17079,7 @@ async function saveOrder({
     }
 
     const saved = await getOrderRowById(orderId);
-    await run('COMMIT');
+    if (useTransaction) await run('COMMIT');
     if (returnMeta) {
       return {
         orderRow: saved,
@@ -17085,7 +17091,7 @@ async function saveOrder({
     }
     return saved;
   } catch (error) {
-    await run('ROLLBACK');
+    if (useTransaction) await run('ROLLBACK');
     throw error;
   }
 }
