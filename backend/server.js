@@ -60,6 +60,10 @@ const { createOrdersPorts } = require('./modules/orders/ports');
 const { createClientService } = require('./modules/clients/service');
 const registerClientRoutes = require('./modules/clients/routes');
 const registerClientPortalRoutes = require('./modules/clients/portal-routes');
+// The people master. modules/people/ports.js (the read other modules use) was
+// already here; the service and routes join it.
+const { createPeopleService } = require('./modules/people/service');
+const registerPeopleRoutes = require('./modules/people/routes');
 // A part's section tree and the entity_links it stands for (057).
 const sectionTree = require('./modules/items/section-tree');
 const fs = require('fs');
@@ -32232,354 +32236,15 @@ async function resetAndSeedDemoData(scenarioId = 'default') {
   await resyncChangelogCursor();
 }
 
-function rowToDepartmentDto(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    name: row.name,
-    description: row.description || '',
-    photoUrl: row.photo_url || '',
-    isArchived: Number(row.is_archived || 0) === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToEmployeeDto(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    departmentId: row.department_id,
-    name: row.name,
-    role: row.role || '',
-    phone: row.phone || '',
-    aadharNumber: row.aadhar_number || '',
-    aadharPhotoUrl: row.aadhar_photo_url || '',
-    panNumber: row.pan_number || '',
-    panPhotoUrl: row.pan_photo_url || '',
-    address: row.address || '',
-    employeePhotoUrl: row.employee_photo_url || '',
-    employmentType: row.employment_type || 'in-house',
-    status: row.status || 'active',
-    barcodeId: row.barcode_id || '',
-    email: row.email || '',
-    dateOfBirth: row.date_of_birth || '',
-    isArchived: Number(row.is_archived || 0) === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    // Unified People: the linked login/profile account (null when none).
-    userId: row.user_id != null ? Number(row.user_id) : null,
-    login: row.user_id != null
-      ? {
-          userId: Number(row.user_id),
-          email: row.login_email || '',
-          role: row.login_role || '',
-          isActive: Number(row.login_is_active || 0) === 1,
-          // The simple 4-digit staff login code (from DOB, adjusted on clash).
-          loginCode: row.login_mobile_pin || '',
-        }
-      : null,
-  };
-}
-
-// Re-fetch an employee joined to its linked login account (for DTOs that need
-// the unified People shape after a write).
-async function getEmployeeWithLogin(id) {
-  return get(
-    `SELECT e.*, u.email AS login_email, u.role AS login_role,
-            u.is_active AS login_is_active, u.mobile_pin AS login_mobile_pin
-       FROM employees e LEFT JOIN users u ON u.id = e.user_id
-      WHERE e.id = ?`,
-    [id],
-  );
-}
-
-app.get('/api/departments', requirePermission('config.read'), async (_req, res) => {
-  try {
-    const rows = await all('SELECT * FROM departments WHERE is_archived = 0 ORDER BY name ASC');
-    res.json({ success: true, departments: rows.map(rowToDepartmentDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, departments: [], error: error.message });
-  }
+// The people master (departments, employees, their login links) left for
+// modules/people. Nothing else in this file reads its DTOs. The two auth helpers
+// keep a staff member's login code in step with their birth date.
+const peopleService = createPeopleService({
+  get,
+  all,
+  run,
+  auth: { deriveDobPin, nextFreeMobilePin },
 });
-
-app.post('/api/departments', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { name, description = '', photoUrl = '' } = req.body;
-    if (!name || name.trim() === '') {
-      return res.status(400).json({ success: false, error: 'Name is required' });
-    }
-    const now = new Date().toISOString();
-    const result = await run(
-      'INSERT INTO departments (name, description, photo_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [name.trim(), description.trim(), photoUrl, now, now]
-    );
-    const row = await get('SELECT * FROM departments WHERE id = ?', [result.lastID]);
-    trackCreate('departments', result.lastID, row, req);
-    res.status(201).json({ success: true, department: rowToDepartmentDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/departments/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { name, description, photoUrl } = req.body;
-    const existing = await get('SELECT * FROM departments WHERE id = ?', [id]);
-    if (!existing) {
-      return res.status(404).json({ success: false, error: 'Department not found' });
-    }
-    const newName = name !== undefined ? name.trim() : existing.name;
-    const newDesc = description !== undefined ? description.trim() : existing.description;
-    const newPhoto = photoUrl !== undefined ? photoUrl : existing.photo_url;
-    
-    await run(
-      'UPDATE departments SET name = ?, description = ?, photo_url = ?, updated_at = ? WHERE id = ?',
-      [newName, newDesc, newPhoto, new Date().toISOString(), id]
-    );
-    const row = await get('SELECT * FROM departments WHERE id = ?', [id]);
-    trackUpdate('departments', id, existing, row, req);
-    res.json({ success: true, department: rowToDepartmentDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/departments/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    // Employees are owned by their department (employees.department_id is NOT NULL),
-    // so cascade-trash them before removing the department. Cross-entity references
-    // (e.g. an order that names a deleted client) are intentionally left for the
-    // Action Center to surface rather than cascade-deleted.
-    const employees = await all('SELECT * FROM employees WHERE department_id = ?', [id]);
-    const employeeIds = employees.map((r) => r.id);
-    const before = await get('SELECT * FROM departments WHERE id = ?', [id]);
-    await trashAndDeleteMany('employees', employeeIds, req);
-    await trashAndDelete('departments', id, req);
-    // The cascade is part of what happened, so it is part of the record: a
-    // sitting that showed the department going and not the people would read
-    // as complete while being partial.
-    for (const employee of employees) {
-      trackDelete('employees', employee.id, employee, req);
-    }
-    trackDelete('departments', id, before, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/employees', requirePermission('config.read'), async (_req, res) => {
-  try {
-    // Unified People read: each employee joined to its login account (if any).
-    const rows = await all(
-      `SELECT e.*,
-              u.email AS login_email,
-              u.role AS login_role,
-              u.is_active AS login_is_active,
-              u.mobile_pin AS login_mobile_pin
-         FROM employees e
-         LEFT JOIN users u ON u.id = e.user_id
-        WHERE e.is_archived = 0
-        ORDER BY e.name ASC`,
-    );
-    res.json({ success: true, employees: rows.map(rowToEmployeeDto), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, employees: [], error: error.message });
-  }
-});
-
-app.post('/api/employees', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { departmentId, name, role = '', phone = '', aadharNumber = '', aadharPhotoUrl = '', panNumber = '', panPhotoUrl = '', address = '', employeePhotoUrl = '', employmentType = 'in-house', status = 'active', barcodeId = '', email = '', dateOfBirth = '' } = req.body;
-    if (!name || !departmentId) {
-      return res.status(400).json({ success: false, error: 'Name and departmentId are required' });
-    }
-    const now = new Date().toISOString();
-    const result = await run(
-      'INSERT INTO employees (department_id, name, role, phone, aadhar_number, aadhar_photo_url, pan_number, pan_photo_url, address, employee_photo_url, employment_type, status, barcode_id, email, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [departmentId, name.trim(), role.trim(), phone.trim(), aadharNumber.trim(), aadharPhotoUrl, panNumber.trim(), panPhotoUrl, address.trim(), employeePhotoUrl, employmentType, status, barcodeId.trim(), String(email || '').trim(), String(dateOfBirth || '').trim(), now, now]
-    );
-    const row = await getEmployeeWithLogin(result.lastID);
-    trackCreate('employees', result.lastID, row, req);
-    res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.patch('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { name, role, phone, aadharNumber, aadharPhotoUrl, panNumber, panPhotoUrl, address, employeePhotoUrl, employmentType, status, departmentId, barcodeId, email, dateOfBirth } = req.body;
-    const existing = await get('SELECT * FROM employees WHERE id = ?', [id]);
-    if (!existing) {
-      return res.status(404).json({ success: false, error: 'Employee not found' });
-    }
-    const newEmail = email !== undefined ? String(email || '').trim() : (existing.email || '');
-    const newDob = dateOfBirth !== undefined ? String(dateOfBirth || '').trim() : (existing.date_of_birth || '');
-    const newName = name !== undefined ? name.trim() : existing.name;
-    const newRole = role !== undefined ? role.trim() : existing.role;
-    const newPhone = phone !== undefined ? phone.trim() : existing.phone;
-    const newAadhar = aadharNumber !== undefined ? aadharNumber.trim() : existing.aadhar_number;
-    const newAadharPhoto = aadharPhotoUrl !== undefined ? aadharPhotoUrl : existing.aadhar_photo_url;
-    const newPan = panNumber !== undefined ? panNumber.trim() : existing.pan_number;
-    const newPanPhoto = panPhotoUrl !== undefined ? panPhotoUrl : existing.pan_photo_url;
-    const newAddress = address !== undefined ? address.trim() : existing.address;
-    const newEmployeePhoto = employeePhotoUrl !== undefined ? employeePhotoUrl : existing.employee_photo_url;
-    const newEmpType = employmentType !== undefined ? employmentType : existing.employment_type;
-    const newStatus = status !== undefined ? status : existing.status;
-    const newDep = departmentId !== undefined ? departmentId : existing.department_id;
-    const newBarcodeId = barcodeId !== undefined ? barcodeId.trim() : existing.barcode_id;
-
-    await run(
-      'UPDATE employees SET name = ?, role = ?, phone = ?, aadhar_number = ?, aadhar_photo_url = ?, pan_number = ?, pan_photo_url = ?, address = ?, employee_photo_url = ?, employment_type = ?, status = ?, department_id = ?, barcode_id = ?, email = ?, date_of_birth = ?, updated_at = ? WHERE id = ?',
-      [newName, newRole, newPhone, newAadhar, newAadharPhoto, newPan, newPanPhoto, newAddress, newEmployeePhoto, newEmpType, newStatus, newDep, newBarcodeId, newEmail, newDob, new Date().toISOString(), id]
-    );
-    // Keep the staff login code in sync with DOB: if the birth date changed and
-    // this employee has a linked login, re-derive their DDMM code (next free).
-    if (existing.user_id && newDob !== (existing.date_of_birth || '')) {
-      const dobPin = deriveDobPin(newDob);
-      if (dobPin) {
-        const pin = await nextFreeMobilePin(dobPin, existing.user_id);
-        await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [pin, new Date().toISOString(), existing.user_id]);
-      }
-    }
-    const afterRow = await get('SELECT * FROM employees WHERE id = ?', [id]);
-    trackUpdate('employees', id, existing, afterRow, req);
-    const row = await getEmployeeWithLogin(id);
-    res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const before = await get('SELECT * FROM employees WHERE id = ?', [id]);
-    await trashAndDelete('employees', id, req);
-    trackDelete('employees', id, before, req);
-    res.json({ success: true, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ---- Unified People: connect an in-house employee to a login/profile ---------
-
-// Create a brand-new login account for an in-house employee and link it.
-app.post(
-  '/api/employees/:id/create-login',
-  requireRoles('super_admin', 'admin'),
-  requirePermission('users.create_user'),
-  async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const emp = await get('SELECT * FROM employees WHERE id = ?', [id]);
-      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found.' });
-      if ((emp.employment_type || 'in-house') !== 'in-house') {
-        return res.status(400).json({ success: false, error: 'Only in-house employees can be given a login.' });
-      }
-      if (emp.user_id) {
-        return res.status(409).json({ success: false, error: 'This employee already has a linked login.' });
-      }
-      const email = String(req.body?.email || emp.email || '').trim();
-      if (!email) return res.status(400).json({ success: false, error: 'An email is required to create a login.' });
-      const password = String(req.body?.password || '');
-      // Employee logins default to the 'user' (staff) role. Elevating to 'admin'
-      // requires the admin-creation permission; super_admin cannot be created here.
-      let role = String(req.body?.role || 'user').trim();
-      if (role === 'super_admin') {
-        return res.status(403).json({ success: false, error: 'Cannot create a super admin from an employee.' });
-      }
-      if (role === 'admin' && req.user.role !== 'super_admin') {
-        return res.status(403).json({ success: false, error: 'Only a super admin can grant admin access.' });
-      }
-      if (role !== 'admin') role = 'user';
-
-      const user = await createUserAccount({
-        name: emp.name,
-        email,
-        password,
-        role,
-        createdByUserId: req.user.id,
-      });
-      await run('UPDATE employees SET user_id = ?, email = ?, updated_at = ? WHERE id = ?', [
-        user.id, email, new Date().toISOString(), id,
-      ]);
-      // Simple staff login: use the employee's DDMM (from DOB) as their 4-digit
-      // code, or the next free code if that one is already taken.
-      const dobPin = deriveDobPin(emp.date_of_birth);
-      if (dobPin) {
-        const pin = await nextFreeMobilePin(dobPin, user.id);
-        await run('UPDATE users SET mobile_pin = ? WHERE id = ?', [pin, user.id]);
-      }
-      await logAuthEvent({
-        eventType: 'user_created',
-        actorUserId: req.user.id,
-        targetUserId: user.id,
-        ipAddress: getRequestIp(req),
-        userAgent: getRequestUserAgent(req),
-        metadata: { role, viaEmployee: id },
-      });
-      const row = await getEmployeeWithLogin(id);
-      res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, error: error.message });
-    }
-  },
-);
-
-// Link an in-house employee to an EXISTING login account.
-app.post(
-  '/api/employees/:id/link-login',
-  requireRoles('super_admin', 'admin'),
-  requirePermission('config.write'),
-  async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const userId = Number(req.body?.userId);
-      const emp = await get('SELECT * FROM employees WHERE id = ?', [id]);
-      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found.' });
-      if ((emp.employment_type || 'in-house') !== 'in-house') {
-        return res.status(400).json({ success: false, error: 'Only in-house employees can be linked to a login.' });
-      }
-      if (!Number.isFinite(userId)) return res.status(400).json({ success: false, error: 'userId is required.' });
-      const user = await get('SELECT id FROM users WHERE id = ?', [userId]);
-      if (!user) return res.status(404).json({ success: false, error: 'Login account not found.' });
-      const other = await get('SELECT id FROM employees WHERE user_id = ? AND id != ?', [userId, id]);
-      if (other) return res.status(409).json({ success: false, error: 'That login is already linked to another employee.' });
-
-      await run('UPDATE employees SET user_id = ?, updated_at = ? WHERE id = ?', [userId, new Date().toISOString(), id]);
-      const row = await getEmployeeWithLogin(id);
-      res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, error: error.message });
-    }
-  },
-);
-
-// Unlink an employee from its login (the login account itself is kept).
-app.post(
-  '/api/employees/:id/unlink-login',
-  requireRoles('super_admin', 'admin'),
-  requirePermission('config.write'),
-  async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const emp = await get('SELECT * FROM employees WHERE id = ?', [id]);
-      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found.' });
-      await run('UPDATE employees SET user_id = NULL, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
-      const row = await getEmployeeWithLogin(id);
-      res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, error: error.message });
-    }
-  },
-);
 
 app.post('/api/mobile/stage-item', requireAuth, async (req, res) => {
   try {
@@ -33068,6 +32733,30 @@ registerClientRoutes({
   clients: clientsService,
 });
 registerClientPortalRoutes({ app, get, all, run, orders: ordersPorts });
+
+// Departments, employees and the login links. The auth kernel is still defined
+// in this file, so the pieces the login routes need are handed in by name.
+registerPeopleRoutes({
+  app,
+  run,
+  get,
+  requirePermission,
+  requireRoles,
+  trackCreate,
+  trackUpdate,
+  trackDelete,
+  trashAndDelete,
+  trashAndDeleteMany,
+  people: peopleService,
+  auth: {
+    createUserAccount,
+    deriveDobPin,
+    nextFreeMobilePin,
+    logAuthEvent,
+    getRequestIp,
+    getRequestUserAgent,
+  },
+});
 
 // Material types carry the one number that turns a sheet's volume into its
 // weight. Named apart from `materials`, which is barcoded physical stock.

@@ -31,12 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c5["⟳ Change 5: clients leave server.js"]
-        c5a["19 routes moved: clients, sub-contractors, B2B portal"]
-        c5b["order counts and placing an order go through a new orders port"]
-        c5c["items port grows developedForCount"]
-        c5d["clients-api test added: 4 tests, 298 total"]
-        c5e["found: portal order placement has never worked, now pinned"]
+      c6["⟳ Change 6: people leave server.js"]
+        c6a["11 routes moved: departments, employees, login links"]
+        c6b["auth helpers handed in by name, not imported"]
+        c6c["payroll stays in server.js and is NOT claimed in the registry"]
+        c6d["people-api test added: 5 tests, 303 total"]
+      c5["Change 5: clients leave server.js"]
       c4["Change 4: dies leave server.js"]
       c3["Change 3: machines leave server.js"]
       c2["Change 2: jobs leave server.js"]
@@ -88,12 +88,12 @@ mindmap
           vl3["getVendorForChallan in the challan code"]
       Items evacuated
         i1["modules/items: routes, ports, contract, master-data, section-tree"]
-        i2["⟳ items ports grow developedForCount"]
+        i2["items ports grow developedForCount"]
       Units evacuated
         u1["modules/units: families and seed only; CRUD routes still legacy"]
       Process routes evacuated
         pr1["modules/process_routes: routes, service"]
-      Clients ⟳ evacuated
+      Clients evacuated
         cBiz["Business rules"]
           cb1["one client per name or GST number; GST is 15 characters"]
           cb2["a client on a live order keeps its name and GST"]
@@ -123,9 +123,9 @@ mindmap
           ck1["party-kit: normalizePartyValue, normalizeGstNumber, createPartyDeleteBlockers"]
           ck2["contacts.js: the company's people, already out"]
         cPort["Ports it uses"]
-          cp1["orders.clientLineCount, clientLineCounts, clientLockedLineCount ⟳ new"]
-          cp2["orders.insertOrderHeader, saveOrder ⟳ new"]
-          cp3["items.developedForCount ⟳ new"]
+          cp1["orders.clientLineCount, clientLineCounts, clientLockedLineCount"]
+          cp2["orders.insertOrderHeader, saveOrder"]
+          cp3["items.developedForCount"]
         cData["Data"]
           cd1["clients, sub_contractors, party_contacts"]
           cd2["portal_users, portal_carts, client_portal_catalog"]
@@ -213,15 +213,51 @@ mindmap
           dt3["die-makers.test.js"]
         dLeft["Still in server.js"]
           dl1["direct SQL on dies from item save, photo sync, barcode resolve, seeds, delete-request approve"]
-      People legacy
-        p1["departments, employees, login; payroll unclaimed by registry"]
-        p2["people/ports.js: employeeIdByBarcode, read only"]
+      People ⟳ evacuated
+        pBiz["Business rules"]
+          pb1["a department needs a name; an employee needs a name and a department"]
+          pb2["deleting a department trashes its employees with it, and records both in Track"]
+          pb3["only in-house employees can have a login"]
+          pb4["an employee has at most one login, and a login at most one employee"]
+          pb5["a staff login code is the birth date as DDMM, or the next free code"]
+          pb6["a new birth date re-derives the code of a linked login"]
+          pb7["only a super admin can grant admin; a super admin cannot be made from an employee"]
+        pApi["API surface"]
+          pa1["GET, POST /api/departments; PATCH, DELETE /api/departments/:id"]
+          pa2["GET, POST /api/employees; PATCH, DELETE /api/employees/:id"]
+          pa3["POST /api/employees/:id/create-login"]
+          pa4["POST /api/employees/:id/link-login and /unlink-login"]
+        pOrch["Orchestration: modules/people/routes.js"]
+          po1["registerPeopleRoutes ctx"]
+          po2["login routes add requireRoles and a specific permission on top of the gate"]
+          po3["department delete cascades through trashAndDeleteMany"]
+        pSvc["Services: modules/people/service.js"]
+          ps1["createPeopleService"]
+          ps2["createDepartment, updateDepartment, listDepartments, getDepartmentWithEmployees"]
+          ps3["createEmployee, updateEmployee, listEmployees, getEmployee"]
+          ps4["getEmployeeWithLogin: an employee joined to its account"]
+          ps5["rowToDepartmentDto, rowToEmployeeDto"]
+        pPort["Ports"]
+          pp1["offers: people.employeeIdByBarcode, used by jobs"]
+          pp2["uses: auth kernel, handed in by name"]
+          pp3["createUserAccount, logAuthEvent, getRequestIp, getRequestUserAgent"]
+          pp4["deriveDobPin, nextFreeMobilePin"]
+        pData["Data"]
+          pd1["employees, departments"]
+          pd2["touches users: mobile_pin"]
+        pTest["Tests"]
+          pt1["people-api.test.js"]
+          pt2["activity-sittings.test.js"]
+        pLeft["Still in server.js"]
+          pl1["payroll: 9 routes at /api/payroll, not claimed by the registry"]
+          pl2["freelancer card route reads employees through the people port"]
+          pl3["seeds, delete-request approve and the sandbox dashboard read employees"]
       Pipelines legacy
         pl1["templates at the app root bypass the /api gate"]
     Flows
       Orders legacy
         o1["18 core routes, 13 tables"]
-        o2["⟳ orders/ports.js: client line counts, insertOrderHeader, saveOrder"]
+        o2["orders/ports.js: client line counts, insertOrderHeader, saveOrder"]
       Inventory legacy
         iv1["22 routes, 13 tables, ledger writes"]
       Challans legacy
@@ -279,3 +315,4 @@ mindmap
 | 3 | Machines leave `server.js`. Adds `modules/machines/{routes,service}.js` and `modules/production/ports.js`; delete asks production whether a live run holds the machine; orders report and trace keep the DTO via the service; adds `machines-api` test; registry `machines` evacuated. `/queue` deliberately stays. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 4 | Dies leave `server.js`. Adds `modules/dies/{routes,service}.js`; the production port gains `dieAssignedToActiveRun` (machines and dies share one helper); orders report and trace keep the DTO via the service; adds `dies-api` test; registry `dies` evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
 | 5 | Clients leave `server.js`: the master, archive and restore, sub-contractors and the B2B portal. Adds `modules/clients/{routes,portal-routes,service}.js` and `modules/orders/ports.js`; items port gains `developedForCount`; party-kit's delete check now asks ports; adds `clients-api` test; registry `clients` evacuated and claims `portal` plus its three tables. Pins a pre-existing bug: portal order placement always fails on a nested transaction. | API surface (unchanged paths), Orchestration, Services, Ports, Data ownership, Tests |
+| 6 | People leave `server.js`: departments, employees and the three login-link routes. Adds `modules/people/{routes,service}.js` beside the existing `ports.js`; auth helpers are handed in by name; adds `people-api` test (the login routes had none); registry `people` evacuated. Payroll stays and stays unclaimed: claiming it would count nine unmoved routes as evacuated. | API surface (unchanged paths), Orchestration, Services, Ports, Tests |
