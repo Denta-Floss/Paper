@@ -45,8 +45,10 @@ const MODULES = {
       'po_documents', 'po_upload_sessions',
       'procurement_requests', 'procurement_request_lines',
       'procurement_request_line_sources', 'procurement_activity_log',
+      // What came back against an order. It belonged to no module until now.
+      'order_returns',
     ],
-    evacuated: false,
+    evacuated: true,
   },
   inventory: {
     label: 'Inventory',
