@@ -31,11 +31,11 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c14["⟳ Change 14: orders step 1, the service"]
-        c14a["27 functions moved: DTOs, save, lifecycle, activity, list and filter, PO documents"]
-        c14b["built before the clients service, because the orders port hands saveOrder to the portal at load"]
-        c14c["routes still in server.js, calling the old names"]
-        c14d["orders-routes test added first: 7 tests, 332 total"]
+      c15["⟳ Change 15: orders step 2, the line routes"]
+        c15a["14 routes moved: list, one, create, edit, lifecycle, delete, activity, history, requirements, PO documents and uploads"]
+        c15b["oddities kept and pinned: PUT answers a raw row, DELETE says success for an unknown id"]
+        c15c["DELETE still reaches into production tables; a production port comes with production"]
+      c14["Change 14: orders step 1, the service"]
       c13["Change 13: action center step 2, delete requests and the scan"]
       c12["Change 12: action center step 1, the trash"]
       c11["Change 11: inventory step 4, stock overview and the flag"]
@@ -292,8 +292,17 @@ mindmap
           pll2["createRunFromTemplate and seeds read templates"]
           pll3["two implementations not merged; that is a decision, not a move"]
     Flows
-      Orders ⟳ moving, step 1 of 3
-        o1["22 routes, 13 tables; routes still in server.js"]
+      Orders ⟳ moving, step 2 of 3
+        o1["22 routes, 13 tables; report routes still in server.js"]
+        oApi["API surface, moved ⟳"]
+          oa1["GET, POST /api/orders; GET, PUT, DELETE /api/orders/:id"]
+          oa2["PATCH /api/orders/:id/lifecycle"]
+          oa3["GET activity, status-history, material-requirements"]
+          oa4["PO: documents GET and POST, uploads intent and complete, read-url"]
+        oOrch["Orchestration: modules/orders/routes.js ⟳"]
+          oo1["registerOrderRoutes ctx"]
+          oo2["emits orders_changed on create, edit and delete only"]
+          oo3["DELETE: returns consumed stock through inventoryPorts, dissolves the line's runs"]
         oSvc["Services: modules/orders/service.js ⟳"]
           os1["createOrdersService"]
           os2["saveOrder with useTransaction, updateOrderLifecycle, ORDER_LIFECYCLE_TRANSITIONS"]
@@ -528,3 +537,4 @@ mindmap
 | 12 | Action center step 1 of 2: the trash. Adds `modules/action_center/{routes,service}.js`; `trashAndDelete`, `trashAndDeleteMany`, listing and restore move, and the nine call sites keep their names via a destructure. Two dead parameters leave the items module. The ten-test action-center suite was written first against the old code. Registry unchanged until step 2. | API surface (unchanged paths), Orchestration, Services, Tests |
 | 13 | Action center step 2 of 2: delete requests and the integrity scan. `modules/action_center/delete-requests.js` holds list, create, approve, reject, export and the ten-query scan; six routes move and the registry flags action_center evacuated (and claims `delete-requests`, meter only). The one behaviour change: approving a request whose kind of record is unknown now returns 400 and leaves it pending, where it used to say approved and delete nothing. The raw-delete gap for vendor, machine, die and user approvals is unchanged and pinned. Territory meter: 12 of 15. | API surface (unchanged paths), Orchestration, Services, Business rules, Tests |
 | 14 | Orders step 1 of 3: the service. `modules/orders/service.js` takes the order DTOs, `saveOrder`, the lifecycle, the activity log and status history, the list/filter/count and shared SELECT, unit selection and the PO document functions (27 functions, about 1,270 lines). It is built before the clients service because the orders port hands `saveOrder` to the portal at load. Routes still in `server.js`. Seven route tests were committed first. | Services, Tests |
+| 15 | Orders step 2 of 3: the line routes. `modules/orders/routes.js` takes 14 routes (list, one, create, edit, lifecycle, delete, activity, status history, material requirements, PO documents and uploads). Verbatim, oddities pinned. DELETE still runs SQL on production's run tables until production has a write port. | API surface (unchanged paths), Orchestration |
