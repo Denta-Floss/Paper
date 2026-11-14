@@ -31,10 +31,11 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c16["⟳ Change 16: orders step 3, the report routes and the flag"]
-        c16a["6 routes moved: fulfilment, pipeline-runs, production-report, returns read and write, trace"]
-        c16b["orders evacuated: 13 of 15 modules, server.js 28019 lines"]
-        c16c["two order-path routes stay for challans: delivery-challans and reconciliation"]
+      c17["⟳ Change 17: a server with no database file now starts"]
+        c17a["migrate.js skips a migration whose table or column is not created yet"]
+        c17b["initDb then creates the schema and runs every migration again"]
+        c17c["empty-database-boot test added, 333 total"]
+      c16["Change 16: orders step 3, the report routes and the flag"]
       c15["Change 15: orders step 2, the line routes"]
       c14["Change 14: orders step 1, the service"]
       c13["Change 13: action center step 2, delete requests and the scan"]
@@ -54,6 +55,10 @@ mindmap
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
       k3["contracts.js, barcodes.js, event-logger.js"]
+      k4["boot order ⟳"]
+        k4a["startServer: runMigrations in migrate.js, then initDb"]
+        k4b["initDb: inline CREATE TABLEs, then runPendingMigrations in modules/kernel/migration-runner.js"]
+        k4c["two ledgers: _migrations and schema_migrations"]
     Masters
       Vendors evacuated
         vBiz["Business rules"]
@@ -293,7 +298,7 @@ mindmap
           pll2["createRunFromTemplate and seeds read templates"]
           pll3["two implementations not merged; that is a decision, not a move"]
     Flows
-      Orders ⟳ evacuated
+      Orders evacuated
         oBiz["Business rules"]
           ob1["adding the same line again merges into it and adds the quantity"]
           ob2["a line names a client, an item and a variation; a simple item needs none"]
@@ -307,11 +312,11 @@ mindmap
           oa2["PATCH /api/orders/:id/lifecycle"]
           oa3["GET activity, status-history, material-requirements"]
           oa4["PO: documents GET and POST, uploads intent and complete, read-url"]
-          oa5["reports: fulfilment, pipeline-runs, production-report, trace ⟳"]
-          oa6["returns: GET and POST by order number ⟳"]
+          oa5["reports: fulfilment, pipeline-runs, production-report, trace"]
+          oa6["returns: GET and POST by order number"]
         oOrch["Orchestration"]
           oo1["modules/orders/routes.js: registerOrderRoutes, the lines"]
-          oo2["modules/orders/reports.js: registerOrderReportRoutes, read models and returns ⟳"]
+          oo2["modules/orders/reports.js: registerOrderReportRoutes, read models and returns"]
           oo3["emits orders_changed on create, edit and delete only"]
         oSvc["Services: modules/orders/service.js"]
           os1["createOrdersService"]
@@ -320,14 +325,14 @@ mindmap
           os4["insertOrderActivityLog, getOrderActivity, getOrderStatusHistory"]
           os5["PO documents: createPoUploadIntent, completePoUpload, linkPoDocumentsToOrder, getPoDocumentsForOrder, createPoDocumentReadUrl"]
           os6["resolveOrderUnitSelection; rowToOrderDto and three more DTOs"]
-          os7["reports.js: orderReturnRowToDto, nextOrderReturnNo ⟳"]
+          os7["reports.js: orderReturnRowToDto, nextOrderReturnNo"]
         oPort["Ports"]
           op1["offers: client line counts, insertOrderHeader, saveOrder, customVariationValueRows"]
           op2["uses: inventoryPorts.movements.applyCore, clients getClientRowById, items resolveOrderVariationSelection"]
-          op3["uses by name from production: getMergedNodeMetrics, rowToRun, machine and die DTOs ⟳"]
+          op3["uses by name from production: getMergedNodeMetrics, rowToRun, machine and die DTOs"]
         oData["Data"]
           od1["order_headers, order_items, order_activity_log, order_status_history"]
-          od2["order_material_requirements, order_pipeline_assignments, order_returns ⟳"]
+          od2["order_material_requirements, order_pipeline_assignments, order_returns"]
           od3["order_po_documents, po_documents, po_upload_sessions"]
           od4["procurement tables: schema only, no code"]
         oTest["Tests"]
@@ -487,3 +492,4 @@ mindmap
 | 14 | Orders step 1 of 3: the service. `modules/orders/service.js` takes the order DTOs, `saveOrder`, the lifecycle, the activity log and status history, the list/filter/count and shared SELECT, unit selection and the PO document functions (27 functions, about 1,270 lines). It is built before the clients service because the orders port hands `saveOrder` to the portal at load. Routes still in `server.js`. Seven route tests were committed first. | Services, Tests |
 | 15 | Orders step 2 of 3: the line routes. `modules/orders/routes.js` takes 14 routes (list, one, create, edit, lifecycle, delete, activity, status history, material requirements, PO documents and uploads). Verbatim, oddities pinned. DELETE still runs SQL on production's run tables until production has a write port. | API surface (unchanged paths), Orchestration |
 | 16 | Orders step 3 of 3: `modules/orders/reports.js` takes fulfilment, pipeline-runs, production-report, returns (read and write) and trace, with production's helpers injected by name. Registry: orders `evacuated: true` and claims `order_returns`. Territory: 13 of 15; `server.js` is 28,019 lines. Two order-path routes (delivery-challans, reconciliation) stay for the challans round. | API surface (unchanged paths), Orchestration, Data ownership |
+| 17 | A server started with no database file failed with "no such table: order_items": the old runner in `migrate.js` runs before `initDb` creates the schema, and migration 007 alters a table that is not there yet. It now skips, unrecorded, any migration that finds a missing table or column; `initDb` then creates the schema and its own runner applies every migration. Existing databases are unaffected. | Kernel (boot), Tests |

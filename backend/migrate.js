@@ -81,6 +81,17 @@ async function runMigrations() {
               
               console.log(`Migration ${file} applied successfully.`);
             } catch (migrationErr) {
+              // This runner goes BEFORE initDb creates the schema, so on an
+              // empty database a migration that alters a table finds no table
+              // (or a column initDb adds) and used to stop the whole boot ("no
+              // such table: order_items" at 007). That is not a failure: initDb creates the table next
+              // and then runs every migration again, statement by statement,
+              // through modules/kernel/migration-runner.js, which is where it
+              // takes effect. So it is left unrecorded here and the boot goes on.
+              if (/no such (table|column)/i.test(String(migrationErr && migrationErr.message))) {
+                console.warn(`Migration ${file}: ${migrationErr.message} — schema not created yet, left for the post-schema run.`);
+                continue;
+              }
               console.error(`Migration ${file} failed:`, migrationErr);
               db.close();
               return reject(migrationErr);
