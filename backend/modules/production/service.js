@@ -24,8 +24,10 @@ const barcodes = require('../../kernel/barcodes');
 function createProductionService({
   all,
   get,
+  getItemSelectionSnapshot,
   getMaterialRowByBarcode,
   inventoryPorts,
+  itemsPorts,
   jobsService,
   parseJson,
   recordLedgerEvent,
@@ -763,6 +765,387 @@ function createProductionService({
     }
   }
 
+  /// Sets one node's status on a run, with the duration, batch quantity and
+  /// machine recorded beside it, and does what follows from it:
+  ///   - a node reaching an Assembly step raises its job in the freelancer pool,
+  ///     once per run and node however often the status is set again;
+  ///   - when every node is done or skipped the run is completed, booked once as
+  ///     a production run under a code made from its whole id, and, when the
+  ///     output item and variation are known, minted as a lot in inventory with
+  ///     an OUTPUT_MINTED custody event.
+  /// Answers `{ run }`, or `{ refusal: { status, body } }` for an unknown run or
+  /// a request with no node or status. Moved whole from the route handler.
+  async function setNodeStatus({ runId, payload = {}, actor = null }) {
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
+    if (!runRow) {
+      return { refusal: { status: 404, body: { success: false, run: null, error: 'Run not found.' } } };
+    }
+
+    const nodeId = payload.nodeId;
+    if (!nodeId || !payload.status) {
+      return { refusal: { status: 400, body: {
+        success: false,
+        run: null,
+        error: 'nodeId and status are required.',
+      } } };
+    }
+
+    const nodeStatuses = parseJson(runRow.node_status_json, {});
+    nodeStatuses[nodeId] = payload.status;
+
+    const overrides = parseJson(runRow.overrides_json, {
+      actualDurationHoursByNode: {},
+      batchQuantityByNode: {},
+      machineOverrideByNode: {},
+    });
+
+    if (payload.actualDurationHours !== undefined && payload.actualDurationHours !== null) {
+      overrides.actualDurationHoursByNode[nodeId] = Number(payload.actualDurationHours);
+    }
+    if (payload.batchQuantity !== undefined && payload.batchQuantity !== null) {
+      overrides.batchQuantityByNode[nodeId] = Number(payload.batchQuantity);
+    }
+    if (payload.machineOverride) {
+      overrides.machineOverrideByNode[nodeId] = payload.machineOverride;
+    }
+
+    await run(
+      'UPDATE pipeline_runs SET node_status_json = ?, overrides_json = ? WHERE id = ?',
+      [JSON.stringify(nodeStatuses), JSON.stringify(overrides), runId],
+    );
+
+    // Push to freelancer pool if Assembly node is reached
+    const templateRowNode = await get('SELECT * FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+    if (templateRowNode && (payload.status === 'ready' || payload.status === 'active' || payload.status === 'queued')) {
+      const tpl = rowToTemplate(templateRowNode);
+      const targetNode = tpl.nodes.find(n => n.id === nodeId);
+      if (targetNode && targetNode.processType === 'Assembly') {
+        const qty = overrides.batchQuantityByNode[nodeId] || 1;
+        
+        // An assembly step is a merge point with no bound item of its own —
+        // parts arrive on the flows from the steps feeding it, and the work is
+        // manual. So the job is raised against what the run is actually
+        // building: the order line it was started for. Only if the run is not
+        // order-linked do we fall back to the upstream feeders' output items,
+        // and finally to the node's own binding for older templates that still
+        // carry one.
+        let itemId = 0;
+        const orderLink = await get(
+          `SELECT i.item_id
+             FROM order_pipeline_assignments opa
+             JOIN order_items i ON opa.order_item_id = i.id
+            WHERE opa.pipeline_run_id = ?
+            LIMIT 1`,
+          [runRow.id],
+        );
+        if (orderLink?.item_id) itemId = orderLink.item_id;
+
+        if (!itemId) {
+          const feederIds = new Set(
+            (tpl.flows || [])
+              .filter((f) => f.toNodeId === nodeId)
+              .map((f) => f.fromNodeId),
+          );
+          for (const feeder of (tpl.nodes || [])) {
+            if (!feederIds.has(feeder.id)) continue;
+            if (feeder.outputItem && feeder.outputItem.itemId) {
+              itemId = feeder.outputItem.itemId;
+              break;
+            }
+          }
+        }
+
+        if (!itemId) {
+          itemId = (targetNode.outputItem && targetNode.outputItem.itemId) || 0;
+        }
+        if (!itemId) {
+          const outName = targetNode.outputs && targetNode.outputs[0];
+          if (outName) {
+             const matched = await itemsPorts.lookupByName(outName);
+             if (matched) itemId = matched.id;
+          }
+        }
+        // A job has to point at a real item — freelancer_jobs.item_id is a
+        // foreign key and the clients read it as non-null. Without one there
+        // is nothing to hand a worker, so skip rather than fail the status
+        // update the shop floor is waiting on.
+        if (!itemId) {
+          console.warn(
+            `[assembly] run ${runRow.id} node ${nodeId}: not order-linked and no`
+            + ' feeder step carries an output item; no job raised.',
+          );
+        } else {
+          // Keyed on (run, node) inside: a node's status can be re-set any number
+          // of times and must not fan out into duplicate jobs.
+          await jobsService.syncAssemblyJob({ runId: runRow.id, nodeId, itemId, qty });
+        }
+      }
+    }
+
+    // Check if the overall pipeline run is completed
+    const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
+      runRow.template_id,
+    ]);
+    if (templateRow) {
+      const template = rowToTemplate(templateRow);
+      const allDone = template.nodes.every((node) => {
+        const s = nodeStatuses[node.id];
+        return s === 'done' || s === 'skipped';
+      });
+
+      if (allDone && runRow.status !== 'completed') {
+        const now = new Date().toISOString();
+        await run(
+          "UPDATE pipeline_runs SET status = 'completed', completed_at = ? WHERE id = ?",
+          [now, runId],
+        );
+
+        // Find item ID to link to the flat production run
+        let itemId = null;
+        let variationLeafNodeId = 0;
+        let variationPathLabel = '';
+
+        const lastNode = template.nodes.find((n) => !n.isIntermediate) || template.nodes[template.nodes.length - 1];
+        const finalOutput = lastNode && lastNode.outputs && lastNode.outputs[0];
+        if (finalOutput) {
+          const matchedItem = await itemsPorts.lookupByName(finalOutput);
+          if (matchedItem) {
+            itemId = matchedItem.id;
+            // Which variation was produced comes from the order line this run
+            // is assigned to. That is the only place that actually knows.
+            //
+            // What was here before asked for
+            //   item_variation_nodes WHERE kind = 'leaf' LIMIT 1
+            // and `kind` has only ever held 'property' or 'value' — there is no
+            // 'leaf' kind in this table. So it never matched, the leaf id stayed
+            // 0, and resolveOrderVariationSelection then threw "Client, item and
+            // variation values are required" for every output item that has
+            // variations, taking the whole completion request down with a 500.
+            // No run could finish and no output was ever minted.
+            //
+            // It was also a guess even when it did match: LIMIT 1 with no
+            // ordering picks an arbitrary variation, which would have labelled
+            // the finished goods with whichever one happened to come first.
+            const assignedLine = await get(
+              `
+              SELECT oi.item_id, oi.variation_leaf_node_id, oi.variation_path_label
+              FROM order_pipeline_assignments opa
+              JOIN order_items oi ON opa.order_item_id = oi.id
+              WHERE opa.pipeline_run_id = ?
+              LIMIT 1
+              `,
+              [runId],
+            );
+            // Only when the order line is for the same item the template says it
+            // outputs. Otherwise this would stamp one item's variation onto
+            // another item's goods.
+            if (
+              assignedLine
+              && Number(assignedLine.item_id) === Number(itemId)
+              && Number(assignedLine.variation_leaf_node_id) > 0
+            ) {
+              variationLeafNodeId = Number(assignedLine.variation_leaf_node_id);
+              variationPathLabel = assignedLine.variation_path_label || '';
+            } else if (Number(runRow.output_variation_leaf_node_id || 0) > 0) {
+              // No order line, but the operator said what they were making when
+              // they started the run. That is a statement of intent from the
+              // person at the machine, which is weaker than an order line and
+              // far stronger than picking a variation at random.
+              //
+              // Order matters: the order line wins when both exist, because it
+              // is what was actually promised to a customer.
+              variationLeafNodeId = Number(runRow.output_variation_leaf_node_id);
+              variationPathLabel = runRow.output_variation_path_label || '';
+            }
+            // Neither? Then nothing here knows, and the snapshot below will
+            // decline rather than invent one.
+          }
+        }
+
+        if (itemId) {
+          const batchQuantity = (lastNode && overrides.batchQuantityByNode[lastNode.id]) || 1;
+          // Derived from the WHOLE run id, not its first eight characters.
+          //
+          // Truncating collided catastrophically: on a real database 68 of 72
+          // runs had ids beginning `run-ord-`, so they all produced the same
+          // run_code. `production_runs.run_code` is UNIQUE, so the first run to
+          // complete took it and the `if (!exists)` below then silently swallowed
+          // the other 67 — real goods finished with no production_runs row, no
+          // lot, and no inventory movement.
+          //
+          // It also made the MFG barcode a lie: one code naming 68 different
+          // runs' output, in a ledger that cannot be corrected afterwards. A
+          // derived code is only safe when what it derives from is unique, and
+          // eight characters of a prefixed id is not.
+          const upperRunId = String(runId).toUpperCase();
+          const runCode = upperRunId.startsWith('RUN-') ? upperRunId : `RUN-${upperRunId}`;
+
+          // Now genuinely "has this run already been booked as output?", which
+          // is the idempotency this check was always meant to express.
+          const exists = await get('SELECT id FROM production_runs WHERE run_code = ?', [runCode]);
+          if (!exists) {
+            await run(
+              `
+              INSERT INTO production_runs (
+                run_code, status, completed_at, item_id, variation_leaf_node_id,
+                variation_path_label, output_quantity, uom, location,
+                source_metadata_json, created_at, updated_at
+              ) VALUES (?, 'completed', ?, ?, ?, ?, ?, 'pcs', 'Production Output', ?, ?, ?)
+              `,
+              [
+                runCode,
+                now,
+                itemId,
+                variationLeafNodeId,
+                variationPathLabel,
+                batchQuantity,
+                JSON.stringify({
+                  pipelineRunId: runId,
+                  pipelineTemplateId: runRow.template_id,
+                  pipelineName: runRow.name,
+                }),
+                now,
+                now,
+              ]
+            );
+            
+            // Generate a fresh barcode and add inventory for the completed pipeline
+            const freshBarcode = `LOT-${runCode}-${Math.floor(Math.random() * 1000)}`;
+                        
+            // We use ensureMaterialForItemSelection, but we override barcode to force a fresh lot
+            // First get the template/snapshot
+            // resolveOrderVariationSelection returns the base item cleanly when
+            // an item has no variation properties, and throws when it has them
+            // and none was chosen. That throw is correct — it is what stops a
+            // half-specified order line — but it must not take a completed
+            // production run down with it. The stage really did finish.
+            //
+            // So: complete the run either way, and mint only when the output is
+            // actually identifiable. Minting against a guessed variation would
+            // put a wrong fact into inventory and, worse, name it permanently in
+            // an append-only ledger. Not minting is recoverable; a mislabelled
+            // lot is not.
+            let snapshot = null;
+            try {
+              snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
+            } catch (snapshotError) {
+              console.warn(
+                `[run ${runId}] completed but no output was minted: `
+                + `cannot tell which variation of item ${itemId} was produced `
+                + `(${snapshotError.message}). Assign the run to an order line `
+                + `so the variation is known.`,
+              );
+            }
+            if (snapshot) {
+              const uom = snapshot.item.unit || 'pcs';
+              const uomId = snapshot.item.unit_id || null;
+              
+              await run(`
+                INSERT INTO materials (
+                  barcode, name, type, kind, group_mode, 
+                  linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+                  unit, unit_id, inventory_state, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `, [
+                freshBarcode,
+                // `particulars` is what the snapshot actually returns; there is
+                // no `fullName` on it, so this read undefined every time and
+                // every finished lot in the system was literally called
+                // "Finished Good".
+                snapshot.particulars || 'Finished Good',
+                'material',
+                'lot',
+                'tracked',
+                snapshot.item.group_id,
+                itemId,
+                variationLeafNodeId,
+                uom,
+                uomId,
+                'available',
+                now
+              ]);
+              
+              await inventoryPorts.movements.applyCore({
+                barcode: freshBarcode,
+                movementType: 'receive',
+                qty: Number(batchQuantity),
+                primaryQty: Number(batchQuantity),
+                uom: uom,
+                toLocationId: 'MAIN',
+                reasonCode: 'production_output',
+                referenceType: 'pipeline_run',
+                referenceId: runId,
+                actor: actor?.id || null,
+                lotCode: freshBarcode,
+              }, { useTransaction: false });
+
+              // A new thing came into being, and this is the one event that
+              // makes backward traceability possible. Scanning a finished piece
+              // has to reach the raw material it was cut from in one hop —
+              // that is the question a warranty claim or a QC recall opens
+              // with, and every other event in the trail is downstream of being
+              // able to answer it.
+              //
+              // The MFG code is the subject because that is what gets printed
+              // on the piece and scanned off it later. This is the mirror of
+              // ISSUED_TO_PIPELINE, where the material is the subject and the
+              // run is a child: there custody left the shelf, here something
+              // new exists. The lot barcode is the child rather than the
+              // subject so that scanning either one surfaces this event —
+              // loadCustody matches on subject OR parents OR children.
+              const consumedInputs = await all(
+                'SELECT DISTINCT barcode FROM run_barcode_inputs WHERE run_id = ?',
+                [runId],
+              );
+              // The order is read from order_pipeline_assignments, the way
+              // rowToRun does it. `pipeline_runs` has no order_item_id column,
+              // despite one place in this file reading it.
+              const outputOrderLink = await get(
+                `
+                SELECT h.order_no
+                FROM order_pipeline_assignments opa
+                JOIN order_items i ON opa.order_item_id = i.id
+                JOIN order_headers h ON i.order_no = h.order_no
+                WHERE opa.pipeline_run_id = ?
+                LIMIT 1
+                `,
+                [runId],
+              );
+              await recordLedgerEvent({
+                subjectBarcode: barcodes.encode('MFG', runCode),
+                eventType: 'OUTPUT_MINTED',
+                actorName: actor?.name || 'Floor',
+                parents: [
+                  barcodes.encode('RUN', runId),
+                  ...consumedInputs.map((row) => barcodes.encode('MAT', row.barcode)),
+                ].filter(Boolean),
+                children: [barcodes.encode('MAT', freshBarcode)].filter(Boolean),
+                orderBarcode: outputOrderLink?.order_no
+                  ? barcodes.encode('ORD', outputOrderLink.order_no)
+                  : null,
+                metrics: {
+                  qty: Number(batchQuantity),
+                  unit: uom || 'pcs',
+                  itemId,
+                  variationLeafNodeId,
+                  pipelineRunId: runId,
+                  pipelineTemplateId: runRow.template_id,
+                  lotBarcode: freshBarcode,
+                },
+                notes: snapshot.particulars || 'Finished Good',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
+      runId,
+    ]);
+    return { run: await rowToRun(updatedRow) };
+  }
+
   return {
     upsertStageReconciliation,
     ensureTemporarySetFromAssembly,
@@ -777,6 +1160,7 @@ function createProductionService({
     ensurePipelineRunRecord,
     assignMaterialToRunNode,
     STAGE_RECON_COLUMNS,
+    setNodeStatus,
   };
 }
 
