@@ -31,10 +31,10 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c34["⟳ Change 34: the app shows the barcodes behind a quantity and asks for approval"]
-        c34a["Assign Stock sidebar: a By quantity card per item and variation, draggable onto a run node"]
-        c34b["QuantitySourcesDialog: every barcode by name, oldest-first proposal, editable, Approve only when it adds up"]
-        c34c["BarcodeInput knows its kind: barcode, sheet or quantity"]
+      c35["⟳ Change 35: production step 1 of 4: the service"]
+        c35a["modules/production/service.js takes the run, stage and stock-on-a-run helpers, 12 functions"]
+        c35b["server.js keeps their names by destructuring; inventory is reached late-bound"]
+        c35c["production-api.test.js pins the routes before they move"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -459,10 +459,11 @@ mindmap
         n32x95640["POST runs barcodes by quantity: approved allocations are written one material each through assignMaterialToRunNode; a bad split is refused whole"]
         n31x41609["server.js, still here: assertValidStockVariationLeaf is the one rule for leaf 0; itemHoldsWholeItemStock; backfillWholeItemStock at boot; trigger trg_variation_stock_leaf_gone replaces the leaf foreign key"]
         pd3["POST runs barcodes, sheet branch: consumes from the line's material, never more than on hand; DELETE gives it back"]
-        n34x65006["⟳ app: PipelineRunRepository.stockSources and attachQuantityToRunNode; pipeline_run_row drop target accepts a StockQuantityRequest"]
+        n34x65006["app: PipelineRunRepository.stockSources and attachQuantityToRunNode; pipeline_run_row drop target accepts a StockQuantityRequest"]
         n33x81384["PUT runs barcodes on a sheet row: used weight up to the sheet's weight; stock and the run's batch weight move by the difference"]
         n32x45807["PUT and DELETE runs barcodes on a quantity row move the item's own stock"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
+        n35x5019["⟳ production/service.js createProductionService: rowToRun, getMergedNodeMetrics, createRunFromTemplate, ensurePipelineRunRecord, upsertStageReconciliation, backfillStageReconciliations, ensureTemporarySetFromAssembly, stockTemporarySet, listCompletedProductionRuns, getProductionRunRowById, assignMaterialToRunNode, STAGE_RECON_COLUMNS"]
       Jobs evacuated
         jBiz["Business rules"]
           jb1["one assembly job per run and node, never duplicated"]
@@ -576,3 +577,4 @@ mindmap
 | 32 | Issuing to a run by quantity took stock from nowhere. Now `POST /runs/:id/barcodes` without a barcode asks inventory which barcodes hold that item and variation (`inventoryPorts.sources.forItem`, also `GET /api/inventory/stock-sources`, 371 routes). If any do, the request must carry `allocations` (barcode and quantity); without them it answers 409 `allocation_required` with the sources by name and an oldest-first proposal. A split is checked whole (known barcode, not twice, not above free, sums to the quantity) and then each barcode is written as an ordinary material assignment through `assignMaterialToRunNode` (extracted from the barcode branch). If no barcode holds the item, the quantity comes off the item's own stock and is refused when there is less; `PUT` and `DELETE` on such a row move that stock. Challans port gains `numbersByIds`. | Business rules, API surface, Orchestration, Services, Ports, Tests |
 | 33 | Changing the quantity of a vendor sheet on a run answered Material not found (the sheet tag was looked up as a material). `PUT /runs/:id/barcodes` on a sheet row now takes the used amount in the material's unit: for a weighed material, above zero and no more than the sheet's weight, with the difference consumed from or given back to the material the sheet's reception line became, and `consumed_qty`, `consumed_weight` and the run's `weight_kg` moved with it; a counted material's sheet is one piece and the edit is refused. Removing a part-used sheet gives back what it had taken. `rowToRun` now sends `sourceKind` and an addressable `barcode` on every input. | Business rules, Orchestration, API surface, Tests |
 | 34 | App side of change 32. The Assign Stock sidebar (`inventory_sidebar.dart`) shows a `By quantity` card per item and variation, draggable onto a run node. Dropping it opens `QuantitySourcesDialog`: every barcode that holds the item by name with barcode, supplier, challan and free stock; typing a quantity fills an oldest-first split (`proposeOldestFirst`) that the user can change; Approve is enabled only when the split equals the quantity and no barcode is over-drawn. `PipelineRunRepository` gains `stockSources` and `attachQuantityToRunNode` (HTTP, plus the sqlite, mock and sandbox implementations). `BarcodeInput` parses `sourceKind` and `sheetWeight`. | API surface (client), Tests |
+| 35 | Production begins to leave `server.js` (module 15 of 15). `backend/test/production-api.test.js` pins runs (create, list, get, delete), node status through to a completed and booked run, batches, scrap, completed production runs, the machine queue and pipeline history. `modules/production/service.js` (`createProductionService`) takes twelve helpers whole: `rowToRun`, `getMergedNodeMetrics`, `rowToProductionRunDto`, `listCompletedProductionRuns`, `getProductionRunRowById`, `createRunFromTemplate`, `ensurePipelineRunRecord`, `upsertStageReconciliation`, `backfillStageReconciliations`, `ensureTemporarySetFromAssembly`, `stockTemporarySet`, `assignMaterialToRunNode`, plus `STAGE_RECON_COLUMNS`. It is built right after the jobs service; inventory is created later in the file and is handed in through `lateBound`, a proxy that resolves when used. Old names are kept in `server.js` by destructuring. | Services, Tests |
