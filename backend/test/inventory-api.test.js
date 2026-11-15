@@ -276,3 +276,31 @@ test('inventory: the health summary answers', async (t) => {
   assert.equal(health.body.success, true);
   assert.equal(typeof health.body.health, 'object');
 });
+
+test('materials: two parents never share a barcode, even when the random part repeats', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+
+  // A child's barcode is built from only the last part of its parent's, which
+  // was four random digits. Two parents drawing the same four digits gave their
+  // children the same barcodes, and the second create failed on the unique
+  // index. It happened about once in a few hundred seeded databases.
+  const realRandom = Math.random;
+  t.after(() => { Math.random = realRandom; });
+
+  Math.random = () => 0.5;
+  const first = await api(ctx, 'POST', '/api/materials/parent', { name: 'Twin A', type: 'Sheet', numberOfChildren: 2, unit: 'Kg' });
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+
+  // The next create draws the same digits once, then real ones.
+  let draws = 0;
+  Math.random = () => { draws += 1; return draws === 1 ? 0.5 : realRandom(); };
+  const second = await api(ctx, 'POST', '/api/materials/parent', { name: 'Twin B', type: 'Sheet', numberOfChildren: 2, unit: 'Kg' });
+  Math.random = realRandom;
+  assert.equal(second.status, 201, JSON.stringify(second.body));
+
+  const all = [first.body.material.barcode, ...first.body.material.linkedChildBarcodes,
+    second.body.material.barcode, ...second.body.material.linkedChildBarcodes];
+  assert.equal(new Set(all).size, all.length, 'six different barcodes');
+});
+

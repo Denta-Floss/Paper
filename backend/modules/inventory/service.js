@@ -681,7 +681,19 @@ function createInventoryService({
       normalizedGroupMode === 'standalone_group' ||
       normalizedGroupMode === 'nested_group'
     );
-    const parentBarcode = generateParentBarcode();
+    // A child's barcode is CHD-<the parent's last part>-NN, so two parents whose
+    // last part matches would give their children the same barcodes. Draw again
+    // until neither the parent nor any child of that suffix is taken.
+    let parentBarcode = generateParentBarcode();
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const suffix = parentBarcode.split('-').pop();
+      const taken = await get(
+        'SELECT 1 AS taken FROM materials WHERE barcode = ? OR barcode LIKE ? LIMIT 1',
+        [parentBarcode, `CHD-${suffix}-%`],
+      );
+      if (!taken) break;
+      parentBarcode = generateParentBarcode();
+    }
     const childBarcodes = Array.from(
       { length: Number(payload.numberOfChildren || 0) },
       (_, index) => generateChildBarcode(parentBarcode, index + 1),

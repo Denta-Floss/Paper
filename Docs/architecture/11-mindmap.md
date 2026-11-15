@@ -31,11 +31,11 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c27["⟳ Change 27: challans asks inventory and items for stock instead of writing their tables"]
-        c27a["six new inventory ports hold the statements challans used to run itself"]
-        c27b["variation stock goes through the items port, its first real caller"]
-        c27c["what stock does is unchanged, checked row by row"]
-        c27d["movement ids use a counter instead of a random number under 1000"]
+      c28["⟳ Change 28: two materials can no longer draw the same barcode"]
+        c28a["a child barcode is built from its parent's last four digits; two parents could share them"]
+        c28b["createParentWithChildren now draws again until the suffix is free"]
+        c28c["five full suite runs in a row are clean: 348 tests"]
+      c27["Change 27: challans asks inventory and items for stock instead of writing their tables"]
       c26["Change 26: the GET test-print address is reachable"]
       c25["Change 25: a challan photo can be uploaded"]
       c24["Change 24: settling an in-use challan works"]
@@ -571,3 +571,4 @@ mindmap
 | 25 | Fix: challan photo upload. Two faults: the intent step's allowed lists left challans out, so an upload could never start, and the completion route called `handleAssetUploadComplete`, which does not exist. Both fixed; completion also checks the upload belongs to that challan. Test is a real round trip against the local file store. | Orchestration, Business rules, Tests |
 | 26 | Fix: `GET /api/challan-templates/test-print` was registered after `/:id` and answered as a missing template. It is now registered ahead of it and reaches the print handler. Separately, the timer-sensitive query-count test in `item-developed-for` takes the smallest of three counts. | Orchestration, Tests |
 | 27 | Challans no longer runs SQL on inventory's tables in its write paths. The same statements now live in `modules/inventory/service.js` behind `inventoryPorts.receipts.mintFromChallanLine`, `receipts.mintReconcileLot`, `movements.recordForChallan`, `movements.forChallan`, `movements.recordChallanReversal` and `movements.producedLotCodeForRun`; variation stock goes through `itemsPorts.stock`. Behaviour is unchanged (pinned by `challan-stock-rows.test.js`). Not routed through the general movement engine, which refuses an outgoing line's `-` barcode. The order reconciliation report still reads the movement ledger, as a read model. | Services, Ports |
+| 28 | Fix: material barcode collisions. A child's barcode is `CHD-<parent's last part>-NN`, and that last part was four random digits, so two parents could give their children the same barcodes and the second create failed on the unique index (seen as a random test failure about once in several runs). `createParentWithChildren` now redraws until the parent barcode and its child prefix are free. Test forces the collision. | Services, Business rules, Tests |
