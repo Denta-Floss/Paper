@@ -56,6 +56,7 @@ function createChallanService({
   getItemSelectionSnapshot,
   getProductionRunRowById,
   inventoryPorts,
+  runInputsForChallanLines,
   recordLedgerEvent,
 }) {
   const DELIVERY_CHALLAN_STATUSES = new Set(['draft', 'issued', 'cancelled']);
@@ -245,6 +246,10 @@ function createChallanService({
       weight: formatMeasure(row.weight),
       sheet_weights: parseJson(row.sheet_weights_json, []),
       piece_barcodes: row.piece_barcodes || [],
+      // The material this line takes from: the lot a dispatch shipped, or the
+      // received material a vendor return sends back.
+      material_barcode: row.material_barcode || '',
+      materialBarcode: row.material_barcode || '',
       created_at: row.created_at || null,
       updated_at: row.updated_at || null,
     };
@@ -322,6 +327,10 @@ function createChallanService({
       // Structured internal subtype (e.g. 'vendor_return').
       internal_subtype: row.internal_subtype || '',
       internalSubtype: row.internal_subtype || '',
+      // The reception a vendor return sends stock back from, when it was made
+      // by cancelling a partly used reception.
+      source_reception_challan_id: Number(row.source_reception_challan_id || 0) || null,
+      sourceReceptionChallanId: Number(row.source_reception_challan_id || 0) || null,
       // Per-line settlement breakdown once the challan has been reconciled
       // (scrap/leftover/lost/rejection/finished-goods); empty otherwise.
       reconciliation_json: row.reconciliation_json || '',
@@ -532,6 +541,7 @@ function createChallanService({
         ),
         quantityPcs: String(item.quantityPcs ?? item.quantity_pcs ?? '').trim(),
         weight: String(item.weight || '').trim(),
+        materialBarcode: String(item.materialBarcode ?? item.material_barcode ?? '').trim(),
       }))
       .filter(
         (item) =>
@@ -949,12 +959,27 @@ function createChallanService({
         '',
       ).trim()
       : '';
-    const vendorName = challanType === 'reception'
+    // A vendor return is an internal challan, but it goes to a vendor, so it
+    // keeps the vendor the way a reception does.
+    const isVendorReturn = challanType === 'internal' && internalSubtype === 'vendor_return';
+    const sourceReceptionChallanId = isVendorReturn
+      ? (Number(
+        input.sourceReceptionChallanId ??
+        input.source_reception_challan_id ??
+        existing?.source_reception_challan_id ??
+        0,
+      ) || null)
+      : null;
+    const vendorName = isVendorReturn
+      ? String(vendor?.name || input.vendorName || input.vendor_name || existing?.vendor_name || '').trim()
+      : challanType === 'reception'
       ? (maintainStocks
         ? String(vendor?.name || '').trim()
         : String(input.vendorName ?? input.vendor_name ?? input.customerName ?? input.customer_name ?? existing?.vendor_name ?? '').trim())
       : '';
-    const vendorGstin = challanType === 'reception'
+    const vendorGstin = isVendorReturn
+      ? String(vendor?.gst_number || input.vendorGstin || input.vendor_gstin || existing?.vendor_gstin || '').trim()
+      : challanType === 'reception'
       ? (maintainStocks
         ? String(vendor?.gst_number || '').trim()
         : String(input.vendorGstin ?? input.vendor_gstin ?? input.customerGstin ?? input.customer_gstin ?? existing?.vendor_gstin ?? '').trim())
@@ -966,7 +991,9 @@ function createChallanService({
       : String(input.orderNo ?? input.order_no ?? existing?.order_no ?? '').trim();
     const notes = String(input.notes ?? existing?.notes ?? '').trim();
     const persistedOrderId = challanType === 'delivery' && maintainStocks ? (orderIds[0] || null) : null;
-    const persistedVendorId = challanType === 'reception' && maintainStocks && vendor ? vendor.id : null;
+    const persistedVendorId = (isVendorReturn || (challanType === 'reception' && maintainStocks)) && vendor
+      ? vendor.id
+      : null;
     const normalizedItems = normalizeDeliveryChallanItems(input.items || []);
     const items = [];
     for (const item of normalizedItems) {
@@ -1067,6 +1094,21 @@ function createChallanService({
         });
       }
     }
+    // A return made from a reception sends back specific received material. A
+    // line that does not say which (an older client re-saving the draft) gets
+    // the reception's material for the same item and variation.
+    if (sourceReceptionChallanId) {
+      const received = await inventoryPorts.receipts.usageForChallan(sourceReceptionChallanId);
+      for (const item of items) {
+        if (item.materialBarcode) continue;
+        const match = received.find(
+          (entry) =>
+            Number(entry.itemId || 0) === Number(item.itemId || 0) &&
+            Number(entry.leafNodeId || 0) === Number(item.variationLeafNodeId || 0),
+        );
+        if (match) item.materialBarcode = match.barcode;
+      }
+    }
     const now = new Date().toISOString();
 
     await run('BEGIN TRANSACTION');
@@ -1156,6 +1198,10 @@ function createChallanService({
         );
         challanId = result.lastID;
       }
+      await run(
+        'UPDATE delivery_challans SET source_reception_challan_id = ? WHERE id = ?',
+        [sourceReceptionChallanId, challanId],
+      );
 
       if (challanType === 'delivery' && maintainStocks) {
         for (const orderId of orderIds) {
@@ -1243,6 +1289,12 @@ function createChallanService({
         );
       
         const newChallanItemId = itemResult.lastID;
+        if (item.materialBarcode) {
+          await run(
+            'UPDATE delivery_challan_items SET material_barcode = ? WHERE id = ?',
+            [item.materialBarcode, newChallanItemId],
+          );
+        }
       
         const pieceBarcodes = item.pieceBarcodes || item.piece_barcodes || [];
         for (const pb of pieceBarcodes) {
@@ -1395,6 +1447,30 @@ function createChallanService({
           throw error;
         }
         await itemStock.assertLeaf(itemId, leafNodeId);
+
+        // A vendor return made from a reception sends back that reception's own
+        // material, so it leaves through the movement engine against the real
+        // barcode: the stock position, the material's totals and the item's
+        // stock all go down together. The plain outgoing path below names no
+        // piece ('-') and would leave the received material untouched.
+        const returnedBarcode = existing.source_reception_challan_id
+          ? String(item.material_barcode || '').trim()
+          : '';
+        if (returnedBarcode) {
+          await issueReturnLine({
+            challan: existing,
+            line: item,
+            barcode: returnedBarcode,
+            qty: movementQty,
+            uom: movementUom,
+            itemId,
+            leafNodeId,
+            locationId,
+            actor,
+            now,
+          });
+          continue;
+        }
 
         // Material arriving on a reception challan becomes a barcoded row in
         // `materials`, not just a number on `variation_stock`.
@@ -1664,6 +1740,166 @@ function createChallanService({
     return getDeliveryChallanRowById(id);
   }
 
+  const WEIGHT_UOMS = new Set(['kg', 'g', 'mg', 'ton', 'tons', 't', 'lbs', 'oz', 'weight']);
+  const QTY_EPSILON = 1e-9;
+
+  /// How much of what a reception brought in is still free to cancel or send
+  /// back. One entry per received material:
+  /// `{ barcode, lineId, itemId, leafNodeId, uom, received, onHand, reserved,
+  ///    onRuns, free, used, touched }`.
+  ///
+  /// Used means consumed, reserved, or claimed by a run. Inventory knows the
+  /// first two from its positions. A run can also claim stock without a
+  /// movement (a scanned vendor sheet, an issue by quantity, a material assigned
+  /// with no quantity yet), and production says how much of that there is.
+  async function receptionUsage(receptionId) {
+    const entries = await inventoryPorts.receipts.usageForChallan(receptionId);
+    const runRows = await runInputsForChallanLines(entries.map((entry) => entry.lineId));
+    return entries.map((entry) => {
+      const byWeight = WEIGHT_UOMS.has(String(entry.uom || '').toLowerCase());
+      const available = Math.max(0, entry.onHand - entry.reserved);
+      let onRuns = 0;
+      for (const row of runRows) {
+        if (Number(row.challan_item_id) !== Number(entry.lineId)) continue;
+        if (row.source_kind === 'quantity') {
+          onRuns += Number(row.qty || 0);
+        } else if (row.source_kind === 'sheet') {
+          // A sheet is weighed, so it counts by weight when the material is
+          // kept by weight and as one piece each when it is counted.
+          onRuns += byWeight ? Number(row.weight || 0) : Number(row.inputs || 0);
+        } else {
+          // Assigned to a run with no quantity: how much the run will take is
+          // not known, so none of it is free.
+          onRuns += available;
+        }
+      }
+      const free = Math.max(0, available - onRuns);
+      const used = Math.max(0, entry.received - free);
+      return { ...entry, onRuns, free, used, touched: used > QTY_EPSILON };
+    });
+  }
+
+  /// One line of a vendor return leaving stock, against the received material
+  /// it names.
+  async function issueReturnLine({
+    challan, line, barcode, qty, uom, itemId, leafNodeId, locationId, actor, now,
+  }) {
+    const usage = await receptionUsage(challan.source_reception_challan_id);
+    const entry = usage.find((candidate) => candidate.barcode === barcode);
+    if (!entry) {
+      const error = new Error(`Material ${barcode} did not come in on the reception this return was made from.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    if (qty > entry.free + QTY_EPSILON) {
+      const error = new Error(
+        `Only ${entry.free} ${uom} of ${barcode} are free to return; the rest is used or reserved.`,
+      );
+      error.statusCode = 409;
+      error.code = 'return_exceeds_free_stock';
+      throw error;
+    }
+    await inventoryPorts.movements.applyCore(
+      {
+        barcode,
+        movementType: 'issue',
+        qty,
+        primaryQty: qty,
+        uom,
+        reasonCode: 'vendor_return_issue',
+        referenceType: 'challan',
+        referenceId: String(challan.id),
+        sourceChallanId: challan.id,
+        sourceChallanType: normalizeChallanType(challan.type),
+        sourceChallanLineId: line.id,
+        actor,
+      },
+      { useTransaction: false },
+    );
+    // The engine lowers the item's stock only for a material that names a
+    // variation. A simple item has none, so it is lowered here.
+    if (!(leafNodeId > 0)) {
+      await itemStock.applyDelta({
+        itemId,
+        variationLeafNodeId: leafNodeId,
+        locationId,
+        delta: -qty,
+        now,
+      });
+    }
+  }
+
+  /// The draft vendor return for what is still free of a partly used reception.
+  /// Made once: a second cancel attempt gets the same challan back.
+  async function createReturnForReception(reception, usage, actor) {
+    const open = await get(
+      `SELECT * FROM delivery_challans
+        WHERE source_reception_challan_id = ? AND status != 'cancelled'
+        ORDER BY id DESC LIMIT 1`,
+      [reception.id],
+    );
+    if (open) return open;
+
+    const receptionLines = await getDeliveryChallanItems(reception.id);
+    const items = [];
+    for (const entry of usage) {
+      if (!(entry.free > QTY_EPSILON)) continue;
+      const source = receptionLines.find((line) => Number(line.id) === Number(entry.lineId)) || {};
+      const byWeight = WEIGHT_UOMS.has(String(entry.uom || '').toLowerCase());
+      items.push({
+        itemId: entry.itemId,
+        variationLeafNodeId: entry.leafNodeId,
+        particulars: source.particulars || '',
+        hsnCode: source.hsn_code || '',
+        variationPathLabel: source.variation_path_label || '',
+        variationPathNodeIds: parseJsonOrArray(source.variation_path_node_ids_json, []),
+        customVariationValues: parseJsonOrArray(source.custom_variation_values_json, {}),
+        note: `Return of ${entry.barcode} from ${reception.challan_no}`,
+        // The same rule issuing uses to read a line: a weighed item is read
+        // from the weight, a counted one from the pieces.
+        quantityPcs: byWeight ? '' : String(entry.free),
+        weight: byWeight ? String(entry.free) : '',
+        materialBarcode: entry.barcode,
+      });
+    }
+    return saveDeliveryChallan(
+      {
+        type: 'internal',
+        internalSubtype: 'vendor_return',
+        internalPurpose: 'Vendor return',
+        sourceReceptionChallanId: reception.id,
+        sourceReference: reception.challan_no,
+        vendorId: reception.vendor_id || 0,
+        vendorName: reception.vendor_name || '',
+        vendorGstin: reception.vendor_gstin || '',
+        location: reception.location || 'MAIN',
+        maintainStocks: true,
+        notes: `Return of the unused stock from reception ${reception.challan_no}.`,
+        items,
+      },
+      actor,
+    );
+  }
+
+  /// In plain words, why the reception was not cancelled and what was made.
+  function partlyUsedNotice(usage, returnChallan) {
+    const made = `A draft return challan ${returnChallan.challan_no} was made for`;
+    if (usage.length === 1) {
+      const [entry] = usage;
+      const unit = entry.uom ? ` ${entry.uom}` : '';
+      return `${entry.used} of ${entry.received}${unit} are already used or reserved, so this reception was not cancelled. ${made} the remaining ${entry.free}${unit}.`;
+    }
+    return `Part of this reception is already used or reserved, so it was not cancelled. ${made} what is left.`;
+  }
+
+  /// Cancels a challan and puts its stock back.
+  ///
+  /// A reception is cancelled only while everything it brought in is still
+  /// free. Then the received material itself is taken out of stock. If any of
+  /// it is used, reserved or claimed by a run, the reception stays issued (it
+  /// happened, and stock was drawn from it) and a draft vendor return is made
+  /// for what is free; the row comes back with `returnChallanRow` and
+  /// `cancelNotice` set. If nothing is free, the cancel is refused.
   async function cancelDeliveryChallan(id, actor = null) {
     const existing = await getDeliveryChallanRowById(id);
     if (!existing) {
@@ -1674,13 +1910,37 @@ function createChallanService({
     if (existing.status === 'cancelled') {
       return existing;
     }
+    const challanType = normalizeChallanType(existing.type);
+    const isIssuedReception = existing.status === 'issued' && challanType === 'reception';
+    const usage = isIssuedReception ? await receptionUsage(existing.id) : [];
+    if (usage.some((entry) => entry.touched)) {
+      if (!usage.some((entry) => entry.free > QTY_EPSILON)) {
+        const error = new Error(
+          'Everything this reception brought in is already used, reserved or returned, so it cannot be cancelled.',
+        );
+        error.statusCode = 409;
+        error.code = 'reception_fully_used';
+        throw error;
+      }
+      const returnChallan = await createReturnForReception(existing, usage, actor);
+      await logDeliveryChallanActivity(id, 'challan_return_raised', actor, {
+        challanNo: existing.challan_no,
+        returnChallanId: returnChallan.id,
+        returnChallanNo: returnChallan.challan_no,
+      });
+      const row = await getDeliveryChallanRowById(id);
+      row.returnChallanRow = returnChallan;
+      row.cancelNotice = partlyUsedNotice(usage, returnChallan);
+      return row;
+    }
+    const receivedBarcodes = new Set(usage.map((entry) => entry.barcode));
     const now = new Date().toISOString();
     await run('BEGIN TRANSACTION');
     try {
       if (existing.status === 'issued') {
         const movementRows = await inventoryPorts.movements.forChallan(
           existing.id,
-          normalizeChallanType(existing.type),
+          challanType,
         );
         for (const movement of movementRows) {
           const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
@@ -1691,6 +1951,52 @@ function createChallanService({
           }
 
           const stockLocation = movement.to_location_id || existing.location || 'MAIN';
+          const barcode = String(movement.material_barcode || '').trim();
+
+          // A movement that names a real material is undone through the
+          // movement engine, so the material's own stock position goes back
+          // with it: a received material is taken out, a returned one is put
+          // back. A movement that names no piece ('-') is undone the way it was
+          // made, a ledger row and the item's stock.
+          const namesMaterial = barcode && barcode !== '-' &&
+            (receivedBarcodes.has(barcode) || !!existing.source_reception_challan_id);
+          if (namesMaterial) {
+            await inventoryPorts.movements.applyCore(
+              {
+                barcode,
+                movementType: reverseType,
+                qty,
+                primaryQty: Number(movement.primary_qty || qty),
+                uom: String(movement.uom || '').trim() || 'units',
+                toLocationId: stockLocation,
+                reasonCode: 'challan_cancel_reversal',
+                referenceType: 'challan-cancellation',
+                referenceId: String(existing.id),
+                sourceChallanId: existing.id,
+                sourceChallanType: challanType,
+                sourceChallanLineId: movement.source_challan_line_id || null,
+                reversesMovementId: movement.id,
+                actor,
+              },
+              { useTransaction: false },
+            );
+            // The engine moves the item's stock only for a material that names
+            // a variation; a simple item is moved here.
+            if (!(Number(movement.variation_leaf_node_id || 0) > 0)) {
+              await itemStock.applyDelta({
+                itemId: movement.item_id,
+                variationLeafNodeId: movement.variation_leaf_node_id,
+                locationId: stockLocation,
+                delta: reverseType === 'receive' ? qty : -qty,
+                now,
+              });
+            }
+            if (receivedBarcodes.has(barcode)) {
+              await inventoryPorts.receipts.retire(barcode, now);
+            }
+            continue;
+          }
+
           await itemStock.assertLeaf(movement.item_id, movement.variation_leaf_node_id);
 
           await inventoryPorts.movements.recordChallanReversal({
@@ -1698,7 +2004,7 @@ function createChallanService({
             reverseType,
             stockLocation,
             challanId: existing.id,
-            challanType: normalizeChallanType(existing.type),
+            challanType,
             actorName: actor?.name || 'System',
             now,
           });
@@ -1725,7 +2031,7 @@ function createChallanService({
     }
     await logDeliveryChallanActivity(id, 'challan_cancelled', actor, {
       challanNo: existing.challan_no,
-      type: normalizeChallanType(existing.type),
+      type: challanType,
       previousStatus: existing.status,
     });
     return getDeliveryChallanRowById(id);

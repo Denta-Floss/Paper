@@ -11,9 +11,12 @@ const test = require('node:test');
 //
 // Written before that SQL moved from the challans module to behind the
 // inventory port, so "nothing changed" is checked row by row rather than
-// assumed. It also records one oddity as it is: cancelling a reception takes the
-// item's variation stock back, but the minted material and its stock position
-// still show the received quantity.
+// assumed.
+//
+// It also holds the rule for cancelling a reception. While everything it
+// brought in is still free, the cancel takes the received material itself out
+// of stock. Once any of it is used, reserved or claimed by a run, the reception
+// stays issued and a draft vendor return is made for what is free.
 
 function listen(app) {
   return new Promise((resolve, reject) => {
@@ -217,23 +220,184 @@ test('cancelling writes one reversal per movement, linked to it, and puts the va
   assert.equal(outReverse.lot_code, '-');
   assert.equal(await stock(), start + 5);
 
-  assert.equal((await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {})).status, 200);
+  const cancelled = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+  assert.equal(cancelled.body.data.status, 'cancelled');
+  assert.equal(cancelled.body.outcome, undefined, 'an untouched reception is simply cancelled');
   const inRows = await movements(inward.id);
   assert.equal(inRows.length, 2);
   assert.equal(inRows[1].movement_type, 'issue', 'a receive is reversed by an issue');
   assert.equal(inRows[1].material_barcode, 'SR-REC-3-L1');
+  assert.equal(inRows[1].qty, 5);
+  assert.equal(inRows[1].reason_code, 'challan_cancel_reversal');
+  assert.equal(inRows[1].reference_type, 'challan-cancellation');
   assert.equal(inRows[1].reverses_movement_id, inRows[0].id);
-  assert.equal(inRows[1].lot_code, '-');
-  assert.equal(await stock(), start, 'the variation stock is back where it began');
+  assert.equal(inRows[1].lot_code, 'SR-REC-3-L1', 'taken from the lot the stock sits in');
+  assert.equal(await stock(), start, 'the variation stock is back where it began, once and not twice');
 
-  // The oddity, as it is today: the minted material and its position are not
-  // touched by the cancel.
-  const material = await ctx.backend.get('SELECT on_hand_qty FROM materials WHERE barcode = ?', ['SR-REC-3-L1']);
-  assert.equal(material.on_hand_qty, 5);
+  // The received material itself is out of stock, and no longer listed.
+  const material = await ctx.backend.get('SELECT * FROM materials WHERE barcode = ?', ['SR-REC-3-L1']);
+  assert.equal(material.on_hand_qty, 0);
+  assert.equal(material.available_to_promise_qty, 0);
+  assert.equal(material.inventory_state, 'cancelled');
   const position = await ctx.backend.get('SELECT on_hand_qty FROM inventory_stock_positions WHERE material_barcode = ?', ['SR-REC-3-L1']);
-  assert.equal(position.on_hand_qty, 5);
+  assert.equal(position.on_hand_qty, 0);
+  const listed = await api(ctx, 'GET', '/api/materials');
+  assert.ok(!listed.body.materials.some((m) => m.barcode === 'SR-REC-3-L1'), 'a cancelled reception leaves nothing in the materials list');
 
   // Cancelling twice writes nothing more.
   await api(ctx, 'POST', `/api/challans/${out.id}/cancel`, {});
   assert.equal((await movements(out.id)).length, 2);
+});
+
+async function receive(ctx, make, vendor, challanNo) {
+  const challan = await make(challanNo, 'reception', { vendorId: vendor.id, vendorName: vendor.name, purpose: 'purchase' });
+  const issued = await api(ctx, 'POST', `/api/challans/${challan.id}/issue`, {});
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+  return challan;
+}
+
+function move(ctx, barcode, movementType, qty) {
+  return api(ctx, 'POST', '/api/inventory/movements', {
+    barcode, movementType, qty, referenceType: 'test', referenceId: 'stock-rows',
+  });
+}
+
+const positionQty = async (ctx, barcode) => (await ctx.backend.get(
+  'SELECT COALESCE(SUM(on_hand_qty), 0) AS q FROM inventory_stock_positions WHERE material_barcode = ?',
+  [barcode],
+)).q;
+
+test('a partly used reception is not cancelled: a draft vendor return is made for what is left', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+  const { item, leaf, vendor, make, stock, movements } = await setup(ctx);
+  const start = await stock();
+  const inward = await receive(ctx, make, vendor, 'SR-REC-4');
+  assert.equal((await move(ctx, 'SR-REC-4-L1', 'consume', 2)).status, 201);
+  assert.equal(await stock(), start + 3);
+
+  const res = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.status, 'issued', 'the reception happened and stays');
+  assert.equal(res.body.outcome, 'return_challan_created');
+  assert.match(res.body.message, /2 of 5/);
+  assert.match(res.body.message, /remaining 3/);
+  const ret = res.body.returnChallan;
+  assert.equal(ret.status, 'draft');
+  assert.equal(ret.type, 'internal');
+  assert.equal(ret.internalSubtype, 'vendor_return');
+  assert.equal(ret.sourceReceptionChallanId, inward.id);
+  assert.equal(ret.vendor_name ?? ret.vendorName, 'Stock Rows Vendor', 'it goes back to the vendor it came from');
+  assert.equal(ret.items.length, 1);
+  assert.equal(ret.items[0].materialBarcode, 'SR-REC-4-L1');
+  assert.equal(ret.items[0].item_id, item.id);
+  assert.equal(ret.items[0].variation_leaf_node_id, leaf.id);
+  assert.equal(Number(ret.items[0].quantity_pcs), 3);
+
+  // Nothing moved yet: the return is only a draft.
+  assert.equal((await movements(inward.id)).length, 1);
+  assert.equal(await positionQty(ctx, 'SR-REC-4-L1'), 3);
+  assert.equal(await stock(), start + 3);
+
+  // Pressing cancel again hands back the same return, not a second one.
+  const again = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(again.body.returnChallan.id, ret.id);
+  const returns = await ctx.backend.get(
+    'SELECT COUNT(*) AS c FROM delivery_challans WHERE source_reception_challan_id = ?', [inward.id]);
+  assert.equal(returns.c, 1);
+
+  // Issuing the return takes the stock off the received material itself.
+  const issued = await api(ctx, 'POST', `/api/challans/${ret.id}/issue`, {});
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+  const out = await movements(ret.id);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].material_barcode, 'SR-REC-4-L1', 'the return names the material it sends back');
+  assert.equal(out[0].movement_type, 'issue');
+  assert.equal(out[0].qty, 3);
+  assert.equal(out[0].reason_code, 'vendor_return_issue');
+  assert.equal(out[0].source_challan_type, 'internal');
+  assert.equal(await positionQty(ctx, 'SR-REC-4-L1'), 0);
+  assert.equal(await stock(), start, 'the item has none of that reception left');
+  const material = await ctx.backend.get('SELECT on_hand_qty FROM materials WHERE barcode = ?', ['SR-REC-4-L1']);
+  assert.equal(material.on_hand_qty, 0);
+
+  // With everything used or returned there is nothing to cancel or send back.
+  const refused = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+
+  // Cancelling the issued return puts the stock back on the material.
+  const undone = await api(ctx, 'POST', `/api/challans/${ret.id}/cancel`, {});
+  assert.equal(undone.status, 200, JSON.stringify(undone.body));
+  assert.equal(undone.body.data.status, 'cancelled');
+  assert.equal(await positionQty(ctx, 'SR-REC-4-L1'), 3);
+  assert.equal(await stock(), start + 3);
+  const back = await movements(ret.id);
+  assert.equal(back.length, 2);
+  assert.equal(back[1].movement_type, 'receive');
+  assert.equal(back[1].reverses_movement_id, back[0].id);
+});
+
+test('stock reserved for a run counts as used', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+  const { vendor, make } = await setup(ctx);
+  const inward = await receive(ctx, make, vendor, 'SR-REC-5');
+  assert.equal((await move(ctx, 'SR-REC-5-L1', 'reserve', 2)).status, 201);
+
+  const res = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.status, 'issued');
+  assert.equal(Number(res.body.returnChallan.items[0].quantity_pcs), 3, 'only the unreserved stock can go back');
+
+  // The return cannot be edited up to take the reserved stock.
+  const ret = res.body.returnChallan;
+  const edited = await api(ctx, 'PUT', `/api/challans/${ret.id}`, {
+    ...ret,
+    items: ret.items.map((line) => ({ ...line, quantityPcs: '5', quantity_pcs: '5' })),
+  });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.equal(edited.body.data.items[0].materialBarcode, 'SR-REC-5-L1', 'an edit keeps the material the line returns');
+  const issued = await api(ctx, 'POST', `/api/challans/${ret.id}/issue`, {});
+  assert.equal(issued.status, 409, JSON.stringify(issued.body));
+  assert.equal(await positionQty(ctx, 'SR-REC-5-L1'), 5, 'and a refused issue moves nothing');
+});
+
+test('a sheet scanned onto a run counts as used, though no movement records it', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+  const { vendor, make } = await setup(ctx);
+  const inward = await receive(ctx, make, vendor, 'SR-REC-6');
+  const line = await ctx.backend.get('SELECT id FROM delivery_challan_items WHERE challan_id = ?', [inward.id]);
+  const runRow = await ctx.backend.get('SELECT id FROM pipeline_runs LIMIT 1');
+  await ctx.backend.run(
+    `INSERT INTO run_barcode_inputs (id, run_id, node_id, barcode, material_payload_json, source_kind, challan_item_id, consumed_weight)
+     VALUES ('rbi-stock-rows', ?, 'n1', 'SHEET-1', '{}', 'sheet', ?, 4)`,
+    [runRow?.id || 'run-x', line.id],
+  );
+
+  const res = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.status, 'issued');
+  assert.equal(res.body.outcome, 'return_challan_created');
+  // The demo item is counted in pieces, so one sheet is one piece.
+  assert.equal(Number(res.body.returnChallan.items[0].quantity_pcs), 4);
+});
+
+test('a reception with nothing left free cannot be cancelled', async (t) => {
+  const ctx = await boot();
+  t.after(() => closeServer(ctx.server));
+  const { vendor, make, movements } = await setup(ctx);
+  const inward = await receive(ctx, make, vendor, 'SR-REC-7');
+  assert.equal((await move(ctx, 'SR-REC-7-L1', 'consume', 5)).status, 201);
+
+  const res = await api(ctx, 'POST', `/api/challans/${inward.id}/cancel`, {});
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  assert.match(res.body.error || res.body.message, /already used/);
+  const row = await ctx.backend.get('SELECT status FROM delivery_challans WHERE id = ?', [inward.id]);
+  assert.equal(row.status, 'issued');
+  assert.equal((await movements(inward.id)).length, 1);
+  const returns = await ctx.backend.get(
+    'SELECT COUNT(*) AS c FROM delivery_challans WHERE source_reception_challan_id = ?', [inward.id]);
+  assert.equal(returns.c, 0);
 });

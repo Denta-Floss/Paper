@@ -1483,25 +1483,19 @@ function createInventoryService({
     );
   }
 
-  async function recomputeMaterialInventorySummary(materialBarcode, now = new Date().toISOString()) {
-    const material = await getMaterialRowByBarcode(materialBarcode);
-    if (!material) {
-      return null;
-    }
-
+  /// A material's stock as its positions and reservations hold it: how much is
+  /// on hand, and how much of that is promised to something. Reserved is the
+  /// larger of the two places a reservation is written, because not every
+  /// reservation updates both.
+  async function materialStockTotals(barcode) {
     const stockRows = await all(
-      'SELECT * FROM inventory_stock_positions WHERE material_barcode = ?',
-      [material.barcode],
+      'SELECT on_hand_qty, reserved_qty FROM inventory_stock_positions WHERE material_barcode = ?',
+      [barcode],
     );
     const reservationRows = await all(
-      "SELECT * FROM inventory_reservations WHERE material_barcode = ? AND status = 'active'",
-      [material.barcode],
+      "SELECT reserved_qty FROM inventory_reservations WHERE material_barcode = ? AND status = 'active'",
+      [barcode],
     );
-    const openAlerts = await all(
-      'SELECT * FROM inventory_alerts WHERE material_barcode = ? AND is_open = 1',
-      [material.barcode],
-    );
-
     const onHand = stockRows.reduce((sum, row) => sum + Number(row.on_hand_qty || 0), 0);
     const reservedFromPositions = stockRows.reduce(
       (sum, row) => sum + Number(row.reserved_qty || 0),
@@ -1511,7 +1505,21 @@ function createInventoryService({
       (sum, row) => sum + Number(row.reserved_qty || 0),
       0,
     );
-    const reserved = Math.max(reservedFromPositions, reservedFromReservations);
+    return { onHand, reserved: Math.max(reservedFromPositions, reservedFromReservations) };
+  }
+
+  async function recomputeMaterialInventorySummary(materialBarcode, now = new Date().toISOString()) {
+    const material = await getMaterialRowByBarcode(materialBarcode);
+    if (!material) {
+      return null;
+    }
+
+    const openAlerts = await all(
+      'SELECT * FROM inventory_alerts WHERE material_barcode = ? AND is_open = 1',
+      [material.barcode],
+    );
+
+    const { onHand, reserved } = await materialStockTotals(material.barcode);
     const availableToPromise = onHand - reserved;
     const linkedOrderCount = material.linked_item_id
       ? Number(
@@ -1533,7 +1541,11 @@ function createInventoryService({
     );
     const pendingAlertCount = openAlerts.length;
     const materialClass = normalizeMaterialClassFromType(material.type);
-    const inventoryState = pendingAlertCount > 0 ? 'reserved' : 'available';
+    // A material whose reception was cancelled stays cancelled: it is kept for
+    // the trail, not as stock, and a later recompute must not bring it back.
+    const inventoryState = material.inventory_state === 'cancelled'
+      ? 'cancelled'
+      : (pendingAlertCount > 0 ? 'reserved' : 'available');
     const procurementState = onHand > 0 ? 'received_complete' : 'ordered';
     const traceabilityMode = materialClass === 'raw_material' ? 'lot_tracked' : 'bulk';
 
@@ -2579,6 +2591,53 @@ function createInventoryService({
     return barcode;
   }
 
+  /// What a reception challan brought in and how much of it the stock tables
+  /// still hold. One entry per material the challan minted:
+  /// `{ barcode, lineId, itemId, leafNodeId, uom, received, onHand, reserved }`.
+  ///
+  /// This is only what inventory can see. A vendor sheet scanned onto a run, or
+  /// stock issued to a run by quantity, does not lower the position; the caller
+  /// asks production for those.
+  async function receivedUsageForChallan(challanId) {
+    const materials = await all(
+      `SELECT barcode, source_challan_item_id, linked_item_id, linked_variation_leaf_node_id
+         FROM materials WHERE source_challan_id = ? ORDER BY id ASC`,
+      [challanId],
+    );
+    const entries = [];
+    for (const material of materials) {
+      const receipt = await get(
+        `SELECT COALESCE(SUM(qty), 0) AS qty, MAX(uom) AS uom
+           FROM inventory_movements
+          WHERE material_barcode = ? AND source_challan_id = ?
+            AND movement_type = 'receive' AND reverses_movement_id IS NULL`,
+        [material.barcode, challanId],
+      );
+      const totals = await materialStockTotals(material.barcode);
+      entries.push({
+        barcode: material.barcode,
+        lineId: Number(material.source_challan_item_id || 0) || null,
+        itemId: Number(material.linked_item_id || 0) || null,
+        leafNodeId: Number(material.linked_variation_leaf_node_id || 0) || 0,
+        uom: String(receipt?.uom || '').trim(),
+        received: Number(receipt?.qty || 0),
+        onHand: totals.onHand,
+        reserved: totals.reserved,
+      });
+    }
+    return entries;
+  }
+
+  /// Takes a received material out of stock for good once its reception is
+  /// cancelled. The row is kept, because the movement ledger and the custody
+  /// trail point at its barcode, but it is no longer listed as stock.
+  async function retireReceivedMaterial(barcode, now = new Date().toISOString()) {
+    await run(
+      "UPDATE materials SET inventory_state = 'cancelled', updated_at = ? WHERE barcode = ?",
+      [now, barcode],
+    );
+  }
+
   /// The stock lot one bucket of an in-use challan settle is received into.
   async function mintReconcileLot({ lotBarcode, name, groupId, itemId, unitSymbol, unitId, createdAt }) {
     await run(
@@ -2857,6 +2916,8 @@ function createInventoryService({
     recordChallanMovement,
     movementsForChallan,
     recordChallanReversal,
+    receivedUsageForChallan,
+    retireReceivedMaterial,
     producedLotCodeForRun,
     /// An item is going away: its lines in every set go with it. trashAndDelete
     /// removes the item with foreign keys off, so the declared cascade never

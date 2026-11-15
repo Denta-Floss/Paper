@@ -617,8 +617,22 @@ module.exports = function registerChallanRoutes(ctx) {
       }
 
       const challan = await challanService.cancelDeliveryChallan(id, actorFromRequest(req));
-      res.json({ success: true, data: await challanService.rowToDeliveryChallanDto(challan), error: null });
-    
+      // A partly used reception is not cancelled: a draft vendor return is
+      // made for what is free, and the answer says so.
+      const returnRow = challan.returnChallanRow || null;
+      res.json({
+        success: true,
+        data: await challanService.rowToDeliveryChallanDto(challan),
+        ...(returnRow
+          ? {
+              outcome: 'return_challan_created',
+              message: challan.cancelNotice,
+              returnChallan: await challanService.rowToDeliveryChallanDto(returnRow),
+            }
+          : {}),
+        error: null,
+      });
+
       // Emit item_updated for each item affected if stock was modified
       if (getIo() && challan && Number(challan.maintain_stocks || 1) !== 0) {
         const items = await all('SELECT item_id FROM delivery_challan_items WHERE challan_id = ?', [challan.id]);

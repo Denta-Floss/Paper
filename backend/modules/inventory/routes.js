@@ -142,7 +142,8 @@ module.exports = function registerInventoryRoutes(ctx) {
   app.get('/api/materials', requirePermission('inventory.read'), cacheMasterData, async (req, res) => {
     try {
       const rows = await all(
-        'SELECT * FROM materials ORDER BY kind ASC, created_at DESC, barcode ASC',
+        // A material whose reception was cancelled is kept for the trail only.
+        "SELECT * FROM materials WHERE COALESCE(inventory_state, '') != 'cancelled' ORDER BY kind ASC, created_at DESC, barcode ASC",
       );
       res.json({ success: true, materials: rows.map(inventory.rowToMaterialDto) });
     } catch (error) {

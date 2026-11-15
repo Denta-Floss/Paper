@@ -5278,6 +5278,10 @@ async function initDb() {
   // Vendor-return challans carry the scanned sheet tag codes so issuing can mark
   // those piece_barcodes returned (and reject a double return).
   await ensureColumnExists('delivery_challans', 'returned_sheet_codes_json', "TEXT NOT NULL DEFAULT '[]'");
+  // The reception a vendor return sends stock back from, when the return was
+  // made by cancelling a partly used reception.
+  await ensureColumnExists('delivery_challans', 'source_reception_challan_id', 'INTEGER');
+  await ensureColumnExists('delivery_challan_items', 'material_barcode', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -13432,6 +13436,8 @@ const challansService = createChallanService({
   getItemSelectionSnapshot,
   getProductionRunRowById,
   inventoryPorts,
+  // Declared further down this file, so it is looked up when called.
+  runInputsForChallanLines: (lineIds) => productionPorts.runInputsForChallanLines(lineIds),
   recordLedgerEvent,
 });
 const {
