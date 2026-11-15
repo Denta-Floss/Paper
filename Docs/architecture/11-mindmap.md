@@ -31,10 +31,11 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c19["⟳ Change 19: challans step 2, invoices"]
-        c19a["7 routes and 9 functions moved: invoices.js and invoice-routes.js"]
-        c19b["createInvoice keeps its own transaction; the PDF's challan readers are passed by name"]
-        c19c["KNOWN BUG kept for its own fix: editing an invoice fails, prepare is not defined"]
+      c20["⟳ Change 20: challans step 3, reports and reconciliation"]
+        c20a["6 routes and 13 functions moved: reports.js and report-routes.js"]
+        c20b["the order reconciliation route left from the orders round moves here"]
+        c20c["two routes that write while reading are kept as they are: the report rewrites the waste audit, the statement marks challans as reported"]
+      c19["Change 19: challans step 2, invoices"]
       c18["Change 18: challans step 1, templates and their PDFs"]
       c17["Change 17: a server with no database file now starts"]
       c16["Change 16: orders step 3, the report routes and the flag"]
@@ -393,8 +394,12 @@ mindmap
           ivn5["seeds and backfills: ensureFullSeedMaterial, backfillInventoryLedgerForMaterials, ensureDemoInventoryPresent"]
           ivn6["items reads inventory tables for usage counts, and its Sets card route reads inventory_sets"]
           ivn7["getMaterialRowByBarcode and the group property normalisers stay: items and inventory both use them"]
-      Challans ⟳ moving, step 2 of 5
-        chI["Invoices: modules/challans/invoices.js and invoice-routes.js ⟳"]
+      Challans ⟳ moving, step 3 of 5
+        chR["Reports: modules/challans/reports.js and report-routes.js ⟳"]
+          chr1["buildReconciliationReport, buildClientStatementReport, buildOrderReconciliation"]
+          chr2["listConversionOverrides, saveConversionOverride, listWasteAuditRows"]
+          chr3["6 routes: /api/reconciliation/*, /api/reports/client-statement, /api/orders/:orderNo/reconciliation"]
+        chI["Invoices: modules/challans/invoices.js and invoice-routes.js"]
           chi1["createInvoiceService: createInvoice, listInvoices, getInvoiceDtoById, generateInvoiceNumber"]
           chi2["generateInvoicePdf, numberToIndianWords"]
           chi3["7 routes under /api/invoices; POST records INVOICED once per challan billed"]
@@ -507,3 +512,4 @@ mindmap
 | 17 | A server started with no database file failed with "no such table: order_items": the old runner in `migrate.js` runs before `initDb` creates the schema, and migration 007 alters a table that is not there yet. It now skips, unrecorded, any migration that finds a missing table or column; `initDb` then creates the schema and its own runner applies every migration. Existing databases are unaffected. | Kernel (boot), Tests |
 | 18 | Challans step 1 of 5: templates. `modules/challans/templates.js` (template master, mapping normalisers, page geometry, snapshot, test fixture, PDF generator, scan uploads; about 1,720 lines) and `template-routes.js` (14 routes). The eleven-test challans route suite was committed first and records four things broken today. A local named `templates` shadowed the injected service on the first attempt; the tests caught it and the lifting tool now refuses such clashes. | API surface (unchanged paths), Orchestration, Services, Tests |
 | 19 | Challans step 2 of 5: invoices. `modules/challans/invoices.js` (DTOs, list, read, numbering, `createInvoice`, amount in words, the invoice PDF) and `invoice-routes.js` (7 routes). The broken invoice edit moves as it is and is fixed in its own commit. | API surface (unchanged paths), Orchestration, Services |
+| 20 | Challans step 3 of 5: reports. `modules/challans/reports.js` (reconciliation report, conversion overrides, waste audit, client statement, `buildOrderReconciliation`) and `report-routes.js` (6 routes, including `GET /api/orders/:orderNo/reconciliation`). | API surface (unchanged paths), Orchestration, Services |
