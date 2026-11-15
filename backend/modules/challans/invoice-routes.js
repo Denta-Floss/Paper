@@ -17,8 +17,8 @@ const barcodes = require('../../kernel/barcodes');
 // `invoices` is a first path segment the central CRUD gate maps to challans.
 // Handlers are the ones that lived in server.js, moved whole.
 //
-// KNOWN BUG, kept until its own fix: PUT /api/invoices/:id always fails with
-// "prepare is not defined"; the edit rolls back and the invoice is unchanged.
+// PUT replaces the invoice's lines and recomputes its totals in one transaction.
+// (It used to call a `prepare` helper that did not exist, so every edit failed.)
 // ---------------------------------------------------------------------------
 
 module.exports = function registerInvoiceRoutes(ctx) {
@@ -152,6 +152,12 @@ module.exports = function registerInvoiceRoutes(ctx) {
       if (linesInput.length === 0) {
         throw new Error('Add at least one invoice line.');
       }
+      // Now that an edit can succeed, an id that is not there must not: the
+      // header update would touch nothing and the lines would be left orphaned.
+      const existing = await get('SELECT id FROM invoice_headers WHERE id = ?', [id]);
+      if (!existing) {
+        return res.status(404).json({ success: false, data: null, error: 'Invoice not found.' });
+      }
       const invoiceNo = String(input.invoiceNo ?? input.invoice_no ?? '').trim();
       if (invoiceNo) {
         const duplicate = await get('SELECT id FROM invoice_headers WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?)) AND id != ?', [invoiceNo, id]);
@@ -210,19 +216,22 @@ module.exports = function registerInvoiceRoutes(ctx) {
 
         await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [id]);
       
-        const insertLine = await prepare(`
-          INSERT INTO invoice_lines (
-            invoice_id, order_id, challan_id, challan_item_id, item_id, variation_leaf_node_id,
-            item_name, hsn_code, quantity, unit_price, taxable_value, cgst_rate, sgst_rate, cgst_amount, sgst_amount, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
+        // One statement per line through `run`, as createInvoice does. This used
+        // to call a `prepare` helper that does not exist, so every edit failed.
         for (const line of normalizedLines) {
-          await insertLine.run([
-            id, line.orderId, line.challanId, line.challanItemId, line.itemId, line.variationLeafNodeId,
-            line.itemName, line.hsnCode, line.quantity, line.unitPrice, line.taxableValue, line.cgstRate, line.sgstRate, line.cgstAmount, line.sgstAmount, now, now
-          ]);
+          await run(
+            `
+            INSERT INTO invoice_lines (
+              invoice_id, order_id, challan_id, challan_item_id, item_id, variation_leaf_node_id,
+              item_name, hsn_code, quantity, unit_price, taxable_value, cgst_rate, sgst_rate, cgst_amount, sgst_amount, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+              id, line.orderId, line.challanId, line.challanItemId, line.itemId, line.variationLeafNodeId,
+              line.itemName, line.hsnCode, line.quantity, line.unitPrice, line.taxableValue, line.cgstRate, line.sgstRate, line.cgstAmount, line.sgstAmount, now, now
+            ],
+          );
         }
-        await insertLine.finalize();
         await run('COMMIT');
       
         const invoice = await invoiceService.getInvoiceDtoById(id);

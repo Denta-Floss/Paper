@@ -275,24 +275,50 @@ test('KNOWN BUG: GET /api/challan-templates/test-print is answered by /:id and n
   assert.equal(res.status, 404, 'test-print is read as a template id');
 });
 
-test('KNOWN BUG: editing an invoice always fails', async (t) => {
+test('invoices: an edit replaces the lines and recomputes the totals', async (t) => {
   const ctx = await boot();
   t.after(() => closeServer(ctx.server));
-  const challan = await makeChallan(ctx, 'RT-BUG-INV');
+  const challan = await makeChallan(ctx, 'RT-INV-EDIT');
   await api(ctx, 'POST', `/api/challans/${challan.id}/issue`, {});
   const made = await api(ctx, 'POST', '/api/invoices', {
     clientId: null,
-    lines: [{ challanId: challan.id, particulars: 'Line one', quantity: 2, rate: 50 }],
+    lines: [{ challanId: challan.id, itemName: 'Line one', quantity: 2, unitPrice: 50 }],
   });
   const invoice = made.body.invoice || made.body.data;
+
+  // This always failed before ("prepare is not defined").
   const edited = await api(ctx, 'PUT', `/api/invoices/${invoice.id}`, {
     clientId: null,
-    lines: [{ challanId: challan.id, particulars: 'Line one, edited', quantity: 3, rate: 50 }],
+    clientName: 'Edited Buyer',
+    lines: [
+      { challanId: challan.id, itemName: 'Line one, edited', quantity: 3, unitPrice: 50, cgstRate: 9, sgstRate: 9 },
+      { challanId: challan.id, itemName: 'A second line', quantity: 1, unitPrice: 20 },
+    ],
   });
-  assert.equal(edited.status, 500);
-  assert.match(edited.body.error, /prepare is not defined/);
-  const still = await api(ctx, 'GET', `/api/invoices/${invoice.id}`);
-  assert.equal(still.status, 200, 'the failed edit rolled back; the invoice is as it was');
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  const lines = await ctx.backend.all('SELECT item_name, quantity FROM invoice_lines WHERE invoice_id = ? ORDER BY id', [invoice.id]);
+  assert.deepEqual(lines.map((l) => l.item_name), ['Line one, edited', 'A second line'], 'the old line is gone, the new two are there');
+  const header = await ctx.backend.get('SELECT * FROM invoice_headers WHERE id = ?', [invoice.id]);
+  assert.equal(header.client_name, 'Edited Buyer');
+  assert.equal(header.total_quantity, 4);
+  assert.equal(header.taxable_value, 170);
+  assert.equal(header.cgst_amount, 13.5);
+  assert.equal(header.total_amount, 197);
+
+  // An edit that is refused changes nothing.
+  const empty = await api(ctx, 'PUT', `/api/invoices/${invoice.id}`, { lines: [] });
+  assert.equal(empty.status, 500);
+  assert.match(empty.body.error, /at least one invoice line/);
+  const still = await ctx.backend.get('SELECT COUNT(*) AS c FROM invoice_lines WHERE invoice_id = ?', [invoice.id]);
+  assert.equal(still.c, 2);
+
+  // And an invoice that is not there is a 404, not a set of orphan lines.
+  const ghost = await api(ctx, 'PUT', '/api/invoices/999999', {
+    lines: [{ itemName: 'Nobody', quantity: 1, unitPrice: 1 }],
+  });
+  assert.equal(ghost.status, 404);
+  const orphans = await ctx.backend.get('SELECT COUNT(*) AS c FROM invoice_lines WHERE invoice_id = 999999');
+  assert.equal(orphans.c, 0);
 });
 
 test('KNOWN BUG: completing a challan photo upload always fails once it is valid', async (t) => {
