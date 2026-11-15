@@ -395,7 +395,7 @@ test('the block costs no query per item', async () => {
     // Count the statements the list read issues, with one part developed for a
     // client and then with five. A per-item SELECT — which is what this DTO did
     // before 047 — would show up as four more.
-    const countFor = async () => {
+    const countOnce = async () => {
       let statements = 0;
       const proto = require('sqlite3').Database.prototype;
       const originals = {};
@@ -412,6 +412,16 @@ test('the block costs no query per item', async () => {
         for (const method of ['all', 'get', 'run']) proto[method] = originals[method];
       }
       return statements;
+    };
+
+    // The server drains its changelog on a timer, and a tick landing inside the
+    // counted request adds a statement that has nothing to do with the read. It
+    // can only ever ADD, so the smallest of three counts is the read's own cost.
+    // (This test used to fail now and then on exactly that tick.)
+    const countFor = async () => {
+      const counts = [];
+      for (let i = 0; i < 3; i += 1) counts.push(await countOnce());
+      return Math.min(...counts);
     };
 
     const makeOne = async (name) => {
