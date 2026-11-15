@@ -57,6 +57,7 @@ function createChallanService({
   getProductionRunRowById,
   inventoryPorts,
   runInputsForChallanLines,
+  productionRunSource,
   recordLedgerEvent,
 }) {
   const DELIVERY_CHALLAN_STATUSES = new Set(['draft', 'issued', 'cancelled']);
@@ -1650,10 +1651,7 @@ function createChallanService({
             if (lineCode) dispatchParents.push(lineCode);
           }
           if (!line.production_run_id) continue;
-          const producedBy = await get(
-            'SELECT run_code, source_metadata_json FROM production_runs WHERE id = ?',
-            [line.production_run_id],
-          );
+          const producedBy = await productionRunSource(line.production_run_id);
           const runCode = producedBy && barcodes.encode('MFG', producedBy.run_code);
           if (runCode) dispatchParents.push(runCode);
 

@@ -26,9 +26,8 @@
 //     what lets /api/orders/fulfilment be reached;
 //   - PUT answers with the raw database row, not the DTO;
 //   - DELETE answers success for an id that is not there;
-//   - DELETE reaches into production's tables (run_barcode_inputs,
-//     pipeline_runs) to dissolve a line's runs. That SQL goes behind a
-//     production port when production moves.
+//   - DELETE dissolves a line's runs through productionPorts.runs.dissolve;
+//     it still reads the movement ledger itself to put consumed stock back.
 // ---------------------------------------------------------------------------
 
 module.exports = function registerOrderRoutes(ctx) {
@@ -42,6 +41,7 @@ module.exports = function registerOrderRoutes(ctx) {
     getIo,
     orders,
     inventoryPorts,
+    productionPorts,
   } = ctx;
 
   const emitOrdersChanged = () => {
@@ -419,8 +419,7 @@ module.exports = function registerOrderRoutes(ctx) {
           }
         }
 
-        await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
-        await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
+        await productionPorts.runs.dissolve(runId);
       }
 
       if (wipBarcode && wipQty > 0) {

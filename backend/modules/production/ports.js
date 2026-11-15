@@ -3,14 +3,25 @@
 // ---------------------------------------------------------------------------
 // What other modules may ask of the production module.
 //
-// Production (runs, node status, scrap) is still in server.js, so this is a thin
-// reader over its tables, not yet a boundary with a service behind it. It exists
-// so modules that have left (machines, dies, pipelines) do not carry SQL against
-// `pipeline_runs` or `run_barcode_inputs`. When production moves, this file is the contract it keeps.
-// Read-only on purpose.
+// Production owns pipeline_runs, run_barcode_inputs, production_runs,
+// production_scrap and stage_reconciliations. Another module that needs to
+// know something about a run, or to remove one, asks here and carries no SQL
+// against those tables.
+//
+//   runs.rowById(runId)                  one pipeline run's row
+//   runs.dissolve(runId)                 remove a run and the stock inputs on
+//                                        it (an order line being deleted)
+//   runs.inputCountForBarcode(barcode)   how many run inputs name a material
+//   runs.latestInputForBarcode(barcode)  the last run and node a material went to
+//   runs.stagesForRun(runId)             a run's stage reconciliation rows
+//   output.sourceById(productionRunId)   a finished run's code and where it came from
+//   runInputsForChallanLines(lineIds)    what runs have claimed from reception lines
+//   machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount
+//
+// The order and challan reports read these tables directly, as read models.
 // ---------------------------------------------------------------------------
 
-function createProductionPorts({ get, all }) {
+function createProductionPorts({ get, all, run }) {
   /// Whether a live run (planned, in progress or paused) names this id in one
   /// of its per-node overrides. `id` is the id as the URL carries it, a string:
   /// that is how run overrides store it. `overrideKey` says which map to look in.
@@ -31,6 +42,39 @@ function createProductionPorts({ get, all }) {
   }
 
   return {
+    runs: {
+      rowById: (runId) => get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]),
+
+      /// Removes a run and the stock inputs recorded on it. The caller has
+      /// already put the consumed stock back.
+      async dissolve(runId) {
+        await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
+        await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
+      },
+
+      async inputCountForBarcode(barcode) {
+        const row = await get(
+          'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
+          [barcode],
+        );
+        return Number(row?.count || 0);
+      },
+
+      latestInputForBarcode: (barcode) => get(
+        'SELECT run_id, node_id FROM run_barcode_inputs WHERE barcode = ? ORDER BY scanned_at DESC LIMIT 1',
+        [barcode],
+      ),
+
+      stagesForRun: (runId) => all('SELECT * FROM stage_reconciliations WHERE run_id = ?', [runId]),
+    },
+
+    output: {
+      sourceById: (productionRunId) => get(
+        'SELECT run_code, source_metadata_json FROM production_runs WHERE id = ?',
+        [productionRunId],
+      ),
+    },
+
     /// Whether a live run has this machine assigned to any of its nodes.
     machineAssignedToActiveRun: (machineId) =>
       assignedToActiveRun(machineId, 'machineOverrideByNode'),

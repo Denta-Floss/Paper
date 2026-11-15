@@ -31,10 +31,9 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c36["⟳ Change 36: production step 2 of 4: the routes"]
-        c36a["modules/production/routes.js takes all 15 production routes, same URLs and guards"]
-        c36b["setNodeStatus moves into the service and answers run or refusal"]
-        c36c["server.js is under 20,000 lines"]
+      c37["⟳ Change 37: production step 3 of 4: the port"]
+        c37a["orders, inventory and challans ask the production port; none of their write paths names a production table"]
+        c37b["runs.dissolve, runs.rowById, inputCountForBarcode, latestInputForBarcode, stagesForRun, output.sourceById"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -463,8 +462,9 @@ mindmap
         n33x81384["PUT runs barcodes on a sheet row: used weight up to the sheet's weight; stock and the run's batch weight move by the difference"]
         n32x45807["PUT and DELETE runs barcodes on a quantity row move the item's own stock"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
-        n36x40227["⟳ service.setNodeStatus: status and overrides, Assembly job once per run and node, completion booked once and minted as a lot with OUTPUT_MINTED"]
-        n36x99224["⟳ production/routes.js registerProductionRoutes: /runs x10, /api/production-scrap x2, /api/production-runs/completed, /api/machines/:id/queue, /api/items/:id/pipeline-history"]
+        n37x81899["⟳ offers: runs.rowById, runs.dissolve, runs.inputCountForBarcode, runs.latestInputForBarcode, runs.stagesForRun, output.sourceById, runInputsForChallanLines, machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount"]
+        n36x40227["service.setNodeStatus: status and overrides, Assembly job once per run and node, completion booked once and minted as a lot with OUTPUT_MINTED"]
+        n36x99224["production/routes.js registerProductionRoutes: /runs x10, /api/production-scrap x2, /api/production-runs/completed, /api/machines/:id/queue, /api/items/:id/pipeline-history"]
         n35x5019["production/service.js createProductionService: rowToRun, getMergedNodeMetrics, createRunFromTemplate, ensurePipelineRunRecord, upsertStageReconciliation, backfillStageReconciliations, ensureTemporarySetFromAssembly, stockTemporarySet, listCompletedProductionRuns, getProductionRunRowById, assignMaterialToRunNode, STAGE_RECON_COLUMNS"]
       Jobs evacuated
         jBiz["Business rules"]
@@ -581,3 +581,4 @@ mindmap
 | 34 | App side of change 32. The Assign Stock sidebar (`inventory_sidebar.dart`) shows a `By quantity` card per item and variation, draggable onto a run node. Dropping it opens `QuantitySourcesDialog`: every barcode that holds the item by name with barcode, supplier, challan and free stock; typing a quantity fills an oldest-first split (`proposeOldestFirst`) that the user can change; Approve is enabled only when the split equals the quantity and no barcode is over-drawn. `PipelineRunRepository` gains `stockSources` and `attachQuantityToRunNode` (HTTP, plus the sqlite, mock and sandbox implementations). `BarcodeInput` parses `sourceKind` and `sheetWeight`. | API surface (client), Tests |
 | 35 | Production begins to leave `server.js` (module 15 of 15). `backend/test/production-api.test.js` pins runs (create, list, get, delete), node status through to a completed and booked run, batches, scrap, completed production runs, the machine queue and pipeline history. `modules/production/service.js` (`createProductionService`) takes twelve helpers whole: `rowToRun`, `getMergedNodeMetrics`, `rowToProductionRunDto`, `listCompletedProductionRuns`, `getProductionRunRowById`, `createRunFromTemplate`, `ensurePipelineRunRecord`, `upsertStageReconciliation`, `backfillStageReconciliations`, `ensureTemporarySetFromAssembly`, `stockTemporarySet`, `assignMaterialToRunNode`, plus `STAGE_RECON_COLUMNS`. It is built right after the jobs service; inventory is created later in the file and is handed in through `lateBound`, a proxy that resolves when used. Old names are kept in `server.js` by destructuring. | Services, Tests |
 | 36 | Production step 2. `modules/production/routes.js` (`registerProductionRoutes`) takes the fifteen production routes whole: `/runs` (list, create, get, delete, node-status, barcodes POST/PUT/DELETE, node-metrics, batches), `/api/production-scrap` (two), `/api/production-runs/completed`, `/api/machines/:id/queue` and `/api/items/:id/pipeline-history`. URLs and guards are unchanged; the `app.use('/runs', …)` login and write guards stay in `server.js`, registered ahead of it. The 370-line node-status handler body becomes `setNodeStatus({ runId, payload, actor })` in the service, answering `{ run }` or `{ refusal }`. `server.js` is 19,700 lines. | API surface (unchanged paths), Orchestration, Services |
+| 37 | Production step 3. `modules/production/ports.js` stops being read-only: `runs.dissolve` replaces the two deletes orders ran on `run_barcode_inputs` and `pipeline_runs` when an order line is deleted; `runs.inputCountForBarcode`, `runs.latestInputForBarcode`, `runs.rowById` and `runs.stagesForRun` replace inventory's reads for a material's summary and control tower; `output.sourceById` replaces the challan service's read of `production_runs` at dispatch. Left as read models: two list queries in `modules/orders/service.js` that join `pipeline_runs`, and the order and challan reports. | Ports, Services |

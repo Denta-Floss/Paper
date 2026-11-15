@@ -13130,6 +13130,8 @@ const inventoryService = createInventoryService({
   variationStockRows: () => itemsPorts.variationStockRows(),
   orders: ordersPorts,
   challans: challansPorts,
+  // The production port is built further down, so it is looked up when used.
+  production: lateBound(() => productionPorts),
 });
 // What other modules may ask of inventory.
 const inventoryPorts = createInventoryPorts({ inventory: inventoryService });
@@ -13186,6 +13188,7 @@ const challansService = createChallanService({
   inventoryPorts,
   // Declared further down this file, so it is looked up when called.
   runInputsForChallanLines: (lineIds) => productionPorts.runInputsForChallanLines(lineIds),
+  productionRunSource: (id) => productionPorts.output.sourceById(id),
   recordLedgerEvent,
 });
 const {
@@ -15280,7 +15283,7 @@ app.patch('/api/users/:id/status', requirePermission('users.update_status'), asy
 // live run holds a machine is asked of the production port.
 const machinesService = createMachineService({ get, all, run, parseJson });
 const { rowToMachineDto: machineRowToDto } = machinesService;
-const productionPorts = createProductionPorts({ get, all });
+const productionPorts = createProductionPorts({ get, all, run });
 
 // The die master left for modules/dies. Its DTO is still called here by the
 // production report and trace, so it comes out of the service under the name
@@ -18976,6 +18979,7 @@ registerOrderRoutes({
   getIo: () => io,
   orders: ordersService,
   inventoryPorts,
+  productionPorts,
 });
 
 // What has happened to an order: fulfilment, runs, production report, returns,

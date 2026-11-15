@@ -65,6 +65,7 @@ function createInventoryService({
   variationStockRows,
   orders,
   challans,
+  production,
 }) {
   const {
     getItemVariationTree,
@@ -1532,14 +1533,7 @@ function createInventoryService({
           )?.count || 0,
         )
       : 0;
-    const linkedPipelineCount = Number(
-      (
-        await get(
-          'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
-          [material.barcode],
-        )
-      )?.count || 0,
-    );
+    const linkedPipelineCount = await production.runs.inputCountForBarcode(material.barcode);
     const pendingAlertCount = openAlerts.length;
     const materialClass = normalizeMaterialClassFromType(material.type);
     // A material whose reception was cancelled stays cancelled: it is kept for
@@ -1687,24 +1681,14 @@ function createInventoryService({
           )?.qty || 0,
         )
       : 0;
-    const linkedPipelineDemand = Number(
-      (
-        await get(
-          'SELECT COUNT(*) AS count FROM run_barcode_inputs WHERE barcode = ?',
-          [material.barcode],
-        )
-      )?.count || 0,
-    );
+    const linkedPipelineDemand = await production.runs.inputCountForBarcode(material.barcode);
 
-    const activePipelineInput = await get(
-      'SELECT run_id, node_id FROM run_barcode_inputs WHERE barcode = ? ORDER BY scanned_at DESC LIMIT 1',
-      [material.barcode]
-    );
+    const activePipelineInput = await production.runs.latestInputForBarcode(material.barcode);
   
     let activePipelineRun = null;
     if (activePipelineInput) {
       const runId = activePipelineInput.run_id;
-      const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
+      const runRow = await production.runs.rowById(runId);
       if (runRow) {
          const orderRows = await all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]);
          const orderIds = orderRows.map(r => r.order_item_id);
@@ -1726,7 +1710,7 @@ function createInventoryService({
             if (d) die = { toolCode: d.tool_code, photoUrls: parseJson(d.photo_urls, []) };
          }
        
-         const stages = await all('SELECT * FROM stage_reconciliations WHERE run_id = ?', [runId]);
+         const stages = await production.runs.stagesForRun(runId);
        
          activePipelineRun = {
            id: runRow.id,

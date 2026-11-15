@@ -15,8 +15,8 @@
 // route here to the machines module. Handlers are the ones that lived in
 // server.js, moved whole.
 //
-// NOT here: GET /api/machines/:id/queue. It reads pipeline_runs and belongs with
-// production when production moves; until then it stays in server.js.
+// NOT here: GET /api/machines/:id/queue. It reads pipeline_runs, so it is in
+// modules/production/routes.js.
 // ---------------------------------------------------------------------------
 
 module.exports = function registerMachineRoutes(ctx) {
