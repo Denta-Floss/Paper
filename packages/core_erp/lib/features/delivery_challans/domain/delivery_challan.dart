@@ -377,6 +377,7 @@ class DeliveryChallan {
     required this.notes,
     required this.maintainStocks,
     this.usedInReport = false,
+    this.actionNotice = '',
     required this.status,
     required this.items,
     required this.itemsCount,
@@ -420,6 +421,13 @@ class DeliveryChallan {
   final String notes;
   final bool maintainStocks;
   final bool usedInReport;
+
+  /// What the server said about the action that just returned this challan,
+  /// when the action did something other than what was asked. Cancelling a
+  /// partly used reception does not cancel it: a draft vendor return is made
+  /// for the unused stock, and this says so. Empty otherwise. It describes one
+  /// response, not the challan, so it is never stored.
+  final String actionNotice;
   final DeliveryChallanStatus status;
   final List<DeliveryChallanItem> items;
   final int itemsCount;
@@ -566,6 +574,7 @@ class DeliveryChallan {
     List<String>? reportGroupCodes,
     ChallanPurpose? purpose,
     List<UploadedAsset>? assets,
+    String? actionNotice,
   }) {
     return DeliveryChallan(
       id: id,
@@ -594,6 +603,7 @@ class DeliveryChallan {
       notes: notes,
       maintainStocks: maintainStocks,
       usedInReport: usedInReport ?? this.usedInReport,
+      actionNotice: actionNotice ?? this.actionNotice,
       status: status,
       items: items ?? this.items,
       itemsCount: items?.length ?? itemsCount,

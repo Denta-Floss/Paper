@@ -437,6 +437,10 @@ class _ChallanScreenState extends State<ChallanScreen> {
     if (cancelled != null) {
       await context.read<InventoryProvider>().refresh();
       if (!context.mounted) return;
+      if (cancelled.actionNotice.isNotEmpty) {
+        await _showNotCancelledNotice(context, cancelled);
+        return;
+      }
       showAppSnack(
         SnackBar(content: Text('Cancelled challan ${challan.challanNo}.')),
       );
@@ -3080,6 +3084,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                           if (!context.mounted) return;
                           await context.read<InventoryProvider>().refresh();
                           if (!context.mounted) return;
+                          if (cancelled.actionNotice.isNotEmpty) {
+                            await _showNotCancelledNotice(context, cancelled);
+                            if (!context.mounted) return;
+                          }
                           Navigator.of(context).pop();
                         }
                       },
@@ -6956,4 +6964,33 @@ class _CancelChallanOptionsDialogState
       ],
     );
   }
+}
+
+/// Tells the user a reception was not cancelled because part of it is already
+/// used, and that a draft return challan was made for the rest. A dialog and
+/// not a snack: the outcome is not what they asked for, and the message names
+/// the challan they need to open next.
+Future<void> _showNotCancelledNotice(
+  BuildContext context,
+  DeliveryChallan challan,
+) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('${challan.challanNo} was not cancelled'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Text(
+          challan.actionNotice,
+          style: const TextStyle(fontSize: 15, height: 1.4),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 }

@@ -1488,7 +1488,13 @@ class ApiChallanRepository implements ChallanRepository {
       response: response,
       fallback: fallback,
     );
-    return DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
+    final challan = DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
+    // Cancelling a partly used reception makes a draft vendor return instead
+    // of cancelling; the server explains that in `message`.
+    final notice = payload['outcome'] == 'return_challan_created'
+        ? (payload['message'] as String? ?? '').trim()
+        : '';
+    return notice.isEmpty ? challan : challan.copyWith(actionNotice: notice);
   }
 
   Future<DeliveryChallan> _sendChallan({
