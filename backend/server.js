@@ -11094,14 +11094,17 @@ async function writeDealContacts(itemId, contactIds) {
 /// between the free-number check and the insert. That clash is the server's
 /// own race, not the caller's choice, and "an automatic stamp must never block
 /// a save the caller did ask for" — the retry finds the next free number.
-async function saveItem(input = {}) {
+// `options.useTransaction: false` is for a caller that is already inside a
+// transaction (the in-use challan settle creates its scrap items mid-settle):
+// SQLite has no nested BEGIN, and that caller then owns the commit and rollback.
+async function saveItem(input = {}, options = {}) {
   const stamped =
     (input.id === null || input.id === undefined) &&
     input.partNo === undefined &&
     input.partCode === undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await saveItemOnce(input);
+      return await saveItemOnce(input, options);
     } catch (error) {
       if (!stamped || attempt >= 2 || error?.code !== 'part_code_duplicate') throw error;
     }
@@ -11146,7 +11149,7 @@ async function saveItemOnce({
   // absent preserves, and a block with kind 'self' is how it is cleared.
   developedFor,
   id = null,
-}) {
+}, { useTransaction = true } = {}) {
   const trimmedName = String(name || '').trim();
   const trimmedAlias = String(alias || '').trim();
   const serializedNamingFormat = JSON.stringify(Array.isArray(namingFormat) ? namingFormat : []);
@@ -11376,7 +11379,7 @@ async function saveItemOnce({
   }
 
   const now = new Date().toISOString();
-  await run('BEGIN TRANSACTION');
+  if (useTransaction) await run('BEGIN TRANSACTION');
   try {
     let itemId = id;
     let structuralChangeDetected = false;
@@ -11784,7 +11787,7 @@ async function saveItemOnce({
     );
 
     await logChange('items', itemId, id == null ? 'INSERT' : 'UPDATE');
-    await run('COMMIT');
+    if (useTransaction) await run('COMMIT');
     // The section tree's cross-links follow whatever the save just changed —
     // a new die, a different client, a machine taken off. After the commit and
     // never failing the save: the part is written either way.
@@ -11798,7 +11801,7 @@ async function saveItemOnce({
     }
     return getItemRowById(itemId);
   } catch (error) {
-    await run('ROLLBACK');
+    if (useTransaction) await run('ROLLBACK');
     // The pre-check above cannot see a code another connection wrote between
     // its read and this write. The index can, and a raw SQLITE_CONSTRAINT must
     // not reach a client as a 500.
@@ -16443,7 +16446,7 @@ async function ensureReconcileSubGroup(name, parentGroupId, unitId) {
   return id;
 }
 
-async function ensureReconcileItem(name, groupId, unitId) {
+async function ensureReconcileItem(name, groupId, unitId, options = {}) {
   const existing = await get(
     `SELECT id FROM items WHERE lower(name) = lower(?) AND group_id = ? ORDER BY id LIMIT 1`,
     [name, groupId],
@@ -16457,7 +16460,7 @@ async function ensureReconcileItem(name, groupId, unitId) {
     groupId,
     unitId,
   };
-  const { id } = await saveItem(dto);
+  const { id } = await saveItem(dto, options);
   return id;
 }
 

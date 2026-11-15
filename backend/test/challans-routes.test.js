@@ -332,7 +332,7 @@ test('KNOWN BUG: completing a challan photo upload always fails once it is valid
   assert.match(res.body.error, /handleAssetUploadComplete is not defined/);
 });
 
-test('KNOWN BUG: settling an in-use challan fails on a nested transaction', async (t) => {
+test('settling an in-use challan puts its weight into scrap and finished-goods stock, once', async (t) => {
   const ctx = await boot();
   t.after(() => closeServer(ctx.server));
   const challan = await makeChallan(ctx, 'RT-SETTLE-1', { type: 'internal', purpose: 'internal_use' });
@@ -345,15 +345,35 @@ test('KNOWN BUG: settling an in-use challan fails on a nested transaction', asyn
   const unbalanced = await api(ctx, 'POST', `/api/challans/${challan.id}/reconcile`, {
     lines: [{ challanItemId: line.id, buckets: { scrap: 1 } }],
   });
-  assert.equal(unbalanced.status, 400);
+  assert.equal(unbalanced.status, 400, 'the full 10 kg has to be accounted for');
+  const untouched = await ctx.backend.get("SELECT COUNT(*) AS c FROM materials WHERE barcode LIKE 'LOT-RECON-%'");
+  assert.equal(untouched.c, 0, 'a refused settle creates no stock');
 
+  // This never completed before, for two reasons: the settle's transaction and
+  // the item save's transaction collided, and the stock lot was written with a
+  // variation leaf of 0, which is not a variation.
   const settled = await api(ctx, 'POST', `/api/challans/${challan.id}/reconcile`, {
     lines: [{ challanItemId: line.id, buckets: { finishedGoods: 6, scrap: 4 } }],
   });
-  // Settle opens a transaction, then creates the scrap item, and saving an item
-  // opens its own. SQLite has no nested BEGIN.
-  assert.equal(settled.status, 500);
-  assert.match(settled.body.error, /cannot start a transaction within a transaction/);
-  const after = (await api(ctx, 'GET', `/api/challans/${challan.id}`)).body.data;
-  assert.notEqual(after.status, 'completed', 'the challan is not settled');
+  assert.equal(settled.status, 200, JSON.stringify(settled.body).slice(0, 300));
+  assert.equal(settled.body.data.status, 'completed');
+
+  const lots = await ctx.backend.all(
+    "SELECT name, on_hand_qty, linked_variation_leaf_node_id FROM materials WHERE barcode LIKE 'LOT-RECON-%' ORDER BY name",
+  );
+  assert.equal(lots.length, 2, 'one lot per bucket that received weight');
+  assert.match(lots[0].name, /^finished_goods_/);
+  assert.equal(lots[0].on_hand_qty, 6);
+  assert.match(lots[1].name, /^scrap_/);
+  assert.equal(lots[1].on_hand_qty, 4);
+  assert.equal(lots[0].linked_variation_leaf_node_id, null);
+  const items = await ctx.backend.all("SELECT name FROM items WHERE name LIKE 'scrap_%' OR name LIKE 'finished_goods_%'");
+  assert.equal(items.length, 2, 'and an item for each, under the reconcile groups');
+
+  const again = await api(ctx, 'POST', `/api/challans/${challan.id}/reconcile`, {
+    lines: [{ challanItemId: line.id, buckets: { finishedGoods: 6, scrap: 4 } }],
+  });
+  assert.equal(again.status, 409, 'a challan is settled once');
+  const after = await ctx.backend.get("SELECT COUNT(*) AS c FROM materials WHERE barcode LIKE 'LOT-RECON-%'");
+  assert.equal(after.c, 2);
 });

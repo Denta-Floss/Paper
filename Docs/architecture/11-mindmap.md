@@ -31,11 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c22["⟳ Change 22: challans step 4b, the routes and the flag"]
-        c22a["26 registrations moved to modules/challans/routes.js, the doubled spellings kept"]
-        c22b["socket notifications go through getIo"]
-        c22c["challans evacuated: 14 of 15 modules, server.js about 21500 lines"]
-        c22d["health check stays in server.js, ahead of login"]
+      c24["⟳ Change 24: settling an in-use challan works"]
+        c24a["saveItem takes useTransaction, default true; the settle passes false"]
+        c24b["the stock lot was written with a variation leaf of 0, now null"]
+        c24c["settle completes: scrap and finished-goods lots are created, a second settle is refused"]
+      c23["Change 23: invoice edit works"]
+      c22["Change 22: challans step 4b, the routes and the flag"]
       c21["Change 21: challans step 4a, the core service"]
       c20["Change 20: challans step 3, reports and reconciliation"]
       c19["Change 19: challans step 2, invoices"]
@@ -397,7 +398,7 @@ mindmap
           ivn5["seeds and backfills: ensureFullSeedMaterial, backfillInventoryLedgerForMaterials, ensureDemoInventoryPresent"]
           ivn6["items reads inventory tables for usage counts, and its Sets card route reads inventory_sets"]
           ivn7["getMaterialRowByBarcode and the group property normalisers stay: items and inventory both use them"]
-      Challans ⟳ evacuated
+      Challans evacuated
         chBiz["Business rules"]
           chb1["a challan is a draft until issued; issuing freezes its printed snapshot and moves stock"]
           chb2["a reception mints material; a delivery takes stock out; internal use is settled later"]
@@ -453,7 +454,8 @@ mindmap
           chl1["GET /api/delivery-challans/health, ahead of the login gate"]
           chl2["normalizeChallanType, getItemSelectionSnapshot, the scrap and leftover group and item helpers, ensureKgUnit"]
           chl3["production writes challan tables in node-metrics and scrap; seeds"]
-          chl4["KNOWN BUGS recorded: invoice edit, in-use settle, asset upload-complete, the unreachable GET test-print"]
+          chl4["KNOWN BUGS still recorded: asset upload-complete calls a missing function; GET challan-templates/test-print is unreachable"]
+          chl5["⟳ fixed: invoice edit, in-use settle"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, read only"]
@@ -558,3 +560,5 @@ mindmap
 | 20 | Challans step 3 of 5: reports. `modules/challans/reports.js` (reconciliation report, conversion overrides, waste audit, client statement, `buildOrderReconciliation`) and `report-routes.js` (6 routes, including `GET /api/orders/:orderNo/reconciliation`). | API surface (unchanged paths), Orchestration, Services |
 | 21 | Challans step 4a of 5: the core service. `modules/challans/service.js` takes `saveDeliveryChallan`, `issueDeliveryChallan`, `mintReceivedMaterial`, `cancelDeliveryChallan`, `deleteDraftDeliveryChallan`, the list and DTOs, report-group helpers and the settle helpers (35 functions, about 1,900 lines). It is built after the inventory port; the template, invoice and report services built earlier now reach challan readers through functions. The hand-written stock writes move unchanged. | Services, Ports |
 | 22 | Challans step 4b of 5: the routes. `modules/challans/routes.js` takes the eleven challan handlers (22 doubled registrations), piece barcodes, the two asset upload routes and `GET /api/orders/:orderId/delivery-challans`. Registry: challans `evacuated: true`; 14 of 15. `server.js` is about 21,500 lines. Only production remains. | API surface (unchanged paths), Orchestration |
+| 23 | Fix: editing an invoice. The edit route called `prepare`, which does not exist, so every edit failed. Lines are re-inserted with `run`; an unknown id is a 404. Test flipped. | Orchestration, Business rules, Tests |
+| 24 | Fix: settling an in-use challan. Two faults, the second hidden behind the first: the settle's transaction collided with the item save's own (`saveItem` now takes `useTransaction`, default true), and the stock lot row carried a variation leaf of 0, which broke its foreign key (now null). Test flipped to a full settle. | Orchestration, Services, Business rules, Tests |

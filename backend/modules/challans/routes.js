@@ -32,12 +32,8 @@
 // NOT here: GET /api/delivery-challans/health stays in server.js, ahead of the
 // login gate.
 //
-// KNOWN BUGS, kept until their own fixes and recorded in
-// challans-routes.test.js:
-//   - reconcile opens a transaction and then saves a new scrap item, which
-//     opens its own; SQLite refuses the second and the settle fails;
-//   - assets/upload-complete calls handleAssetUploadComplete, which does not
-//     exist.
+// KNOWN BUG, kept and recorded in challans-routes.test.js: assets/upload-complete
+// calls handleAssetUploadComplete, which does not exist.
 // ---------------------------------------------------------------------------
 
 module.exports = function registerChallanRoutes(ctx) {
@@ -442,7 +438,10 @@ module.exports = function registerChallanRoutes(ctx) {
             }
 
             const reconItemName = `${bucket.prefix}_${baseName}_${dateStr}`;
-            const reconItemId = await ensureReconcileItem(reconItemName, subGroupId, unitId);
+            // Inside this settle's transaction, so the item save must not open
+            // its own: SQLite has no nested BEGIN. This is what made every
+            // settle fail when the scrap item was new.
+            const reconItemId = await ensureReconcileItem(reconItemName, subGroupId, unitId, { useTransaction: false });
             affectedItemIds.add(reconItemId);
 
             const lotBarcode = `LOT-RECON-${challanId}-${bucket.prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -454,7 +453,11 @@ module.exports = function registerChallanRoutes(ctx) {
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 lotBarcode, reconItemName, 'Reconciled', 'lot', 'tracked',
-                subGroupId, reconItemId, 0,
+                // No variation leaf: the scrap/leftover item is a simple item.
+                // This was 0, which is not a variation node and broke the
+                // column's foreign key, the second reason a settle never
+                // completed.
+                subGroupId, reconItemId, null,
                 unitSymbol, unitId, 'available', nowIso(),
               ],
             );
