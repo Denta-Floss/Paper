@@ -18,13 +18,15 @@ const barcodes = require('../../kernel/barcodes');
 //
 // Every one of save, issue, cancel and delete opens its own transaction.
 //
-// This module still writes other modules' tables by hand, exactly as it did in
-// server.js: materials, stock positions and movements on issue and cancel
-// (inventory), variation_stock through applyVariationStockDelta (items), and
-// piece_barcodes. Issue and cancel reverse stock differently from delete, which
-// goes through inventoryPorts.movements.applyCore. Folding these onto the
-// inventory ports is a separate change; the behaviour is pinned by
-// delivery-challans-api, variation-stock and challan-stock-bridge tests.
+// Stock is asked of the modules that own it. The movement ledger, minted
+// materials and their positions go through inventoryPorts (receipts.*,
+// movements.recordForChallan / forChallan / recordChallanReversal); the item's
+// variation stock goes through the items port (itemStock.assertLeaf /
+// applyDelta). What stock DOES is unchanged and pinned row by row in
+// challan-stock-rows.test.js: issue and cancel write their own ledger rows and
+// adjust variation stock, while deleting an issued reception goes through the
+// general movement engine (inventoryPorts.movements.applyCore).
+// Still written here by hand: piece_barcodes, which is production's table.
 //
 // Takes {get, all, run} and, by name, what it needs from around it: vendors,
 // orders (row and lifecycle), the company profile, the template snapshot
@@ -42,8 +44,7 @@ function createChallanService({
   parseJsonObject,
   normalizeCustomVariationValues,
   rowToUploadedAssetDto,
-  assertValidStockVariationLeaf,
-  applyVariationStockDelta,
+  itemStock,
   getVendorRowById,
   getOrderRowById,
   updateOrderLifecycle,
@@ -1269,91 +1270,6 @@ function createChallanService({
     }
   }
 
-  async function mintReceivedMaterial({
-    challan,
-    line,
-    itemId,
-    leafNodeId,
-    quantity,
-    uom,
-    locationId,
-    now,
-  }) {
-    if (!(itemId > 0) || !(Number(quantity) > 0)) return null;
-
-    // Already minted — issuing is once-only today, but a retry must not create a
-    // second pile of stock for the same line.
-    const existingRow = await get(
-      'SELECT barcode FROM materials WHERE source_challan_item_id = ?',
-      [line.id],
-    );
-    if (existingRow) return existingRow.barcode;
-
-    const itemRow = await get(
-      'SELECT id, name, display_name, unit_id FROM items WHERE id = ?',
-      [itemId],
-    );
-    const slug = String(challan.challan_no || challan.id || 'REC')
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    const base = `${slug}-L${Number(line.line_no || 1)}`;
-    let barcode = base;
-    for (let suffix = 2; suffix < 50; suffix += 1) {
-      const clash = await get('SELECT 1 FROM materials WHERE barcode = ?', [barcode]);
-      if (!clash) break;
-      barcode = `${base}-${suffix}`;
-    }
-
-    const name = String(
-      line.particulars || itemRow?.display_name || itemRow?.name || 'Received material',
-    ).trim();
-
-    await run(
-      `
-      INSERT INTO materials (
-        barcode, name, type, kind, unit_id, supplier, location,
-        on_hand_qty, available_to_promise_qty, material_class, inventory_state,
-        linked_item_id, linked_variation_leaf_node_id,
-        source_challan_id, source_challan_item_id, created_at, updated_at
-      ) VALUES (?, ?, ?, 'parent', ?, ?, ?, ?, ?, 'raw_material', 'available',
-                ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        barcode,
-        name,
-        uom || '',
-        itemRow?.unit_id ?? null,
-        String(challan.vendor_name || '').trim(),
-        locationId,
-        quantity,
-        quantity,
-        itemId,
-        leafNodeId || null,
-        challan.id,
-        line.id,
-        now,
-        now,
-      ],
-    );
-
-    // A material row alone is not stock anyone can draw on. Availability is read
-    // off `inventory_stock_positions` — barcode, place, lot — and the floor's
-    // assign check refuses anything that has no position, so minting without one
-    // would leave the received material visible and still unusable.
-    await run(
-      `
-      INSERT INTO inventory_stock_positions (
-        material_barcode, location_id, lot_code, unit_id, on_hand_qty,
-        reserved_qty, damaged_qty, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
-      `,
-      [barcode, locationId, barcode, itemRow?.unit_id ?? null, quantity, now],
-    );
-
-    return barcode;
-  }
-
   /// Issues a challan: moves stock, mints materials, and records custody.
   ///
   /// `recordCustody` exists for the demo and scenario seeders. They call this to
@@ -1473,14 +1389,12 @@ function createChallanService({
         const locationId = String(existing.location || '').trim() || 'MAIN';
         const isReception = normalizeChallanType(existing.type) === 'reception';
         const movementType = isReception ? 'receive' : 'issue';
-        const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
         if (itemId === 0) {
           const error = new Error('Each challan item must reference an item.');
           error.statusCode = 400;
           throw error;
         }
-        await assertValidStockVariationLeaf(itemId, leafNodeId);
+        await itemStock.assertLeaf(itemId, leafNodeId);
 
         // Material arriving on a reception challan becomes a barcoded row in
         // `materials`, not just a number on `variation_stock`.
@@ -1492,7 +1406,7 @@ function createChallanService({
         // what went into it. The row carries the challan and the line it came in
         // on, so provenance is a column rather than a join through movements.
         const receivedBarcode = isReception
-          ? await mintReceivedMaterial({
+          ? await inventoryPorts.receipts.mintFromChallanLine({
               challan: existing,
               line: item,
               itemId,
@@ -1504,38 +1418,23 @@ function createChallanService({
             })
           : null;
 
-        await run(
-          `
-          INSERT INTO inventory_movements (
-            id, material_barcode, movement_type, qty, primary_qty, uom,
-            to_location_id, reason_code, reference_type, reference_id,
-            source_challan_id, source_challan_type, source_challan_line_id,
-            actor, lot_code, created_at, item_id, variation_leaf_node_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            movementId,
-            // A real barcode for received material; '-' remains for a delivery,
-            // which takes stock away rather than bringing a piece into being.
-            receivedBarcode || '-',
-            movementType,
-            movementQty,
-            movementQty,
-            movementUom,
-            locationId,
-            isReception ? 'reception_challan_issue' : 'delivery_challan_issue',
-            'challan',
-            String(existing.id),
-            existing.id,
-            normalizeChallanType(existing.type),
-            item.id,
-            actor?.name || 'System',
-            '-',
-            now,
-            itemId,
-            leafNodeId
-          ]
-        );
+        await inventoryPorts.movements.recordForChallan({
+          // A real barcode for received material; '-' remains for a delivery,
+          // which takes stock away rather than bringing a piece into being.
+          materialBarcode: receivedBarcode || '-',
+          movementType,
+          qty: movementQty,
+          uom: movementUom,
+          locationId,
+          reasonCode: isReception ? 'reception_challan_issue' : 'delivery_challan_issue',
+          challanId: existing.id,
+          challanType: normalizeChallanType(existing.type),
+          challanLineId: item.id,
+          actorName: actor?.name || 'System',
+          now,
+          itemId,
+          leafNodeId,
+        });
 
         // The custody event for this line.
         //
@@ -1587,7 +1486,7 @@ function createChallanService({
         }
 
         const delta = isReception ? movementQty : -movementQty;
-        await applyVariationStockDelta({
+        await itemStock.applyDelta({
           itemId,
           variationLeafNodeId: leafNodeId,
           locationId,
@@ -1682,16 +1581,7 @@ function createChallanService({
           if (!lotCode) {
             const pipelineRunId = parseJsonOrArray(producedBy?.source_metadata_json, {})?.pipelineRunId;
             if (pipelineRunId) {
-              const producedLot = await get(
-                `SELECT lot_code FROM inventory_movements
-                 WHERE reference_type = 'pipeline_run' AND reference_id = ?
-                   AND reason_code = 'production_output'
-                   AND TRIM(COALESCE(lot_code, '')) != ''
-                 ORDER BY created_at DESC, id DESC
-                 LIMIT 1`,
-                [String(pipelineRunId)],
-              );
-              lotCode = String(producedLot?.lot_code || '').trim();
+              lotCode = await inventoryPorts.movements.producedLotCodeForRun(pipelineRunId);
               if (lotCode) {
                 // Written back, so which lot shipped is a recorded fact about this
                 // dispatch rather than something re-derived later against data
@@ -1788,18 +1678,12 @@ function createChallanService({
     await run('BEGIN TRANSACTION');
     try {
       if (existing.status === 'issued') {
-        const movementRows = await all(
-          `
-          SELECT *
-          FROM inventory_movements
-          WHERE source_challan_id = ? AND source_challan_type = ?
-          ORDER BY created_at ASC, id ASC
-          `,
-          [existing.id, normalizeChallanType(existing.type)],
+        const movementRows = await inventoryPorts.movements.forChallan(
+          existing.id,
+          normalizeChallanType(existing.type),
         );
         for (const movement of movementRows) {
           const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
-          const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
           const qty = Number(movement.qty || 0);
 
           if (movement.item_id === 0 || !movement.item_id) {
@@ -1807,42 +1691,20 @@ function createChallanService({
           }
 
           const stockLocation = movement.to_location_id || existing.location || 'MAIN';
-          await assertValidStockVariationLeaf(movement.item_id, movement.variation_leaf_node_id);
+          await itemStock.assertLeaf(movement.item_id, movement.variation_leaf_node_id);
 
-          await run(
-            `
-            INSERT INTO inventory_movements (
-              id, material_barcode, movement_type, qty, primary_qty, uom,
-              to_location_id, reason_code, reference_type, reference_id,
-              source_challan_id, source_challan_type, source_challan_line_id,
-              reverses_movement_id, actor, lot_code, created_at, item_id, variation_leaf_node_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `,
-            [
-              movementId,
-              movement.material_barcode || '-',
-              reverseType,
-              qty,
-              Number(movement.primary_qty || movement.qty || 0),
-              String(movement.uom || '').trim() || 'units',
-              stockLocation,
-              'challan_cancel_reversal',
-              'challan-cancellation',
-              String(existing.id),
-              existing.id,
-              normalizeChallanType(existing.type),
-              movement.source_challan_line_id || null,
-              movement.id,
-              actor?.name || 'System',
-              movement.lot_code || movement.material_barcode || '-',
-              now,
-              movement.item_id,
-              movement.variation_leaf_node_id
-            ]
-          );
+          await inventoryPorts.movements.recordChallanReversal({
+            movement,
+            reverseType,
+            stockLocation,
+            challanId: existing.id,
+            challanType: normalizeChallanType(existing.type),
+            actorName: actor?.name || 'System',
+            now,
+          });
 
           const delta = reverseType === 'receive' ? qty : -qty;
-          await applyVariationStockDelta({
+          await itemStock.applyDelta({
             itemId: movement.item_id,
             variationLeafNodeId: movement.variation_leaf_node_id,
             locationId: stockLocation,
@@ -1886,14 +1748,9 @@ function createChallanService({
       // Issued challans moved stock (reception = receive, delivery = issue); reverse
       // it before deleting so on_hand_qty stays correct, same as cancellation does.
       if (existing.status === 'issued') {
-        const movementRows = await all(
-          `
-          SELECT *
-          FROM inventory_movements
-          WHERE source_challan_id = ? AND source_challan_type = ?
-          ORDER BY created_at ASC, id ASC
-          `,
-          [existing.id, normalizeChallanType(existing.type)],
+        const movementRows = await inventoryPorts.movements.forChallan(
+          existing.id,
+          normalizeChallanType(existing.type),
         );
         for (const movement of movementRows) {
           const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
@@ -2022,7 +1879,6 @@ function createChallanService({
     logDeliveryChallanActivity,
     assertCanChangeIssuedChallanNo,
     saveDeliveryChallan,
-    mintReceivedMaterial,
     issueDeliveryChallan,
     cancelDeliveryChallan,
     deleteDraftDeliveryChallan,

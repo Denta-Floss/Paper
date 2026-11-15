@@ -13415,8 +13415,12 @@ const challansService = createChallanService({
   parseJsonObject,
   normalizeCustomVariationValues,
   rowToUploadedAssetDto,
-  assertValidStockVariationLeaf,
-  applyVariationStockDelta,
+  // The item's variation stock, through the items port. The port is built at
+  // the end of this file, so it is looked up when called.
+  itemStock: {
+    assertLeaf: (...args) => itemsPorts.stock.assertLeaf(...args),
+    applyDelta: (...args) => itemsPorts.stock.applyDelta(...args),
+  },
   getVendorRowById,
   getOrderRowById,
   updateOrderLifecycle,

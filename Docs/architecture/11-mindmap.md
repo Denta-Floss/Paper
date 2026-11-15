@@ -31,9 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c26["⟳ Change 26: the GET test-print address is reachable"]
-        c26a["registered ahead of /:id, beside /scans"]
-        c26b["the query-count test no longer fails on a background timer tick"]
+      c27["⟳ Change 27: challans asks inventory and items for stock instead of writing their tables"]
+        c27a["six new inventory ports hold the statements challans used to run itself"]
+        c27b["variation stock goes through the items port, its first real caller"]
+        c27c["what stock does is unchanged, checked row by row"]
+        c27d["movement ids use a counter instead of a random number under 1000"]
+      c26["Change 26: the GET test-print address is reachable"]
       c25["Change 25: a challan photo can be uploaded"]
       c24["Change 24: settling an in-use challan works"]
       c23["Change 23: invoice edit works"]
@@ -381,6 +384,7 @@ mindmap
           ivs9["getStockOverview: merges custom variation values from stock, materials, order lines and challan lines"]
         ivPort["Ports"]
           ivp1["offers: sets.*, materials.delete, governance.get and retireMissingProperties, movements.apply and applyCore, scans.increment, ledger.recomputeSummary"]
+          ivp4["⟳ offers to challans: receipts.mintFromChallanLine, receipts.mintReconcileLot, movements.recordForChallan, forChallan, recordChallanReversal, producedLotCodeForRun"]
           ivp2["uses, by name: items port describe, entity links, variation readers, saveGroup, applyVariationStockDelta, recordLedgerEvent"]
           ivp3["uses, read only: items.variationStockRows, orders.customVariationValueRows, challans.customVariationValueRows"]
         ivData["Data"]
@@ -422,7 +426,7 @@ mindmap
           chc4["listDeliveryChallans, getDeliveryChallanRowById, rowToDeliveryChallanDto, getDeliveryChallanItems"]
           chc5["report groups: effectiveReportGroupCodesForChallan, replaceChallanReportGroups"]
           chc6["generateChallanNumber, used by production too"]
-          chc7["still writes inventory and items tables by hand; delete alone uses the inventory port"]
+          chc7["⟳ stock goes through ports: inventoryPorts receipts and movements, itemsPorts.stock; piece_barcodes still written here"]
         chR["Reports: modules/challans/reports.js and report-routes.js"]
           chr1["buildReconciliationReport, buildClientStatementReport, buildOrderReconciliation"]
           chr2["listConversionOverrides, saveConversionOverride, listWasteAuditRows"]
@@ -566,3 +570,4 @@ mindmap
 | 24 | Fix: settling an in-use challan. Two faults, the second hidden behind the first: the settle's transaction collided with the item save's own (`saveItem` now takes `useTransaction`, default true), and the stock lot row carried a variation leaf of 0, which broke its foreign key (now null). Test flipped to a full settle. | Orchestration, Services, Business rules, Tests |
 | 25 | Fix: challan photo upload. Two faults: the intent step's allowed lists left challans out, so an upload could never start, and the completion route called `handleAssetUploadComplete`, which does not exist. Both fixed; completion also checks the upload belongs to that challan. Test is a real round trip against the local file store. | Orchestration, Business rules, Tests |
 | 26 | Fix: `GET /api/challan-templates/test-print` was registered after `/:id` and answered as a missing template. It is now registered ahead of it and reaches the print handler. Separately, the timer-sensitive query-count test in `item-developed-for` takes the smallest of three counts. | Orchestration, Tests |
+| 27 | Challans no longer runs SQL on inventory's tables in its write paths. The same statements now live in `modules/inventory/service.js` behind `inventoryPorts.receipts.mintFromChallanLine`, `receipts.mintReconcileLot`, `movements.recordForChallan`, `movements.forChallan`, `movements.recordChallanReversal` and `movements.producedLotCodeForRun`; variation stock goes through `itemsPorts.stock`. Behaviour is unchanged (pinned by `challan-stock-rows.test.js`). Not routed through the general movement engine, which refuses an outgoing line's `-` barcode. The order reconciliation report still reads the movement ledger, as a read model. | Services, Ports |

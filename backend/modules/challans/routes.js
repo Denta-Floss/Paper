@@ -446,22 +446,15 @@ module.exports = function registerChallanRoutes(ctx) {
             affectedItemIds.add(reconItemId);
 
             const lotBarcode = `LOT-RECON-${challanId}-${bucket.prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-            await run(
-              `INSERT INTO materials (
-                barcode, name, type, kind, group_mode,
-                linked_group_id, linked_item_id, linked_variation_leaf_node_id,
-                unit, unit_id, inventory_state, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                lotBarcode, reconItemName, 'Reconciled', 'lot', 'tracked',
-                // No variation leaf: the scrap/leftover item is a simple item.
-                // This was 0, which is not a variation node and broke the
-                // column's foreign key, the second reason a settle never
-                // completed.
-                subGroupId, reconItemId, null,
-                unitSymbol, unitId, 'available', nowIso(),
-              ],
-            );
+            await inventoryPorts.receipts.mintReconcileLot({
+              lotBarcode,
+              name: reconItemName,
+              groupId: subGroupId,
+              itemId: reconItemId,
+              unitSymbol,
+              unitId,
+              createdAt: nowIso(),
+            });
 
             await inventoryPorts.movements.applyCore(
               {

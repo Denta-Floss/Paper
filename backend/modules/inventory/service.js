@@ -2461,6 +2461,254 @@ function createInventoryService({
     return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
   }
 
+  // --- what a challan asks of the stock tables ------------------------------
+  //
+  // These were SQL inside the challans module. They are the same statements,
+  // moved here so that the tables stay inventory's to write. They deliberately
+  // do NOT go through applyInventoryMovementCore: an outgoing challan line names
+  // no physical piece (its barcode is '-'), which the engine refuses, and the
+  // item's variation stock is adjusted by the challan itself through the items
+  // port. Folding the two paths together would change what stock does.
+
+  let movementSequence = Math.floor(Math.random() * 1000);
+  /// An id for a movement row. The time, then a counter that never repeats
+  /// within this process: two movements written in the same millisecond used to
+  /// be told apart by a random number under 1000, which could repeat.
+  function nextMovementId() {
+    movementSequence = (movementSequence + 1) % 1000000;
+    return `mov-${Date.now()}-${movementSequence}`;
+  }
+
+  /// Material arriving on a reception challan becomes a barcoded row in
+  /// `materials` with a stock position, so the floor can assign it. Returns the
+  /// barcode; a line that was already minted returns the one it has.
+  async function mintReceivedFromChallanLine({
+    challan,
+    line,
+    itemId,
+    leafNodeId,
+    quantity,
+    uom,
+    locationId,
+    now,
+  }) {
+    if (!(itemId > 0) || !(Number(quantity) > 0)) return null;
+
+    // Already minted — issuing is once-only today, but a retry must not create a
+    // second pile of stock for the same line.
+    const existingRow = await get(
+      'SELECT barcode FROM materials WHERE source_challan_item_id = ?',
+      [line.id],
+    );
+    if (existingRow) return existingRow.barcode;
+
+    const itemRow = await get(
+      'SELECT id, name, display_name, unit_id FROM items WHERE id = ?',
+      [itemId],
+    );
+    const slug = String(challan.challan_no || challan.id || 'REC')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const base = `${slug}-L${Number(line.line_no || 1)}`;
+    let barcode = base;
+    for (let suffix = 2; suffix < 50; suffix += 1) {
+      const clash = await get('SELECT 1 FROM materials WHERE barcode = ?', [barcode]);
+      if (!clash) break;
+      barcode = `${base}-${suffix}`;
+    }
+
+    const name = String(
+      line.particulars || itemRow?.display_name || itemRow?.name || 'Received material',
+    ).trim();
+
+    await run(
+      `
+      INSERT INTO materials (
+        barcode, name, type, kind, unit_id, supplier, location,
+        on_hand_qty, available_to_promise_qty, material_class, inventory_state,
+        linked_item_id, linked_variation_leaf_node_id,
+        source_challan_id, source_challan_item_id, created_at, updated_at
+      ) VALUES (?, ?, ?, 'parent', ?, ?, ?, ?, ?, 'raw_material', 'available',
+                ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        barcode,
+        name,
+        uom || '',
+        itemRow?.unit_id ?? null,
+        String(challan.vendor_name || '').trim(),
+        locationId,
+        quantity,
+        quantity,
+        itemId,
+        leafNodeId || null,
+        challan.id,
+        line.id,
+        now,
+        now,
+      ],
+    );
+
+    // A material row alone is not stock anyone can draw on. Availability is read
+    // off `inventory_stock_positions` — barcode, place, lot — and the floor's
+    // assign check refuses anything that has no position, so minting without one
+    // would leave the received material visible and still unusable.
+    await run(
+      `
+      INSERT INTO inventory_stock_positions (
+        material_barcode, location_id, lot_code, unit_id, on_hand_qty,
+        reserved_qty, damaged_qty, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
+      `,
+      [barcode, locationId, barcode, itemRow?.unit_id ?? null, quantity, now],
+    );
+
+    return barcode;
+  }
+
+  /// The stock lot one bucket of an in-use challan settle is received into.
+  async function mintReconcileLot({ lotBarcode, name, groupId, itemId, unitSymbol, unitId, createdAt }) {
+    await run(
+      `INSERT INTO materials (
+        barcode, name, type, kind, group_mode,
+        linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+        unit, unit_id, inventory_state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        lotBarcode, name, 'Reconciled', 'lot', 'tracked',
+        // No variation leaf: the scrap/leftover item is a simple item.
+        groupId, itemId, null,
+        unitSymbol, unitId, 'available', createdAt,
+      ],
+    );
+  }
+
+  /// The ledger row for one challan line being issued.
+  async function recordChallanMovement({
+    materialBarcode,
+    movementType,
+    qty,
+    uom,
+    locationId,
+    reasonCode,
+    challanId,
+    challanType,
+    challanLineId,
+    actorName,
+    now,
+    itemId,
+    leafNodeId,
+  }) {
+    const movementId = nextMovementId();
+    await run(
+      `
+      INSERT INTO inventory_movements (
+        id, material_barcode, movement_type, qty, primary_qty, uom,
+        to_location_id, reason_code, reference_type, reference_id,
+        source_challan_id, source_challan_type, source_challan_line_id,
+        actor, lot_code, created_at, item_id, variation_leaf_node_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        movementId,
+        materialBarcode,
+        movementType,
+        qty,
+        qty,
+        uom,
+        locationId,
+        reasonCode,
+        'challan',
+        String(challanId),
+        challanId,
+        challanType,
+        challanLineId,
+        actorName,
+        '-',
+        now,
+        itemId,
+        leafNodeId
+      ]
+    );
+    return movementId;
+  }
+
+  /// Every movement a challan wrote, oldest first: what a cancel or a delete
+  /// has to undo.
+  function movementsForChallan(challanId, challanType) {
+    return all(
+      `
+      SELECT *
+      FROM inventory_movements
+      WHERE source_challan_id = ? AND source_challan_type = ?
+      ORDER BY created_at ASC, id ASC
+      `,
+      [challanId, challanType],
+    );
+  }
+
+  /// The ledger row that undoes one of a cancelled challan's movements, linked
+  /// to the movement it reverses.
+  async function recordChallanReversal({
+    movement,
+    reverseType,
+    stockLocation,
+    challanId,
+    challanType,
+    actorName,
+    now,
+  }) {
+    const movementId = nextMovementId();
+    await run(
+      `
+      INSERT INTO inventory_movements (
+        id, material_barcode, movement_type, qty, primary_qty, uom,
+        to_location_id, reason_code, reference_type, reference_id,
+        source_challan_id, source_challan_type, source_challan_line_id,
+        reverses_movement_id, actor, lot_code, created_at, item_id, variation_leaf_node_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        movementId,
+        movement.material_barcode || '-',
+        reverseType,
+        Number(movement.qty || 0),
+        Number(movement.primary_qty || movement.qty || 0),
+        String(movement.uom || '').trim() || 'units',
+        stockLocation,
+        'challan_cancel_reversal',
+        'challan-cancellation',
+        String(challanId),
+        challanId,
+        challanType,
+        movement.source_challan_line_id || null,
+        movement.id,
+        actorName,
+        movement.lot_code || movement.material_barcode || '-',
+        now,
+        movement.item_id,
+        movement.variation_leaf_node_id
+      ]
+    );
+    return movementId;
+  }
+
+  /// The lot a pipeline run last produced, or ''. A dispatched line that names
+  /// the run it came from gets its lot from here.
+  async function producedLotCodeForRun(pipelineRunId) {
+    const producedLot = await get(
+      `SELECT lot_code FROM inventory_movements
+       WHERE reference_type = 'pipeline_run' AND reference_id = ?
+         AND reason_code = 'production_output'
+         AND TRIM(COALESCE(lot_code, '')) != ''
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [String(pipelineRunId)],
+    );
+    return String(producedLot?.lot_code || '').trim();
+  }
+
   // --- stock overview -------------------------------------------------------
 
   function mergeCustomVariationValueJsonRows(rows) {
@@ -2592,6 +2840,12 @@ function createInventoryService({
     linkMaterialRecordToItem,
     unlinkMaterialRecord,
     getStockOverview,
+    mintReceivedFromChallanLine,
+    mintReconcileLot,
+    recordChallanMovement,
+    movementsForChallan,
+    recordChallanReversal,
+    producedLotCodeForRun,
     /// An item is going away: its lines in every set go with it. trashAndDelete
     /// removes the item with foreign keys off, so the declared cascade never
     /// fires and a set would keep a nameless ghost line.
