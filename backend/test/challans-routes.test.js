@@ -321,15 +321,59 @@ test('invoices: an edit replaces the lines and recomputes the totals', async (t)
   assert.equal(orphans.c, 0);
 });
 
-test('KNOWN BUG: completing a challan photo upload always fails once it is valid', async (t) => {
+test('a challan photo uploads end to end, and only through its own challan', async (t) => {
+  const crypto = require('node:crypto');
+  const uploadDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-uploads-'));
+  process.env.PAPER_UPLOAD_DIR = uploadDir;
+  delete process.env.PAPER_S3_BUCKET_NAME;
+  delete process.env.S3_BUCKET;
   const ctx = await boot();
-  t.after(() => closeServer(ctx.server));
-  const challan = await makeChallan(ctx, 'RT-BUG-ASSET');
-  const res = await api(ctx, 'POST', `/api/delivery-challans/${challan.id}/assets/upload-complete`, {
-    uploadSessionId: 'x', objectKey: 'y',
+  t.after(() => { delete process.env.PAPER_UPLOAD_DIR; return closeServer(ctx.server); });
+  const challan = await makeChallan(ctx, 'RT-ASSET-1');
+  const other = await makeChallan(ctx, 'RT-ASSET-2');
+
+  // A real 1x1 PNG.
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const intent = await api(ctx, 'POST', `/api/delivery-challans/${challan.id}/assets/upload-intent`, {
+    uploadType: 'DELIVERY_CHALLAN',
+    fileName: 'gate-pass.png',
+    contentType: 'image/png',
+    sizeBytes: PNG.length,
+    sha256: crypto.createHash('sha256').update(PNG).digest('hex'),
   });
-  assert.equal(res.status, 500);
-  assert.match(res.body.error, /handleAssetUploadComplete is not defined/);
+  assert.equal(intent.status, 201, JSON.stringify(intent.body));
+  const { uploadUrl, uploadSessionId, objectKey } = intent.body.intent.upload;
+  const parsed = new URL(uploadUrl);
+  const put = await fetch(`${ctx.baseUrl}${parsed.pathname}${parsed.search}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'image/png' },
+    body: PNG,
+  });
+  assert.equal(put.status, 200);
+
+  // Through the wrong challan: refused, and nothing is filed.
+  const wrong = await api(ctx, 'POST', `/api/delivery-challans/${other.id}/assets/upload-complete`, { uploadSessionId, objectKey });
+  assert.equal(wrong.status, 400);
+  assert.match(wrong.body.error, /does not belong to this challan/);
+
+  // This always failed before ("handleAssetUploadComplete is not defined").
+  const done = await api(ctx, 'POST', `/api/delivery-challans/${challan.id}/assets/upload-complete`, { uploadSessionId, objectKey });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.asset.entityType, 'delivery_challan');
+  assert.equal(Number(done.body.asset.entityId), challan.id);
+  assert.equal(done.body.asset.fileName, 'gate-pass.png');
+  const stored = await ctx.backend.get(
+    "SELECT COUNT(*) AS c FROM uploaded_assets WHERE entity_type = 'delivery_challan' AND entity_id = ? AND status = 'uploaded'",
+    [challan.id],
+  );
+  assert.equal(stored.c, 1);
+
+  const unknown = await api(ctx, 'POST', `/api/delivery-challans/${challan.id}/assets/upload-complete`, { uploadSessionId: 'nope', objectKey: 'nope' });
+  assert.equal(unknown.status, 404, 'an unknown session is a 404, not a crash');
+  assert.equal((await api(ctx, 'POST', '/api/delivery-challans/0/assets/upload-complete', {})).status, 400);
 });
 
 test('settling an in-use challan puts its weight into scrap and finished-goods stock, once', async (t) => {

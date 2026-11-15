@@ -9235,6 +9235,11 @@ function assertValidAssetUploadInput({
     'MACHINE_IMAGE',
     'DIE_IMAGE',
     'PARTY_IMAGE',
+    // A challan's photos (gate pass, signed copy). The dedicated challan upload
+    // routes, the storage prefix, the owner check and the permission map all
+    // knew about challans already; this list did not, so the upload could
+    // never start.
+    'DELIVERY_CHALLAN',
   ]);
   // A company's logo and a person's photo live in the same store as a part's,
   // so all of them are kept as object keys and signed when read — not as a
@@ -9245,6 +9250,7 @@ function assertValidAssetUploadInput({
     'die',
     'client',
     'party_contact',
+    'delivery_challan',
   ]);
 
   if (!validUploadTypes.has(normalizedUploadType)) {
@@ -20871,6 +20877,7 @@ registerChallanRoutes({
   rowToUploadedAssetDto,
   normalizeChallanType,
   createAssetUploadIntent,
+  completeAssetUpload,
   inventoryPorts,
   actorFromRequest,
   ensureReconcilePrimaryGroup,

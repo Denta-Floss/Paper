@@ -31,10 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c24["⟳ Change 24: settling an in-use challan works"]
-        c24a["saveItem takes useTransaction, default true; the settle passes false"]
-        c24b["the stock lot was written with a variation leaf of 0, now null"]
-        c24c["settle completes: scrap and finished-goods lots are created, a second settle is refused"]
+      c25["⟳ Change 25: a challan photo can be uploaded"]
+        c25a["upload-complete called a function that did not exist; it now uses completeAssetUpload"]
+        c25b["upload-intent refused challans outright; the allowed lists now include them"]
+        c25c["an upload can only be completed through the challan it was opened for"]
+        c25d["challan-stock-rows test added first for the next change: 3 tests"]
+      c24["Change 24: settling an in-use challan works"]
       c23["Change 23: invoice edit works"]
       c22["Change 22: challans step 4b, the routes and the flag"]
       c21["Change 21: challans step 4a, the core service"]
@@ -454,7 +456,8 @@ mindmap
           chl1["GET /api/delivery-challans/health, ahead of the login gate"]
           chl2["normalizeChallanType, getItemSelectionSnapshot, the scrap and leftover group and item helpers, ensureKgUnit"]
           chl3["production writes challan tables in node-metrics and scrap; seeds"]
-          chl4["KNOWN BUGS still recorded: asset upload-complete calls a missing function; GET challan-templates/test-print is unreachable"]
+          chl4["KNOWN BUG still recorded: GET challan-templates/test-print is unreachable"]
+          chl6["⟳ fixed: challan photo upload, intent and complete"]
           chl5["⟳ fixed: invoice edit, in-use settle"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
@@ -562,3 +565,4 @@ mindmap
 | 22 | Challans step 4b of 5: the routes. `modules/challans/routes.js` takes the eleven challan handlers (22 doubled registrations), piece barcodes, the two asset upload routes and `GET /api/orders/:orderId/delivery-challans`. Registry: challans `evacuated: true`; 14 of 15. `server.js` is about 21,500 lines. Only production remains. | API surface (unchanged paths), Orchestration |
 | 23 | Fix: editing an invoice. The edit route called `prepare`, which does not exist, so every edit failed. Lines are re-inserted with `run`; an unknown id is a 404. Test flipped. | Orchestration, Business rules, Tests |
 | 24 | Fix: settling an in-use challan. Two faults, the second hidden behind the first: the settle's transaction collided with the item save's own (`saveItem` now takes `useTransaction`, default true), and the stock lot row carried a variation leaf of 0, which broke its foreign key (now null). Test flipped to a full settle. | Orchestration, Services, Business rules, Tests |
+| 25 | Fix: challan photo upload. Two faults: the intent step's allowed lists left challans out, so an upload could never start, and the completion route called `handleAssetUploadComplete`, which does not exist. Both fixed; completion also checks the upload belongs to that challan. Test is a real round trip against the local file store. | Orchestration, Business rules, Tests |

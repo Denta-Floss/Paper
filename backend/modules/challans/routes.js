@@ -32,8 +32,8 @@
 // NOT here: GET /api/delivery-challans/health stays in server.js, ahead of the
 // login gate.
 //
-// KNOWN BUG, kept and recorded in challans-routes.test.js: assets/upload-complete
-// calls handleAssetUploadComplete, which does not exist.
+// A challan's photo upload finishes through completeAssetUpload, the same
+// function every other record uses.
 // ---------------------------------------------------------------------------
 
 module.exports = function registerChallanRoutes(ctx) {
@@ -50,6 +50,7 @@ module.exports = function registerChallanRoutes(ctx) {
     rowToUploadedAssetDto,
     normalizeChallanType,
     createAssetUploadIntent,
+    completeAssetUpload,
     inventoryPorts,
     actorFromRequest,
     ensureReconcilePrimaryGroup,
@@ -810,12 +811,26 @@ module.exports = function registerChallanRoutes(ctx) {
         });
         return;
       }
-      const assetRow = await handleAssetUploadComplete({
-        ...(req.body || {}),
-        entityType: 'delivery_challan',
-        entityId,
+      // The session has to be one that was opened for THIS challan; completing
+      // someone else's upload through this address would file it under theirs.
+      const session = await get(
+        'SELECT entity_type, entity_id FROM asset_upload_sessions WHERE id = ?',
+        [req.body?.uploadSessionId],
+      );
+      if (session && (session.entity_type !== 'delivery_challan' || Number(session.entity_id) !== entityId)) {
+        res.status(400).json({
+          success: false,
+          asset: null,
+          error: 'That upload does not belong to this challan.',
+        });
+        return;
+      }
+      // The same function every other record's upload-complete uses. This route
+      // used to call a helper that did not exist, so it always failed.
+      const assetDto = await completeAssetUpload({
+        uploadSessionId: req.body?.uploadSessionId,
+        objectKey: req.body?.objectKey,
       });
-      const assetDto = await rowToUploadedAssetDto(assetRow);
       res.status(200).json({
         success: true,
         asset: assetDto,
