@@ -268,11 +268,19 @@ test('templates: list, scans (which must not be read as an id), one, and the ref
 
 // ---- broken today, recorded as it is --------------------------------------
 
-test('KNOWN BUG: GET /api/challan-templates/test-print is answered by /:id and never runs', async (t) => {
+test('templates: GET test-print reaches the print handler, not the template lookup', async (t) => {
   const ctx = await boot();
   t.after(() => closeServer(ctx.server));
-  const res = await api(ctx, 'GET', '/api/challan-templates/test-print');
-  assert.equal(res.status, 404, 'test-print is read as a template id');
+  // Registered after /:id, this used to be read as the template "test-print"
+  // and answered 404 "not found" without the print handler ever running.
+  const bare = await api(ctx, 'GET', '/api/challan-templates/test-print');
+  assert.equal(bare.status, 400);
+  assert.equal(bare.body.error, 'Template id is required.', 'the print handler answered');
+  const ghost = await api(ctx, 'GET', '/api/challan-templates/test-print?templateId=999999');
+  assert.equal(ghost.status, 404);
+  assert.equal(ghost.body.error, 'Challan template not found.');
+  // And a real id is still read as an id.
+  assert.equal((await api(ctx, 'GET', '/api/challan-templates/999999')).status, 404);
 });
 
 test('invoices: an edit replaces the lines and recomputes the totals', async (t) => {

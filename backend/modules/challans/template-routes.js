@@ -17,13 +17,12 @@
 //   GET    /api/templates/:id/test-print                 a sample PDF, by id
 //   GET    /api/challans/:id/print-template-preview      a challan on its template
 //
-// ORDER MATTERS in this file: /scans and POST /test-print are registered before
-// /:id. The route-surface test sorts its list and cannot see an order change;
-// challans-routes.test.js pins /scans answering 200 for that reason.
+//   GET    /api/challan-templates/test-print             a sample PDF (same handler)
 //
-// KNOWN BUG, kept: GET /api/challan-templates/test-print is registered after
-// GET /:id, which answers it as a 404 ("test-print" read as an id). Nothing
-// calls it; the app uses the POST and the /api/templates/:id form.
+// ORDER MATTERS in this file: /scans and both /test-print routes are registered
+// before /:id, or they are read as a template id. The route-surface test sorts
+// its list and cannot see an order change; challans-routes.test.js pins /scans
+// and GET /test-print answering for that reason.
 //
 // Handlers are the ones that lived in server.js, moved whole.
 // ---------------------------------------------------------------------------
@@ -73,6 +72,12 @@ module.exports = function registerChallanTemplateRoutes(ctx) {
         error: error.message,
       });
     }
+  });
+
+  // Ahead of /:id, like /scans: registered after it, "test-print" was read as
+  // a template id and answered 404.
+  app.get('/api/challan-templates/test-print', requirePermission('config.read'), async (req, res) => {
+    await handleChallanTemplateTestPrint(req, res);
   });
 
   app.get('/api/challan-templates/:id', requirePermission('config.read'), async (req, res) => {
@@ -277,10 +282,6 @@ module.exports = function registerChallanTemplateRoutes(ctx) {
   }
 
   app.post('/api/challan-templates/test-print', requirePermission('config.read'), async (req, res) => {
-    await handleChallanTemplateTestPrint(req, res);
-  });
-
-  app.get('/api/challan-templates/test-print', requirePermission('config.read'), async (req, res) => {
     await handleChallanTemplateTestPrint(req, res);
   });
 
