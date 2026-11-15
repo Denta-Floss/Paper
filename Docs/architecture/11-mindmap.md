@@ -31,11 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c21["⟳ Change 21: challans step 4a, the core service"]
-        c21a["35 functions moved: read, save, issue, cancel, delete, DTOs, report groups, settle helpers"]
-        c21b["built after the inventory port; the earlier template, invoice and report services reach it through functions"]
-        c21c["hand-written stock writes moved as they are, on purpose"]
-        c21d["routes still in server.js, calling the old names"]
+      c22["⟳ Change 22: challans step 4b, the routes and the flag"]
+        c22a["26 registrations moved to modules/challans/routes.js, the doubled spellings kept"]
+        c22b["socket notifications go through getIo"]
+        c22c["challans evacuated: 14 of 15 modules, server.js about 21500 lines"]
+        c22d["health check stays in server.js, ahead of login"]
+      c21["Change 21: challans step 4a, the core service"]
       c20["Change 20: challans step 3, reports and reconciliation"]
       c19["Change 19: challans step 2, invoices"]
       c18["Change 18: challans step 1, templates and their PDFs"]
@@ -396,8 +397,23 @@ mindmap
           ivn5["seeds and backfills: ensureFullSeedMaterial, backfillInventoryLedgerForMaterials, ensureDemoInventoryPresent"]
           ivn6["items reads inventory tables for usage counts, and its Sets card route reads inventory_sets"]
           ivn7["getMaterialRowByBarcode and the group property normalisers stay: items and inventory both use them"]
-      Challans ⟳ moving, step 4 of 5
-        chC["Core: modules/challans/service.js ⟳"]
+      Challans ⟳ evacuated
+        chBiz["Business rules"]
+          chb1["a challan is a draft until issued; issuing freezes its printed snapshot and moves stock"]
+          chb2["a reception mints material; a delivery takes stock out; internal use is settled later"]
+          chb3["cancelling puts stock back; only a draft is deleted outright"]
+          chb4["a challan with invoices is not cancelled until they are dealt with; draft invoices can go with it"]
+          chb5["an internal-use challan settles its full weight into scrap, leftover, lost, rejection and finished goods"]
+          chb6["an invoice bills challan lines and is recorded in the custody ledger once per challan"]
+        chApi["API surface"]
+          cha1["22 doubled registrations under /api/challans and /api/delivery-challans"]
+          cha2["piece-barcodes, asset upload intent and complete, an order's challans"]
+          cha3["invoices: 7 routes; reports: 6 routes; templates: 14 routes"]
+        chO["Orchestration: modules/challans/routes.js"]
+          cho1["registerChallanRoutes ctx; one handler per action, registered under both spellings"]
+          cho2["handleReconcileChallan: the in-use settle, about 230 lines"]
+          cho3["notifies other screens through getIo: challan_generated_ok, item_updated"]
+        chC["Core: modules/challans/service.js"]
           chc1["createChallanService"]
           chc2["saveDeliveryChallan, issueDeliveryChallan, cancelDeliveryChallan, deleteDraftDeliveryChallan"]
           chc3["mintReceivedMaterial: a reception becomes stock"]
@@ -421,6 +437,23 @@ mindmap
           cht5["KNOWN BUG kept: GET /api/challan-templates/test-print is answered by /:id as 404"]
         ch1["about 26 endpoints, each served twice, 14 tables"]
         ch2["⟳ challans ports file created, vendor reads only"]
+        chP["Ports"]
+          chp1["offers: vendor usage and purchase rows, customVariationValueRows"]
+          chp2["uses: inventoryPorts.movements.applyCore, orders getOrderRowById and updateOrderLifecycle, vendors, templates"]
+          chp3["uses by name: applyVariationStockDelta, recordLedgerEvent, getItemSelectionSnapshot, the scrap and leftover item helpers"]
+        chD["Data"]
+          chd1["delivery_challans, delivery_challan_items, delivery_challan_order_items, report groups, activity log"]
+          chd2["challan_templates, mappings, upload sessions"]
+          chd3["invoice_headers, invoice_lines"]
+          chd4["stage_reconciliations, conversion overrides, waste audit"]
+        chTe["Tests"]
+          chte1["challans-routes.test.js, 11 tests, written first"]
+          chte2["delivery-challans-api, variation-stock, challan-stock-bridge, barcode-ledger-events, order-reconciliation"]
+        chL["Still in server.js"]
+          chl1["GET /api/delivery-challans/health, ahead of the login gate"]
+          chl2["normalizeChallanType, getItemSelectionSnapshot, the scrap and leftover group and item helpers, ensureKgUnit"]
+          chl3["production writes challan tables in node-metrics and scrap; seeds"]
+          chl4["KNOWN BUGS recorded: invoice edit, in-use settle, asset upload-complete, the unreachable GET test-print"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, read only"]
@@ -524,3 +557,4 @@ mindmap
 | 19 | Challans step 2 of 5: invoices. `modules/challans/invoices.js` (DTOs, list, read, numbering, `createInvoice`, amount in words, the invoice PDF) and `invoice-routes.js` (7 routes). The broken invoice edit moves as it is and is fixed in its own commit. | API surface (unchanged paths), Orchestration, Services |
 | 20 | Challans step 3 of 5: reports. `modules/challans/reports.js` (reconciliation report, conversion overrides, waste audit, client statement, `buildOrderReconciliation`) and `report-routes.js` (6 routes, including `GET /api/orders/:orderNo/reconciliation`). | API surface (unchanged paths), Orchestration, Services |
 | 21 | Challans step 4a of 5: the core service. `modules/challans/service.js` takes `saveDeliveryChallan`, `issueDeliveryChallan`, `mintReceivedMaterial`, `cancelDeliveryChallan`, `deleteDraftDeliveryChallan`, the list and DTOs, report-group helpers and the settle helpers (35 functions, about 1,900 lines). It is built after the inventory port; the template, invoice and report services built earlier now reach challan readers through functions. The hand-written stock writes move unchanged. | Services, Ports |
+| 22 | Challans step 4b of 5: the routes. `modules/challans/routes.js` takes the eleven challan handlers (22 doubled registrations), piece barcodes, the two asset upload routes and `GET /api/orders/:orderId/delivery-challans`. Registry: challans `evacuated: true`; 14 of 15. `server.js` is about 21,500 lines. Only production remains. | API surface (unchanged paths), Orchestration |
