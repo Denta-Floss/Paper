@@ -31,10 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c20["⟳ Change 20: challans step 3, reports and reconciliation"]
-        c20a["6 routes and 13 functions moved: reports.js and report-routes.js"]
-        c20b["the order reconciliation route left from the orders round moves here"]
-        c20c["two routes that write while reading are kept as they are: the report rewrites the waste audit, the statement marks challans as reported"]
+      c21["⟳ Change 21: challans step 4a, the core service"]
+        c21a["35 functions moved: read, save, issue, cancel, delete, DTOs, report groups, settle helpers"]
+        c21b["built after the inventory port; the earlier template, invoice and report services reach it through functions"]
+        c21c["hand-written stock writes moved as they are, on purpose"]
+        c21d["routes still in server.js, calling the old names"]
+      c20["Change 20: challans step 3, reports and reconciliation"]
       c19["Change 19: challans step 2, invoices"]
       c18["Change 18: challans step 1, templates and their PDFs"]
       c17["Change 17: a server with no database file now starts"]
@@ -394,8 +396,16 @@ mindmap
           ivn5["seeds and backfills: ensureFullSeedMaterial, backfillInventoryLedgerForMaterials, ensureDemoInventoryPresent"]
           ivn6["items reads inventory tables for usage counts, and its Sets card route reads inventory_sets"]
           ivn7["getMaterialRowByBarcode and the group property normalisers stay: items and inventory both use them"]
-      Challans ⟳ moving, step 3 of 5
-        chR["Reports: modules/challans/reports.js and report-routes.js ⟳"]
+      Challans ⟳ moving, step 4 of 5
+        chC["Core: modules/challans/service.js ⟳"]
+          chc1["createChallanService"]
+          chc2["saveDeliveryChallan, issueDeliveryChallan, cancelDeliveryChallan, deleteDraftDeliveryChallan"]
+          chc3["mintReceivedMaterial: a reception becomes stock"]
+          chc4["listDeliveryChallans, getDeliveryChallanRowById, rowToDeliveryChallanDto, getDeliveryChallanItems"]
+          chc5["report groups: effectiveReportGroupCodesForChallan, replaceChallanReportGroups"]
+          chc6["generateChallanNumber, used by production too"]
+          chc7["still writes inventory and items tables by hand; delete alone uses the inventory port"]
+        chR["Reports: modules/challans/reports.js and report-routes.js"]
           chr1["buildReconciliationReport, buildClientStatementReport, buildOrderReconciliation"]
           chr2["listConversionOverrides, saveConversionOverride, listWasteAuditRows"]
           chr3["6 routes: /api/reconciliation/*, /api/reports/client-statement, /api/orders/:orderNo/reconciliation"]
@@ -513,3 +523,4 @@ mindmap
 | 18 | Challans step 1 of 5: templates. `modules/challans/templates.js` (template master, mapping normalisers, page geometry, snapshot, test fixture, PDF generator, scan uploads; about 1,720 lines) and `template-routes.js` (14 routes). The eleven-test challans route suite was committed first and records four things broken today. A local named `templates` shadowed the injected service on the first attempt; the tests caught it and the lifting tool now refuses such clashes. | API surface (unchanged paths), Orchestration, Services, Tests |
 | 19 | Challans step 2 of 5: invoices. `modules/challans/invoices.js` (DTOs, list, read, numbering, `createInvoice`, amount in words, the invoice PDF) and `invoice-routes.js` (7 routes). The broken invoice edit moves as it is and is fixed in its own commit. | API surface (unchanged paths), Orchestration, Services |
 | 20 | Challans step 3 of 5: reports. `modules/challans/reports.js` (reconciliation report, conversion overrides, waste audit, client statement, `buildOrderReconciliation`) and `report-routes.js` (6 routes, including `GET /api/orders/:orderNo/reconciliation`). | API surface (unchanged paths), Orchestration, Services |
+| 21 | Challans step 4a of 5: the core service. `modules/challans/service.js` takes `saveDeliveryChallan`, `issueDeliveryChallan`, `mintReceivedMaterial`, `cancelDeliveryChallan`, `deleteDraftDeliveryChallan`, the list and DTOs, report-group helpers and the settle helpers (35 functions, about 1,900 lines). It is built after the inventory port; the template, invoice and report services built earlier now reach challan readers through functions. The hand-written stock writes move unchanged. | Services, Ports |
