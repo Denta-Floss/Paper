@@ -6,6 +6,8 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../../production_pipelines/domain/material_batch.dart';
 import '../../production_pipelines/domain/node_run_status.dart';
+import '../../production_pipelines/domain/stock_source.dart';
+import 'quantity_sources_dialog.dart';
 
 import '../providers/batch_flow_provider.dart';
 import '../providers/production_run_provider.dart';
@@ -219,6 +221,7 @@ class PipelineRunRow extends StatelessWidget {
     return DragTarget<Object>(
       onWillAcceptWithDetails: (details) {
         if (details.data is MaterialRecord) return true;
+        if (details.data is StockQuantityRequest) return true;
         if (details.data is MaterialBatch) {
           final batch = details.data as MaterialBatch;
           return batch.currentNodeId != node.id;
@@ -249,6 +252,66 @@ class PipelineRunRow extends StatelessWidget {
           
           if (context.mounted) {
             context.read<ProductionProvider>().selectNode(node.id);
+          }
+        } else if (details.data is StockQuantityRequest) {
+          // A quantity of an item rather than one barcode. The user is shown
+          // every barcode that holds it and approves where it comes from.
+          final request = details.data as StockQuantityRequest;
+          final repo = context.read<PipelineRunRepository>();
+          final allocations = await QuantitySourcesDialog.show(
+            context,
+            request: request,
+            nodeName: node.name.isEmpty ? 'station' : node.name,
+            loadSources: () => repo.stockSources(
+              itemId: request.itemId,
+              variationLeafNodeId: request.variationLeafNodeId,
+            ),
+          );
+          if (allocations == null || allocations.isEmpty) return;
+          final total = allocations.fold<double>(0, (sum, a) => sum + a.quantity);
+
+          try {
+            await repo.attachQuantityToRunNode(
+              runId: run.id,
+              nodeId: node.id,
+              itemId: request.itemId,
+              variationLeafNodeId: request.variationLeafNodeId,
+              quantity: total,
+              allocations: allocations,
+            );
+            for (final allocation in allocations) {
+              batchProvider.addStockAtNode(
+                runId: run.id,
+                nodeId: node.id,
+                barcode: allocation.barcode,
+                materialName: allocation.name,
+                quantity: allocation.quantity,
+                unit: allocation.unit.isEmpty ? request.unit : allocation.unit,
+              );
+            }
+            await repo.saveBatches(
+              runId: run.id,
+              batches: batchProvider.batchesForRun(run.id),
+            );
+            if (context.mounted) {
+              context.read<ProductionRunProvider>().triggerRefresh();
+              context.read<InventoryProvider>().refresh();
+              showFloorToast(
+                context,
+                'Issued ${fmtQty(total)} ${request.unit} of ${request.label} '
+                'from ${allocations.length} '
+                '${allocations.length == 1 ? 'barcode' : 'barcodes'} to ${node.name}',
+                kind: FloorToastKind.info,
+              );
+            }
+          } catch (e) {
+            if (context.mounted) {
+              showFloorToast(
+                context,
+                'Failed to issue the quantity: $e',
+                kind: FloorToastKind.error,
+              );
+            }
           }
         } else if (details.data is MaterialRecord) {
           final material = details.data as MaterialRecord;

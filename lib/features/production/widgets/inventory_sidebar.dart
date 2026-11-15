@@ -6,6 +6,7 @@ import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import '../../production_pipelines/domain/material_batch.dart' show fmtQty;
+import '../../production_pipelines/domain/stock_source.dart';
 import '../providers/production_run_provider.dart';
 import '../providers/production_provider.dart';
 import '../providers/batch_flow_provider.dart';
@@ -337,6 +338,29 @@ class _InventorySidebarState extends State<InventorySidebar> {
               ),
             ),
           ),
+          // Stock of one item usually sits under several barcodes. This card
+          // stands for "some of this item, whichever barcode": dropped on a
+          // node it opens the picker that lists those barcodes by name.
+          for (final request in _quantityRequests(grouped[groupName]!))
+            Draggable<StockQuantityRequest>(
+              data: request,
+              feedback: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(8),
+                child: Opacity(
+                  opacity: 0.9,
+                  child: SizedBox(
+                    width: 280,
+                    child: _QuantityRequestCard(request: request),
+                  ),
+                ),
+              ),
+              childWhenDragging: Opacity(
+                opacity: 0.3,
+                child: _QuantityRequestCard(request: request),
+              ),
+              child: _QuantityRequestCard(request: request),
+            ),
           for (final material in grouped[groupName]!) ...[
             Draggable<MaterialRecord>(
               data: material,
@@ -360,6 +384,81 @@ class _InventorySidebarState extends State<InventorySidebar> {
           ],
         ],
       ],
+    );
+  }
+}
+
+/// One by-quantity request per item and variation among [materials]: the
+/// stock that could be issued as "so much of this item" instead of one barcode.
+/// Stock not linked to an item has nothing to be a quantity of, and is left out.
+List<StockQuantityRequest> _quantityRequests(List<MaterialRecord> materials) {
+  final byItem = <String, List<MaterialRecord>>{};
+  for (final material in materials) {
+    final itemId = material.linkedItemId;
+    if (itemId == null || itemId <= 0) continue;
+    final key = '$itemId:${material.linkedVariationLeafNodeId ?? 0}';
+    byItem.putIfAbsent(key, () => []).add(material);
+  }
+  return [
+    for (final held in byItem.values)
+      StockQuantityRequest(
+        itemId: held.first.linkedItemId!,
+        variationLeafNodeId: held.first.linkedVariationLeafNodeId ?? 0,
+        label: held.first.name,
+        unit: held.first.unit,
+        totalOnHand: held.fold(0, (sum, m) => sum + m.onHand),
+        barcodeCount: held.length,
+      ),
+  ];
+}
+
+class _QuantityRequestCard extends StatelessWidget {
+  const _QuantityRequestCard({required this.request});
+
+  final StockQuantityRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.scale_rounded, size: 20, color: Color(0xFF15803D)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF14532D),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'By quantity · ${request.barcodeCount} '
+                  '${request.barcodeCount == 1 ? 'barcode' : 'barcodes'} · '
+                  '${fmtQty(request.totalOnHand)} ${request.unit}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF166534)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

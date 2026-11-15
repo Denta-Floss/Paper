@@ -1,3 +1,4 @@
+import '../../domain/stock_source.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
@@ -298,6 +299,38 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
 
     await saveRun(updatedRun);
     return updatedRun;
+  }
+
+  /// This repository has no server to list barcodes for an item, so the
+  /// by-quantity picker has nothing to offer here.
+  @override
+  Future<List<StockSource>> stockSources({
+    required int itemId,
+    required int variationLeafNodeId,
+  }) async => const [];
+
+  @override
+  Future<PipelineRun> attachQuantityToRunNode({
+    required String runId,
+    required String nodeId,
+    required int itemId,
+    required int variationLeafNodeId,
+    required double quantity,
+    required List<StockAllocation> allocations,
+  }) async {
+    if (allocations.isEmpty) {
+      throw ArgumentError('A quantity needs the barcodes it comes from.');
+    }
+    late PipelineRun run;
+    for (final allocation in allocations) {
+      run = await attachBarcodeToRunNode(
+        runId: runId,
+        nodeId: nodeId,
+        barcode: allocation.barcode,
+        quantity: allocation.quantity,
+      );
+    }
+    return run;
   }
 
   @override

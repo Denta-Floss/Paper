@@ -1,3 +1,4 @@
+import 'package:paper/features/production_pipelines/domain/stock_source.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
@@ -870,6 +871,22 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
   }) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<List<StockSource>> stockSources({
+    required int itemId,
+    required int variationLeafNodeId,
+  }) async => const [];
+
+  @override
+  Future<PipelineRun> attachQuantityToRunNode({
+    required String runId,
+    required String nodeId,
+    required int itemId,
+    required int variationLeafNodeId,
+    required double quantity,
+    required List<StockAllocation> allocations,
+  }) => throw UnimplementedError();
 
   @override
   Future<PipelineRun> attachBarcodeToRunNode({

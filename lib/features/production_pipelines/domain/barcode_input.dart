@@ -8,6 +8,8 @@ class BarcodeInput {
     required this.scanCount,
     this.quantity,
     this.unit,
+    this.sourceKind = 'barcode',
+    this.sheetWeight,
   });
 
   final String barcode;
@@ -17,6 +19,17 @@ class BarcodeInput {
   final double? quantity;
   final String? unit;
 
+  /// What this input is: 'barcode' (a material), 'sheet' (a vendor sheet tag)
+  /// or 'quantity' (an amount of an item with no barcode behind it). The
+  /// server sends it; older rows without it are materials.
+  final String sourceKind;
+
+  /// The whole weight of a vendor sheet. [quantity] is how much of it was used,
+  /// once someone has said the sheet was only part-used.
+  final double? sheetWeight;
+
+  bool get isSheet => sourceKind == 'sheet';
+
   factory BarcodeInput.fromJson(Map<String, dynamic> json) {
     return BarcodeInput(
       barcode: json['barcode'] as String? ?? '',
@@ -25,6 +38,8 @@ class BarcodeInput {
       scanCount: json['scanCount'] as int? ?? 0,
       quantity: (json['quantity'] as num?)?.toDouble(),
       unit: json['unit'] as String?,
+      sourceKind: json['sourceKind'] as String? ?? 'barcode',
+      sheetWeight: (json['sheetWeight'] as num?)?.toDouble(),
     );
   }
 
@@ -47,6 +62,8 @@ class BarcodeInput {
       'scanCount': scanCount,
       if (quantity != null) 'quantity': quantity,
       if (unit != null) 'unit': unit,
+      'sourceKind': sourceKind,
+      if (sheetWeight != null) 'sheetWeight': sheetWeight,
     };
   }
 }

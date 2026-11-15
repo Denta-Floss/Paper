@@ -1,3 +1,4 @@
+import '../../domain/stock_source.dart';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -31,6 +32,22 @@ abstract class PipelineRunRepository {
     required String nodeId,
     required String barcode,
     double? quantity,
+  });
+  /// The barcodes that hold free stock of one item and variation, oldest first.
+  Future<List<StockSource>> stockSources({
+    required int itemId,
+    required int variationLeafNodeId,
+  });
+
+  /// Issues a quantity of an item to a run node, taken from the barcodes the
+  /// user approved. The server refuses a split that does not add up.
+  Future<PipelineRun> attachQuantityToRunNode({
+    required String runId,
+    required String nodeId,
+    required int itemId,
+    required int variationLeafNodeId,
+    required double quantity,
+    required List<StockAllocation> allocations,
   });
   Future<PipelineRun> updateAttachedBarcodeQuantity({
     required String runId,
@@ -231,6 +248,59 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
       response.statusCode,
       payload,
       'Failed to update run node status.',
+    );
+    return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<StockSource>> stockSources({
+    required int itemId,
+    required int variationLeafNodeId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/inventory/stock-sources').replace(
+      queryParameters: {
+        'itemId': '$itemId',
+        'variationLeafNodeId': '$variationLeafNodeId',
+      },
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(
+      response.statusCode,
+      payload,
+      'Failed to load the barcodes that hold this item.',
+    );
+    return (payload['sources'] as List<dynamic>? ?? const [])
+        .map((row) => StockSource.fromJson(row as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<PipelineRun> attachQuantityToRunNode({
+    required String runId,
+    required String nodeId,
+    required int itemId,
+    required int variationLeafNodeId,
+    required double quantity,
+    required List<StockAllocation> allocations,
+  }) async {
+    final uri = Uri.parse('$baseUrl/runs/$runId/barcodes');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'nodeId': nodeId,
+        'itemId': itemId,
+        'variationLeafNodeId': variationLeafNodeId,
+        'quantity': quantity,
+        'allocations': allocations.map((a) => a.toJson()).toList(),
+      }),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(
+      response.statusCode,
+      payload,
+      'Failed to issue the quantity to the run node.',
     );
     return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
   }
