@@ -3328,7 +3328,7 @@ async function rowToRun(row) {
   }
 
   const barcodeRows = await all(
-    'SELECT node_id, barcode, material_payload_json FROM run_barcode_inputs WHERE run_id = ? ORDER BY scanned_at DESC',
+    'SELECT node_id, barcode, source_kind, material_payload_json FROM run_barcode_inputs WHERE run_id = ? ORDER BY scanned_at DESC',
     [row.id],
   );
 
@@ -3337,9 +3337,16 @@ async function rowToRun(row) {
     if (!attachedBarcodeInputs[barcodeRow.node_id]) {
       attachedBarcodeInputs[barcodeRow.node_id] = [];
     }
-    attachedBarcodeInputs[barcodeRow.node_id].push(
-      parseJson(barcodeRow.material_payload_json, {}),
-    );
+    // What kind of input this is (a material barcode, a vendor sheet, or a
+    // bare quantity) and the code that addresses the row. A quantity row's
+    // payload carries no barcode of its own, and a client could not tell a
+    // sheet from a material without the kind.
+    const inputPayload = parseJson(barcodeRow.material_payload_json, {});
+    attachedBarcodeInputs[barcodeRow.node_id].push({
+      ...inputPayload,
+      barcode: inputPayload.barcode || barcodeRow.barcode,
+      sourceKind: barcodeRow.source_kind || 'barcode',
+    });
   }
 
   const orderAssignment = await get(`
@@ -18435,6 +18442,71 @@ app.put(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async (re
 
     const qtyDiff = quantity - oldQty;
 
+    if (existingInput.source_kind === 'sheet') {
+      // Part of a sheet. `quantity` is how much of it was used, in the unit its
+      // material is kept in. The sheet's stock came off the material its
+      // reception line became, so the difference goes to or from that material,
+      // not the sheet's own tag.
+      const sheetStock = existingInput.challan_item_id
+        ? await inventoryPorts.receipts.materialForChallanLine(existingInput.challan_item_id)
+        : null;
+      if (!sheetStock) {
+        res.status(409).json({
+          success: false,
+          run: null,
+          error: 'This sheet has no stock behind it to adjust.',
+        });
+        return;
+      }
+      if (!sheetStock.keptByWeight) {
+        res.status(400).json({
+          success: false,
+          run: null,
+          error: 'This material is counted in pieces, and a sheet is one piece. Remove the sheet instead.',
+        });
+        return;
+      }
+      const sheetWeight = Number(materialPayload.sheetWeight || 0);
+      if (!(quantity > 0) || quantity > sheetWeight + 1e-9) {
+        res.status(400).json({
+          success: false,
+          run: null,
+          error: `The used weight must be above zero and no more than the sheet's ${sheetWeight}.`,
+        });
+        return;
+      }
+      const takenBefore = Number(materialPayload.stockQty || 0);
+      const stockDiff = quantity - takenBefore;
+      if (stockDiff !== 0) {
+        await inventoryPorts.movements.apply({
+          barcode: sheetStock.barcode,
+          movementType: stockDiff > 0 ? 'consume' : 'adjust',
+          qty: Math.abs(stockDiff),
+          actor: 'Floor Engineer',
+          referenceType: 'pipeline_run',
+          referenceId: req.params.id,
+          reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
+        });
+      }
+      const weightBefore = Number(existingInput.consumed_weight || 0);
+      materialPayload.stockBarcode = sheetStock.barcode;
+      materialPayload.stockQty = quantity;
+      materialPayload.quantity = quantity;
+      materialPayload.unit = sheetStock.uom;
+      await run(
+        'UPDATE run_barcode_inputs SET material_payload_json = ?, consumed_qty = ?, consumed_weight = ? WHERE id = ?',
+        [JSON.stringify(materialPayload), quantity, quantity, existingInput.id],
+      );
+      // The run's batch weight was raised by the whole sheet when it was scanned.
+      await run(
+        'UPDATE pipeline_runs SET weight_kg = MAX(0, COALESCE(weight_kg, 0) + ?) WHERE id = ?',
+        [quantity - weightBefore, req.params.id],
+      );
+      const sheetRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+      res.json({ success: true, run: await rowToRun(sheetRunRow) });
+      return;
+    }
+
     if (existingInput.source_kind === 'quantity') {
       // Not a material: the row stands for an amount of the item itself.
       if (!(quantity > 0)) {
@@ -18548,7 +18620,9 @@ app.delete(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async 
       return;
     }
 
-    if (oldQty > 0) {
+    // A sheet's code is not a material; its stock is given back just below,
+    // to the material it was taken from.
+    if (oldQty > 0 && existingInput.source_kind !== 'sheet') {
       await inventoryPorts.movements.apply({
         barcode: barcode,
         movementType: 'adjust',

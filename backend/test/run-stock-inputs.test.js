@@ -172,3 +172,73 @@ test('with no barcode holding it, a quantity comes off the item itself and goes 
   assert.equal(removed.status, 200, JSON.stringify(removed.body));
   assert.equal(await ctx.stock(), 10);
 });
+
+test('part of a sheet can be used: the rest goes back to the material the sheet came from', async (t) => {
+  const ctx = await boot();
+  t.after(() => ctx.server.close());
+  // Sheet metal is kept by weight.
+  let kg = await ctx.backend.get("SELECT id FROM units WHERE LOWER(symbol) = 'kg' LIMIT 1");
+  assert.ok(kg, 'the seed has a kg unit');
+  await ctx.backend.run('UPDATE items SET unit_id = ? WHERE id = ?', [kg.id, ctx.item.id]);
+  const made = await ctx.api('POST', '/api/challans', {
+    type: 'reception', challanNo: 'RS-SHEET', date: '2026-11-15', status: 'draft', maintainStocks: true,
+    vendorId: (await ctx.backend.get('SELECT id FROM vendors LIMIT 1')).id, purpose: 'purchase',
+    items: [{ itemId: ctx.item.id, variationLeafNodeId: ctx.leaf.id, particulars: 'Sheets', quantityPcs: '5', weight: '10', lineNo: 1 }],
+  });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  assert.equal((await ctx.api('POST', `/api/challans/${made.body.data.id}/issue`, {})).status, 200);
+  const line = await ctx.backend.get('SELECT id FROM delivery_challan_items WHERE challan_id = ?', [made.body.data.id]);
+  const tagged = await ctx.api('POST', `/api/challans/${made.body.data.id}/piece-barcodes`, {
+    barcodes: [{ challanItemId: line.id, parentCode: 'SHT-P', childCode: 'SHT-P-C', weight: 2 }],
+  });
+  assert.ok(tagged.status < 300, JSON.stringify(tagged.body));
+  assert.equal(await ctx.position('RS-SHEET-L1'), 10);
+
+  const scanned = await ctx.api('POST', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-P' });
+  assert.equal(scanned.status, 200, JSON.stringify(scanned.body));
+  assert.equal(await ctx.position('RS-SHEET-L1'), 8, 'the whole sheet came off its material');
+  const runWeight = async () => (await ctx.backend.get('SELECT weight_kg FROM pipeline_runs WHERE id = ?', [ctx.runId])).weight_kg;
+  const whole = await runWeight();
+  const input = scanned.body.run.attachedBarcodeInputs['node-1'].find((i) => i.barcode === 'SHT-P');
+  assert.equal(input.sourceKind, 'sheet', 'the run says what kind of input it is');
+
+  const part = await ctx.api('PUT', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-P', quantity: 1.5 });
+  assert.equal(part.status, 200, JSON.stringify(part.body));
+  assert.equal(await ctx.position('RS-SHEET-L1'), 8.5, 'the unused half kilo is back');
+  assert.equal(await runWeight(), whole - 0.5);
+  const row = await ctx.backend.get('SELECT consumed_qty, consumed_weight FROM run_barcode_inputs WHERE run_id = ?', [ctx.runId]);
+  assert.equal(row.consumed_qty, 1.5);
+  assert.equal(row.consumed_weight, 1.5);
+
+  const back = await ctx.api('PUT', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-P', quantity: 2 });
+  assert.equal(back.status, 200, JSON.stringify(back.body));
+  assert.equal(await ctx.position('RS-SHEET-L1'), 8);
+  assert.equal(await runWeight(), whole);
+
+  const over = await ctx.api('PUT', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-P', quantity: 3 });
+  assert.equal(over.status, 400, JSON.stringify(over.body));
+  assert.equal(await ctx.position('RS-SHEET-L1'), 8);
+
+  // Removing a part-used sheet gives back what it had taken.
+  await ctx.api('PUT', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-P', quantity: 1.5 });
+  const removed = await ctx.api('DELETE', `/runs/${ctx.runId}/barcodes/node-1/SHT-P`);
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(await ctx.position('RS-SHEET-L1'), 10);
+});
+
+test('a sheet of a counted material is one piece and cannot be part-used', async (t) => {
+  const ctx = await boot();
+  t.after(() => ctx.server.close());
+  const reception = await ctx.receive('RS-COUNT', 5);
+  const line = await ctx.backend.get('SELECT id FROM delivery_challan_items WHERE challan_id = ?', [reception.id]);
+  await ctx.api('POST', `/api/challans/${reception.id}/piece-barcodes`, {
+    barcodes: [{ challanItemId: line.id, parentCode: 'SHT-Q', childCode: 'SHT-Q-C', weight: 2 }],
+  });
+  assert.equal((await ctx.api('POST', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-Q' })).status, 200);
+  assert.equal(await ctx.position('RS-COUNT-L1'), 4);
+
+  const part = await ctx.api('PUT', `/runs/${ctx.runId}/barcodes`, { nodeId: 'node-1', barcode: 'SHT-Q', quantity: 0.5 });
+  assert.equal(part.status, 400, JSON.stringify(part.body));
+  assert.match(part.body.error, /one piece/);
+  assert.equal(await ctx.position('RS-COUNT-L1'), 4);
+});

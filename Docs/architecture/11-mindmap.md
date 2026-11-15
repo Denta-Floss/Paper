@@ -31,10 +31,10 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c32["⟳ Change 32: a quantity issued to a run names the barcodes it comes from"]
-        c32a["the server lists every barcode holding the item, by name, oldest first, with a proposal"]
-        c32b["no approved split, no stock taken: 409 allocation_required"]
-        c32c["with no barcode behind it, the quantity comes off the item's own stock"]
+      c33["⟳ Change 33: part of a vendor sheet can be used on a run"]
+        c33a["a weighed sheet: the unused weight goes back to the material it came from"]
+        c33b["a counted sheet is one piece and is not split"]
+        c33c["a run says what kind each input is: barcode, sheet or quantity"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -359,7 +359,7 @@ mindmap
           ivp1["offers: sets.*, materials.delete, governance.get and retireMissingProperties, movements.apply and applyCore, scans.increment, ledger.recomputeSummary"]
           ivp5["receipts.usageForChallan, receipts.retire; materialStockTotals shared with recomputeMaterialInventorySummary"]
           ivp7["receipts.materialForChallanLine: the material a reception line became, its unit and on hand"]
-          n32x63759["⟳ sources.forItem, sources.propose; GET /api/inventory/stock-sources; uses challans.numbersByIds"]
+          n32x63759["sources.forItem, sources.propose; GET /api/inventory/stock-sources; uses challans.numbersByIds"]
           n31x14111["applyInventoryMovementCore moves whole-item stock for a material linked to an item with no variations; uses items.stock.holdsWholeItemStock"]
           ivp6["a material in state cancelled is kept for the trail and left out of GET /api/materials"]
           ivp4["offers to challans: receipts.mintFromChallanLine, receipts.mintReconcileLot, movements.recordForChallan, forChallan, recordChallanReversal, producedLotCodeForRun"]
@@ -433,7 +433,7 @@ mindmap
           cht4["14 routes under /api/challan-templates, /api/templates/:id/test-print, print-template-preview"]
           cht5["route order: /scans and both /test-print routes sit ahead of /:id"]
         ch1["about 26 endpoints, each served twice, 14 tables"]
-        ch2["⟳ challans ports file created, vendor reads only"]
+        ch2["challans ports file created, vendor reads only"]
         chP["Ports"]
           chp1["offers: vendor usage and purchase rows, customVariationValueRows"]
           chp2["uses: inventoryPorts.movements.applyCore, orders getOrderRowById and updateOrderLifecycle, vendors, templates"]
@@ -455,10 +455,12 @@ mindmap
           chl5["fixed: invoice edit, in-use settle"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
-        n32x95640["⟳ POST runs barcodes by quantity: approved allocations are written one material each through assignMaterialToRunNode; a bad split is refused whole"]
+        n33x9951["⟳ rowToRun: each input carries sourceKind and the code that addresses it"]
+        n32x95640["POST runs barcodes by quantity: approved allocations are written one material each through assignMaterialToRunNode; a bad split is refused whole"]
         n31x41609["server.js, still here: assertValidStockVariationLeaf is the one rule for leaf 0; itemHoldsWholeItemStock; backfillWholeItemStock at boot; trigger trg_variation_stock_leaf_gone replaces the leaf foreign key"]
         pd3["POST runs barcodes, sheet branch: consumes from the line's material, never more than on hand; DELETE gives it back"]
-        n32x45807["⟳ PUT and DELETE runs barcodes on a quantity row move the item's own stock"]
+        n33x81384["⟳ PUT runs barcodes on a sheet row: used weight up to the sheet's weight; stock and the run's batch weight move by the difference"]
+        n32x45807["PUT and DELETE runs barcodes on a quantity row move the item's own stock"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
       Jobs evacuated
         jBiz["Business rules"]
@@ -571,3 +573,4 @@ mindmap
 | 30 | Three faults around received material. (1) `DELETE` of an issued reception always answered 409 (it asked the engine for lot `-`); it now follows the cancel rule through the shared `reverseIssuedStock`: untouched goes with its stock taken back and the material retired, used is refused. (2) A vendor sheet scanned onto a run wrote no stock movement; the sheet branch of `POST /runs/:id/barcodes` now consumes from the material its reception line became (`receipts.materialForChallanLine`): the sheet weight for a weighed material, one piece for a counted one, never more than is on hand, recorded in `consumed_qty`; un-assigning gives it back. `runInputsForChallanLines` skips sheets that already moved stock. (3) A return of scanned sheets (the phone flow) went out on `-`; save now ties it to the sheets' reception when they share one, so issuing leaves that material. A reception cancel reuses only its own open draft return. | Business rules, Orchestration, Services, Ports, Tests |
 | 31 | An item with no variations can hold stock. `variation_stock` keeps one figure for the whole item under leaf 0; `assertValidStockVariationLeaf` allows 0 only for an item with no active variation properties (`itemHoldsWholeItemStock`, offered as `itemsPorts.stock.holdsWholeItemStock`). The table's CHECK and leaf foreign key refused 0, so initDb rebuilds it once and carries the rows; `trg_variation_stock_leaf_gone` removes a deleted leaf's stock in place of the foreign key; migration 027's insert guard now refuses only a negative leaf. The movement engine moves whole-item stock for a material linked to such an item. `backfillWholeItemStock` gives existing linked materials their figure at boot, once. The hand-written simple-item deltas in challans are gone (the engine does it). | Business rules, Services, Ports, Data, Tests |
 | 32 | Issuing to a run by quantity took stock from nowhere. Now `POST /runs/:id/barcodes` without a barcode asks inventory which barcodes hold that item and variation (`inventoryPorts.sources.forItem`, also `GET /api/inventory/stock-sources`, 371 routes). If any do, the request must carry `allocations` (barcode and quantity); without them it answers 409 `allocation_required` with the sources by name and an oldest-first proposal. A split is checked whole (known barcode, not twice, not above free, sums to the quantity) and then each barcode is written as an ordinary material assignment through `assignMaterialToRunNode` (extracted from the barcode branch). If no barcode holds the item, the quantity comes off the item's own stock and is refused when there is less; `PUT` and `DELETE` on such a row move that stock. Challans port gains `numbersByIds`. | Business rules, API surface, Orchestration, Services, Ports, Tests |
+| 33 | Changing the quantity of a vendor sheet on a run answered Material not found (the sheet tag was looked up as a material). `PUT /runs/:id/barcodes` on a sheet row now takes the used amount in the material's unit: for a weighed material, above zero and no more than the sheet's weight, with the difference consumed from or given back to the material the sheet's reception line became, and `consumed_qty`, `consumed_weight` and the run's `weight_kg` moved with it; a counted material's sheet is one piece and the edit is refused. Removing a part-used sheet gives back what it had taken. `rowToRun` now sends `sourceKind` and an addressable `barcode` on every input. | Business rules, Orchestration, API surface, Tests |
