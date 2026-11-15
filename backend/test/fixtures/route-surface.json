@@ -91,6 +91,7 @@
   "GET /api/inventory/health",
   "GET /api/inventory/sets",
   "GET /api/inventory/stock",
+  "GET /api/inventory/stock-sources",
   "GET /api/invoices",
   "GET /api/invoices/:id",
   "GET /api/invoices/:id/pdf",

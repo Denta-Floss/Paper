@@ -837,10 +837,26 @@ test('ISSUED_TO_PIPELINE: issuing by quantity is custody too', async (t) => {
   });
 
   const item = await ctx.backend.get('SELECT id FROM items LIMIT 1');
+  // A quantity now has to come from somewhere. Here the item's stock is only a
+  // figure on one of its variations, with no barcode behind it, which is the
+  // case this event is for.
+  const leaf = await ctx.backend.get(
+    `SELECT n.id FROM item_variation_nodes n
+      WHERE n.item_id = ? AND n.kind = 'value' AND n.is_archived = 0
+        AND NOT EXISTS (SELECT 1 FROM item_variation_nodes c WHERE c.parent_node_id = n.id AND c.is_archived = 0)
+      LIMIT 1`,
+    [item.id],
+  );
+  await ctx.backend.run('DELETE FROM materials WHERE linked_item_id = ?', [item.id]);
+  await ctx.backend.run('DELETE FROM variation_stock WHERE item_id = ?', [item.id]);
+  await ctx.backend.run(
+    "INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id) VALUES (?, ?, 100, 'MAIN')",
+    [item.id, leaf.id],
+  );
   const post = await fetch(`${ctx.baseUrl}/runs/demo-dolly-run-active/barcodes`, {
     method: 'POST',
     headers: ctx.headers,
-    body: JSON.stringify({ itemId: item.id, quantity: 40, nodeId: 'dolly-cut' }),
+    body: JSON.stringify({ itemId: item.id, variationLeafNodeId: leaf.id, quantity: 40, nodeId: 'dolly-cut' }),
   });
   assert.equal(post.status, 200, await post.text());
 

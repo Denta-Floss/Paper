@@ -139,6 +139,29 @@ module.exports = function registerInventoryRoutes(ctx) {
     }
   });
 
+  // The barcodes a quantity of one item and variation can come from, by name,
+  // with what each has free and a proposal (oldest first) for `quantity`.
+  app.get('/api/inventory/stock-sources', requirePermission('inventory.read'), async (req, res) => {
+    try {
+      const itemId = Number(req.query.itemId || 0);
+      if (!(itemId > 0)) {
+        res.status(400).json({ success: false, sources: [], error: 'itemId is required.' });
+        return;
+      }
+      const sources = await inventory.stockSourcesForItem(itemId, Number(req.query.variationLeafNodeId || 0));
+      const quantity = Number(req.query.quantity || 0);
+      res.json({
+        success: true,
+        sources,
+        totalFree: sources.reduce((sum, source) => sum + source.free, 0),
+        proposal: quantity > 0 ? inventory.proposeStockAllocation(sources, quantity) : [],
+        error: null,
+      });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, sources: [], error: error.message });
+    }
+  });
+
   app.get('/api/materials', requirePermission('inventory.read'), cacheMasterData, async (req, res) => {
     try {
       const rows = await all(

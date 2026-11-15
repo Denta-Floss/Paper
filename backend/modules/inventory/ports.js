@@ -27,6 +27,9 @@
 //                                   a transaction and passes useTransaction:false
 //                                   (SQLite has no nested BEGIN). Challans, orders,
 //                                   production and jobs call this one.
+//   sources.forItem(itemId, leaf)   the barcodes that hold free stock of an item
+//                                   and variation, oldest first
+//   sources.propose(sources, qty)   where a quantity comes from, oldest first
 //   scans.increment(barcode)        count a scan against a material
 //   For a challan, which adjusts the item's variation stock itself and so must
 //   not go through the engine above (see the service):
@@ -76,6 +79,10 @@ function createInventoryPorts({ inventory }) {
       usageForChallan: (challanId) => inventory.receivedUsageForChallan(challanId),
       materialForChallanLine: (lineId) => inventory.receivedMaterialForChallanLine(lineId),
       retire: (barcode, now) => inventory.retireReceivedMaterial(barcode, now),
+    },
+    sources: {
+      forItem: (itemId, leafNodeId) => inventory.stockSourcesForItem(itemId, leafNodeId),
+      propose: (sources, quantity) => inventory.proposeStockAllocation(sources, quantity),
     },
     scans: {
       increment: (barcode) => inventory.incrementMaterialScanCount(barcode),

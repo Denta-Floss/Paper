@@ -2664,6 +2664,55 @@ function createInventoryService({
     };
   }
 
+  /// Every material that holds free stock of one item and variation, oldest
+  /// first: the barcodes a quantity of that item can come from. Leaf 0 is an
+  /// item with no variations.
+  /// `{ barcode, name, supplier, receptionChallanNo, receivedAt, location, free, uom }`.
+  async function stockSourcesForItem(itemId, variationLeafNodeId = 0) {
+    const rows = await all(
+      `SELECT barcode, name, supplier, location, unit, type, created_at, source_challan_id
+         FROM materials
+        WHERE linked_item_id = ?
+          AND COALESCE(linked_variation_leaf_node_id, 0) = ?
+          AND COALESCE(inventory_state, '') != 'cancelled'
+        ORDER BY datetime(created_at) ASC, id ASC`,
+      [Number(itemId) || 0, Number(variationLeafNodeId) || 0],
+    );
+    const challanNos = await challans.numbersByIds(rows.map((row) => row.source_challan_id));
+    const sources = [];
+    for (const row of rows) {
+      const totals = await materialStockTotals(row.barcode);
+      const free = totals.onHand - totals.reserved;
+      if (!(free > 0)) continue;
+      sources.push({
+        barcode: row.barcode,
+        name: row.name || '',
+        supplier: row.supplier || '',
+        receptionChallanNo: challanNos[row.source_challan_id] || '',
+        receivedAt: row.created_at || null,
+        location: row.location || 'MAIN',
+        free,
+        uom: String(row.unit || row.type || '').trim(),
+      });
+    }
+    return sources;
+  }
+
+  /// Where a quantity would come from if nobody chose: the oldest stock first,
+  /// each barcode until it is used up. `[{ barcode, quantity }]`; it covers less
+  /// than the quantity when there is not enough.
+  function proposeStockAllocation(sources, quantity) {
+    let left = Number(quantity) || 0;
+    const proposal = [];
+    for (const source of sources) {
+      if (!(left > 0)) break;
+      const take = Math.min(left, source.free);
+      if (take > 0) proposal.push({ barcode: source.barcode, quantity: take });
+      left -= take;
+    }
+    return proposal;
+  }
+
   /// Takes a received material out of stock for good once its reception is
   /// cancelled. The row is kept, because the movement ledger and the custody
   /// trail point at its barcode, but it is no longer listed as stock.
@@ -2955,6 +3004,8 @@ function createInventoryService({
     movementsForChallan,
     recordChallanReversal,
     receivedUsageForChallan,
+    stockSourcesForItem,
+    proposeStockAllocation,
     receivedMaterialForChallanLine,
     retireReceivedMaterial,
     producedLotCodeForRun,

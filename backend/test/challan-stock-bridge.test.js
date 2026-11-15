@@ -223,7 +223,7 @@ test('a consumption names the challan line that supplied it', async () => {
   }
 });
 
-test('production can consume a quantity, not only a barcode', async () => {
+test('a quantity of an item nobody holds is refused, not recorded against nothing', async () => {
   const ctx = await boot('paper-bridge3-', 'bridge3@paper.local');
   const { backend, server, baseUrl, headers } = ctx;
   try {
@@ -239,8 +239,10 @@ test('production can consume a quantity, not only a barcode', async () => {
     assert.equal(created.status, 201, JSON.stringify(createdBody));
     const runId = createdBody.run.id;
 
-    // No barcode at all — an amount of an item, which is the grain challans
-    // move stock in. This used to be refused outright.
+    // An amount of an item, no barcode. It used to be written down whether or
+    // not the item had any stock, and took nothing from anywhere. Now it has
+    // to come from somewhere: this item has no stock at all, so it is refused.
+    // What happens when stock exists is in run-stock-inputs.test.js.
     const attached = await fetch(`${baseUrl}/runs/${runId}/barcodes`, {
       method: 'POST',
       headers,
@@ -250,21 +252,9 @@ test('production can consume a quantity, not only a barcode', async () => {
         quantity: 42.5,
       }),
     });
-    assert.equal(attached.status, 200, await attached.text());
-
-    const input = await backend.get(
-      'SELECT * FROM run_barcode_inputs WHERE run_id = ?',
-      [runId],
-    );
-    assert.ok(input, 'a quantity consumption is recorded rather than dropped');
-    assert.equal(input.source_kind, 'quantity');
-    assert.equal(Number(input.item_id), item.id);
-    assert.equal(Number(input.consumed_qty), 42.5);
-    assert.equal(
-      input.barcode.startsWith('#qty-'),
-      true,
-      'a synthetic barcode that cannot collide with a real one',
-    );
+    assert.equal(attached.status, 400, await attached.text());
+    const input = await backend.get('SELECT * FROM run_barcode_inputs WHERE run_id = ?', [runId]);
+    assert.equal(input, undefined, 'nothing is recorded');
   } finally {
     await closeServer(server);
   }

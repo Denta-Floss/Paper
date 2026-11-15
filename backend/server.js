@@ -17983,6 +17983,94 @@ app.put('/runs/:id/node-status', async (req, res) => {
   }
 });
 
+let runInputSequence = Math.floor(Math.random() * 1000);
+
+/// One material put on a run node: the input row, the custody event, and,
+/// when a quantity is given, the stock taken off the material. Used for a
+/// scanned or dragged barcode and for each barcode of an approved quantity
+/// split, so both leave exactly the same records.
+async function assignMaterialToRunNode({ runId, payload, actorName }) {
+  const materialRow = await inventoryPorts.scans.increment(payload.barcode);
+  if (!materialRow) {
+    const error = new Error(`No material found for barcode ${payload.barcode}.`);
+    error.statusCode = 404;
+    throw error;
+  }
+  const material = rowToMaterialDto(materialRow);
+  // A counter, not a random number: a quantity split writes several of these in
+  // the same millisecond and two must never share an id.
+  runInputSequence += 1;
+  const barcodeInputId = `barcode-${Date.now()}-${runInputSequence}`;
+  // The bridge. `source_challan_item_id` is on the material because issuing a
+  // reception minted it there, so a consumption can name the line the stock
+  // arrived on — which is what lets an order say what went into it. Null for
+  // stock created directly in inventory, and that null means exactly that.
+  const consumedQty =
+    payload.quantity !== undefined && payload.quantity !== null
+      ? Number(payload.quantity)
+      : null;
+  await run(
+    `
+    INSERT INTO run_barcode_inputs (
+      id, run_id, node_id, barcode, material_id, material_payload_json,
+      scanned_at, challan_item_id, item_id, variation_leaf_node_id,
+      consumed_qty, source_kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'barcode')
+    `,
+    [
+      barcodeInputId,
+      runId,
+      payload.nodeId,
+      material.barcode,
+      String(material.id || ''),
+      JSON.stringify({
+        barcode: material.barcode,
+        materialName: material.name,
+        materialType: material.type,
+        scanCount: material.scanCount,
+        quantity: consumedQty,
+        unit: material.unit,
+      }),
+      new Date().toISOString(),
+      materialRow.source_challan_item_id ?? null,
+      materialRow.linked_item_id ?? null,
+      materialRow.linked_variation_leaf_node_id ?? null,
+      Number.isFinite(consumedQty) && consumedQty > 0 ? consumedQty : null,
+    ],
+  );
+
+  // Custody moves from the shelf to the floor. The run is the child rather
+  // than the subject: what happened is that *this material* was issued, and
+  // the ledger reads as the material's story when you scan the material.
+  await recordLedgerEvent({
+    subjectBarcode: barcodes.encode('MAT', material.barcode),
+    eventType: 'ISSUED_TO_PIPELINE',
+    actorName: actorName,
+    children: [barcodes.encode('RUN', runId)],
+    metrics: {
+      qty: consumedQty,
+      unit: material.unit || '',
+      nodeId: payload.nodeId,
+    },
+    notes: material.name || '',
+  });
+
+  if (payload.quantity !== undefined && payload.quantity !== null) {
+    const qty = Number(payload.quantity);
+    if (qty > 0) {
+      await inventoryPorts.movements.apply({
+        barcode: material.barcode,
+        movementType: 'consume',
+        qty: qty,
+        actor: 'Floor Engineer',
+        referenceType: 'pipeline_run',
+        referenceId: runId,
+        reasonCode: 'PRODUCTION_ASSIGN',
+      });
+    }
+  }
+}
+
 app.post('/runs/:id/barcodes', async (req, res) => {
   try {
     const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
@@ -18004,9 +18092,83 @@ app.post('/runs/:id/barcodes', async (req, res) => {
         res.status(400).json({ success: false, run: null, error: 'nodeId is required.' });
         return;
       }
-      const quantityInputId = `qty-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const leafNodeId =
         Number(payload.variationLeafNodeId ?? payload.variation_leaf_node_id ?? 0) || null;
+
+      // A quantity is not a thing, but the stock it comes from is. When
+      // barcodes hold this item and variation, the quantity has to name which
+      // of them it comes from: the app lists them by name with a proposal
+      // (oldest first) and the user approves a split. It is enforced here, so
+      // no client can take stock without saying whose it was.
+      const sources = await inventoryPorts.sources.forItem(quantityItemId, leafNodeId || 0);
+      if (sources.length > 0) {
+        const allocations = Array.isArray(payload.allocations)
+          ? payload.allocations
+              .map((entry) => ({
+                barcode: String(entry?.barcode || '').trim(),
+                quantity: Number(entry?.quantity || 0),
+              }))
+              .filter((entry) => entry.barcode && entry.quantity > 0)
+          : [];
+        if (allocations.length === 0) {
+          res.status(409).json({
+            success: false,
+            run: null,
+            code: 'allocation_required',
+            error: 'Choose which barcodes this quantity comes from.',
+            sources,
+            totalFree: sources.reduce((sum, source) => sum + source.free, 0),
+            proposal: inventoryPorts.sources.propose(sources, quantityAmount),
+          });
+          return;
+        }
+        // Checked whole before anything is written.
+        const refuse = (message) => {
+          res.status(400).json({ success: false, run: null, code: 'invalid_allocation', error: message });
+        };
+        const seen = new Set();
+        let allocated = 0;
+        for (const entry of allocations) {
+          const source = sources.find((candidate) => candidate.barcode === entry.barcode);
+          if (!source) {
+            refuse(`${entry.barcode} does not hold free stock of this item.`);
+            return;
+          }
+          if (seen.has(entry.barcode)) {
+            refuse(`${entry.barcode} is listed twice.`);
+            return;
+          }
+          seen.add(entry.barcode);
+          if (entry.quantity > source.free + 1e-9) {
+            refuse(`${entry.barcode} has only ${source.free} free, not ${entry.quantity}.`);
+            return;
+          }
+          allocated += entry.quantity;
+        }
+        if (Math.abs(allocated - quantityAmount) > 1e-6) {
+          refuse(`The barcodes add up to ${allocated}, but the quantity is ${quantityAmount}.`);
+          return;
+        }
+        for (const entry of allocations) {
+          await assignMaterialToRunNode({
+            runId: req.params.id,
+            payload: { nodeId: payload.nodeId, barcode: entry.barcode, quantity: entry.quantity },
+            actorName: actorFromRequest(req)?.name || 'Floor',
+          });
+        }
+        const allocatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+        res.json({ success: true, run: await rowToRun(allocatedRunRow), allocations });
+        return;
+      }
+
+      // No barcode holds this item: its stock is only a figure on the item, so
+      // the quantity comes off that figure. Refused when the item has less.
+      await itemsPorts.stock.applyDelta({
+        itemId: quantityItemId,
+        variationLeafNodeId: leafNodeId || 0,
+        delta: -quantityAmount,
+      });
+      const quantityInputId = `qty-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       await run(
         `
         INSERT INTO run_barcode_inputs (
@@ -18026,6 +18188,9 @@ app.post('/runs/:id/barcodes', async (req, res) => {
             itemId: quantityItemId,
             variationLeafNodeId: leafNodeId,
             quantity: quantityAmount,
+            // This row took the quantity off the item's stock, so removing or
+            // changing it gives the difference back. Older rows took nothing.
+            stockMoved: true,
           }),
           new Date().toISOString(),
           Number(payload.challanItemId ?? payload.challan_item_id ?? 0) || null,
@@ -18211,85 +18376,11 @@ app.post('/runs/:id/barcodes', async (req, res) => {
       return;
     }
 
-    const materialRow = await inventoryPorts.scans.increment(payload.barcode);
-    if (!materialRow) {
-      res.status(404).json({
-        success: false,
-        run: null,
-        error: `No material found for barcode ${payload.barcode}.`,
-      });
-      return;
-    }
-    const material = rowToMaterialDto(materialRow);
-    const barcodeInputId = `barcode-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    // The bridge. `source_challan_item_id` is on the material because issuing a
-    // reception minted it there, so a consumption can name the line the stock
-    // arrived on — which is what lets an order say what went into it. Null for
-    // stock created directly in inventory, and that null means exactly that.
-    const consumedQty =
-      payload.quantity !== undefined && payload.quantity !== null
-        ? Number(payload.quantity)
-        : null;
-    await run(
-      `
-      INSERT INTO run_barcode_inputs (
-        id, run_id, node_id, barcode, material_id, material_payload_json,
-        scanned_at, challan_item_id, item_id, variation_leaf_node_id,
-        consumed_qty, source_kind
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'barcode')
-      `,
-      [
-        barcodeInputId,
-        req.params.id,
-        payload.nodeId,
-        material.barcode,
-        String(material.id || ''),
-        JSON.stringify({
-          barcode: material.barcode,
-          materialName: material.name,
-          materialType: material.type,
-          scanCount: material.scanCount,
-          quantity: consumedQty,
-          unit: material.unit,
-        }),
-        new Date().toISOString(),
-        materialRow.source_challan_item_id ?? null,
-        materialRow.linked_item_id ?? null,
-        materialRow.linked_variation_leaf_node_id ?? null,
-        Number.isFinite(consumedQty) && consumedQty > 0 ? consumedQty : null,
-      ],
-    );
-
-    // Custody moves from the shelf to the floor. The run is the child rather
-    // than the subject: what happened is that *this material* was issued, and
-    // the ledger reads as the material's story when you scan the material.
-    await recordLedgerEvent({
-      subjectBarcode: barcodes.encode('MAT', material.barcode),
-      eventType: 'ISSUED_TO_PIPELINE',
+    await assignMaterialToRunNode({
+      runId: req.params.id,
+      payload,
       actorName: actorFromRequest(req)?.name || 'Floor',
-      children: [barcodes.encode('RUN', req.params.id)],
-      metrics: {
-        qty: consumedQty,
-        unit: material.unit || '',
-        nodeId: payload.nodeId,
-      },
-      notes: material.name || '',
     });
-
-    if (payload.quantity !== undefined && payload.quantity !== null) {
-      const qty = Number(payload.quantity);
-      if (qty > 0) {
-        await inventoryPorts.movements.apply({
-          barcode: material.barcode,
-          movementType: 'consume',
-          qty: qty,
-          actor: 'Floor Engineer',
-          referenceType: 'pipeline_run',
-          referenceId: req.params.id,
-          reasonCode: 'PRODUCTION_ASSIGN',
-        });
-      }
-    }
 
     const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
       req.params.id,
@@ -18343,6 +18434,29 @@ app.put(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async (re
       : 0;
 
     const qtyDiff = quantity - oldQty;
+
+    if (existingInput.source_kind === 'quantity') {
+      // Not a material: the row stands for an amount of the item itself.
+      if (!(quantity > 0)) {
+        res.status(400).json({ success: false, run: null, error: 'Quantity must be above zero. Remove the row instead.' });
+        return;
+      }
+      if (materialPayload.stockMoved && qtyDiff !== 0) {
+        await itemsPorts.stock.applyDelta({
+          itemId: existingInput.item_id,
+          variationLeafNodeId: existingInput.variation_leaf_node_id || 0,
+          delta: -qtyDiff,
+        });
+      }
+      materialPayload.quantity = quantity;
+      await run(
+        'UPDATE run_barcode_inputs SET material_payload_json = ?, consumed_qty = ? WHERE id = ?',
+        [JSON.stringify(materialPayload), quantity, existingInput.id],
+      );
+      const quantityRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+      res.json({ success: true, run: await rowToRun(quantityRunRow) });
+      return;
+    }
 
     if (qtyDiff > 0) {
       await inventoryPorts.movements.apply({
@@ -18417,6 +18531,22 @@ app.delete(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async 
     const oldQty = materialPayload.quantity !== undefined && materialPayload.quantity !== null 
       ? Number(materialPayload.quantity) 
       : 0;
+
+    if (existingInput.source_kind === 'quantity') {
+      // Not a material: give the amount back to the item's own stock, when
+      // this row took it from there.
+      if (materialPayload.stockMoved && oldQty > 0) {
+        await itemsPorts.stock.applyDelta({
+          itemId: existingInput.item_id,
+          variationLeafNodeId: existingInput.variation_leaf_node_id || 0,
+          delta: oldQty,
+        });
+      }
+      await run('DELETE FROM run_barcode_inputs WHERE id = ?', [existingInput.id]);
+      const quantityRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+      res.json({ success: true, run: await rowToRun(quantityRunRow) });
+      return;
+    }
 
     if (oldQty > 0) {
       await inventoryPorts.movements.apply({

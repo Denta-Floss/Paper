@@ -36,6 +36,18 @@ function createChallansPorts({ get, all }) {
       return new Map(rows.map((row) => [row.vendor_id, Number(row.c || 0)]));
     },
 
+    /// The challan numbers for these ids, as `{ id: challanNo }`. For a screen
+    /// that shows which reception a piece of stock came in on.
+    async numbersByIds(ids) {
+      const wanted = [...new Set((ids || []).map((id) => Number(id)).filter((id) => id > 0))];
+      if (wanted.length === 0) return {};
+      const rows = await all(
+        `SELECT id, challan_no FROM delivery_challans WHERE id IN (${wanted.map(() => '?').join(',')})`,
+        wanted,
+      );
+      return Object.fromEntries(rows.map((row) => [row.id, row.challan_no || '']));
+    },
+
     /// The custom variation values (JSON text) typed on this item and variation's
     /// challan lines, for the stock overview to merge. Empty ones are left out.
     customVariationValueRows(itemId, variationLeafNodeId) {
