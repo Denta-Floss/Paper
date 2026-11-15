@@ -18229,19 +18229,15 @@ async function ensureFulfilmentScenario(scenarioId) {
 
 // The demo dataset seeds order lines with literal status strings ('inProgress',
 // 'completed', 'delayed') and, separately, three pipeline runs that link to no
-// order at all. That leaves the two screens disagreeing: the Order Book shows a
-// completed order because getOrders() COALESCEs down to the raw status column,
-// while anything that asks "is a run attached?" — Order Insights, the Start
-// Production dialog — correctly answers no.
+// order at all. That left screens disagreeing about whether a run was attached.
 //
-// Link them so the derived status matches what the seed claims:
+// Link them so what the runs say matches what the seed claims:
 //   123456 notStarted → the queued run     (never started)
 //   123457 inProgress → the active run     (started, not finished)
 //   123458 completed  → the packed run     (finished)
-//   123459 delayed    → deliberately left unlinked. 'delayed' is not a state the
-//                       run-derived CASE can produce, so attaching a run would
-//                       overwrite the chip. It stays the honest example of an
-//                       order with no route yet.
+//   123459 delayed    → left unlinked, as the example of an order with no route
+//                       yet. (A run would not hide the chip: a line marked
+//                       delayed shows delayed until its runs are all completed.)
 async function ensureDemoOrderRunLinks() {
   const plan = [
     { orderNo: '123456', runId: 'demo-dolly-run-queued', metrics: null },

@@ -68,6 +68,9 @@ function createOrdersService({
       totalInvoicedQty: Number(row.total_invoiced_qty || 0),
       totalDeliveredQty: Number(row.total_delivered_qty || 0),
       status: row.status || 'notStarted',
+      // What the line's production runs say on their own, or null when it has
+      // none. `status` above already takes it into account.
+      runStatus: row.run_status || null,
       createdAt: row.created_at,
       startDate: row.start_date,
       endDate: row.end_date,
@@ -269,19 +272,59 @@ function createOrdersService({
     };
   }
 
+  // --- the status an order line shows ---------------------------------------
+  //
+  // One rule, used by the list, the single read, the status filter and the
+  // search, so they cannot disagree:
+  //
+  //   completed  if someone marked it completed, or every run is completed
+  //   delayed    otherwise, if someone marked it delayed
+  //   otherwise  whichever is further along, the status set by hand or what the
+  //              runs say: draft < notStarted < inProgress
+  //
+  // Runs move a line forward and never back. With no runs it is the status set
+  // by hand. What the runs say is production's to work out (runStatusSql).
+  //
+  // The select is two levels so that is computed once per line, and so no
+  // second column is ever called `status`: an earlier version selected `o.*`
+  // and the derived value both as `status`, and the wrapping `SELECT *` renamed
+  // the second one away, so the list silently showed only the stored status.
+  const ORDER_ROW_SELECT = `
+      SELECT s.*,
+        CASE
+          WHEN s.status = 'completed' OR s.run_status = 'completed' THEN 'completed'
+          WHEN s.status = 'delayed' THEN 'delayed'
+          WHEN s.run_status IS NULL THEN s.status
+          WHEN s.run_status = 'inProgress' THEN 'inProgress'
+          WHEN s.run_status = 'notStarted' AND COALESCE(s.status, '') IN ('', 'draft') THEN 'notStarted'
+          ELSE s.status
+        END AS effective_status
+      FROM (
+        SELECT o.*,
+          (SELECT SUM(dci.quantity_pcs) 
+           FROM delivery_challan_items dci 
+           JOIN delivery_challans dc ON dci.challan_id = dc.id 
+           WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
+          ${runStatusSql('o.id')} AS run_status
+        FROM order_items o
+      ) s
+  `;
+
+  /// A row as callers have always had it, with `status` being the one that is
+  /// shown. The status set by hand stays available as `stored_status`, for the
+  /// one place that needs it: checking a move made by hand.
+  function withShownStatus(row) {
+    if (!row) return row;
+    row.stored_status = row.status;
+    row.status = row.effective_status;
+    delete row.effective_status;
+    return row;
+  }
+
   async function getOrderRowById(id) {
-    return get(`
-      SELECT o.*,
-        (SELECT SUM(dci.quantity_pcs) 
-         FROM delivery_challan_items dci 
-         JOIN delivery_challans dc ON dci.challan_id = dc.id 
-         WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
-        COALESCE(
-          ${runStatusSql('o.id')}, o.status
-        ) AS status
-      FROM order_items o 
-      WHERE o.id = ?
-    `, [id]);
+    return withShownStatus(
+      await get(`SELECT * FROM (${ORDER_ROW_SELECT}) WHERE id = ?`, [id]),
+    );
   }
 
   /// The order list, optionally narrowed and paged.
@@ -309,7 +352,7 @@ function createOrdersService({
     if (term) {
       const like = `%${term}%`;
       // The same eight fields the Flutter list used to filter in memory, so the
-      // two agree exactly. `status` is the computed one from the wrapping select.
+      // two agree exactly. `effective_status` is the status that is shown.
       conditions.push(`(
         LOWER(COALESCE(order_no, '')) LIKE ?
         OR LOWER(COALESCE(client_name, '')) LIKE ?
@@ -317,7 +360,7 @@ function createOrdersService({
         OR LOWER(COALESCE(client_code, '')) LIKE ?
         OR LOWER(COALESCE(item_name, '')) LIKE ?
         OR LOWER(COALESCE(variation_path_label, '')) LIKE ?
-        OR LOWER(COALESCE(status, '')) LIKE ?
+        OR LOWER(COALESCE(effective_status, '')) LIKE ?
         OR CAST(COALESCE(quantity, 0) AS TEXT) LIKE ?
       )`);
       params.push(like, like, like, like, like, like, like, like);
@@ -334,7 +377,7 @@ function createOrdersService({
       ? statuses.map((value) => String(value || '').trim()).filter(Boolean)
       : [];
     if (statusList.length) {
-      conditions.push(`status IN (${statusList.map(() => '?').join(', ')})`);
+      conditions.push(`effective_status IN (${statusList.map(() => '?').join(', ')})`);
       params.push(...statusList);
     }
 
@@ -386,7 +429,7 @@ function createOrdersService({
       pagingParams.push(limit, offset);
     }
 
-    return all(
+    const rows = await all(
       `
       SELECT * FROM (${ORDER_LIST_SELECT}) ${where}
       ORDER BY datetime(created_at) DESC, id DESC
@@ -394,6 +437,7 @@ function createOrdersService({
       `,
       [...params, ...pagingParams],
     );
+    return rows.map(withShownStatus);
   }
 
   /// How many orders a narrowing matches, so a paged caller can say what it is
@@ -407,17 +451,7 @@ function createOrdersService({
     return Number(row?.total || 0);
   }
 
-  const ORDER_LIST_SELECT = `
-      SELECT o.*,
-        (SELECT SUM(dci.quantity_pcs) 
-         FROM delivery_challan_items dci 
-         JOIN delivery_challans dc ON dci.challan_id = dc.id 
-         WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
-        COALESCE(
-          ${runStatusSql('o.id')}, o.status
-        ) AS status
-      FROM order_items o
-  `;
+  const ORDER_LIST_SELECT = ORDER_ROW_SELECT;
 
   const ALLOWED_PO_CONTENT_TYPES = new Set([
     'application/pdf',
@@ -1135,23 +1169,28 @@ function createOrdersService({
       throw error;
     }
   
+    // A move made by hand is checked against the status set by hand. The status
+    // shown can be ahead of it (the line's runs moved on), and judging the move
+    // by that would stop anyone correcting the line itself.
+    const currentStatus = existing.stored_status ?? existing.status;
+
     const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
     const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
     const now = new Date().toISOString();
 
-    let targetStatus = existing.status;
+    let targetStatus = currentStatus;
     let statusChanged = false;
-    if (status && status !== existing.status) {
+    if (status && status !== currentStatus) {
       const isAdmin = actor?.role === 'admin';
-      if (existing.status === 'completed' && !isAdmin) {
+      if (currentStatus === 'completed' && !isAdmin) {
         const error = new Error(`Only admins can reverse completed orders.`);
         error.statusCode = 403;
         throw error;
       }
-      const allowed = ORDER_LIFECYCLE_TRANSITIONS[existing.status];
+      const allowed = ORDER_LIFECYCLE_TRANSITIONS[currentStatus];
       if (!allowed || !allowed.has(status)) {
         if (!isAdmin) {
-          const error = new Error(`Invalid lifecycle transition from ${existing.status} to ${status}.`);
+          const error = new Error(`Invalid lifecycle transition from ${currentStatus} to ${status}.`);
           error.statusCode = 400;
           throw error;
         }
@@ -1170,7 +1209,7 @@ function createOrdersService({
       if (statusChanged) {
         await run(
           'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by_user_id, changed_at) VALUES (?, ?, ?, ?, ?)',
-          [id, existing.status, targetStatus, actor?.id || null, now],
+          [id, currentStatus, targetStatus, actor?.id || null, now],
         );
       }
 

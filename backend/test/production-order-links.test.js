@@ -61,34 +61,114 @@ const single = async (ctx) => {
   return res.body.order || res.body.data || res.body;
 };
 
-test('an order line read on its own takes its status from its runs', async (t) => {
+// The rule, in one place: what an order line shows, given the status someone
+// set by hand and what its runs say.
+//   completed  if it was marked completed, or every run is completed
+//   delayed    otherwise, if it was marked delayed
+//   otherwise  whichever is further along: draft < notStarted < inProgress
+// A run moves a line forward and never back. With no runs, the hand-set status.
+const RULE = [
+  // stored        runs           shown
+  ['draft',        'none',        'draft'],
+  ['draft',        'notStarted',  'notStarted'],
+  ['draft',        'inProgress',  'inProgress'],
+  ['draft',        'completed',   'completed'],
+  ['notStarted',   'none',        'notStarted'],
+  ['notStarted',   'inProgress',  'inProgress'],
+  ['notStarted',   'oneOfTwo',    'inProgress'],
+  ['inProgress',   'notStarted',  'inProgress'],
+  ['inProgress',   'completed',   'completed'],
+  ['delayed',      'none',        'delayed'],
+  ['delayed',      'notStarted',  'delayed'],
+  ['delayed',      'inProgress',  'delayed'],
+  ['delayed',      'completed',   'completed'],
+  ['completed',    'none',        'completed'],
+  ['completed',    'inProgress',  'completed'],
+];
+
+test('an order line shows one status, by one rule, in the list and on its own', async (t) => {
+  const ctx = await boot();
+  t.after(() => ctx.server.close());
+  const { api, backend, template, line } = ctx;
+  const runA = (await api('POST', '/runs', { templateId: template.id, name: 'Rule A', orderItemId: line.id })).body.run;
+  const runB = (await api('POST', '/runs', { templateId: template.id, name: 'Rule B', orderItemId: line.id })).body.run;
+  const link = (runId, on) => (on
+    ? backend.run('INSERT OR IGNORE INTO order_pipeline_assignments (order_item_id, pipeline_run_id) VALUES (?, ?)', [line.id, runId])
+    : backend.run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ? AND pipeline_run_id = ?', [line.id, runId]));
+  const setRun = (runId, status, started) => backend.run(
+    'UPDATE pipeline_runs SET status = ?, started_at = ? WHERE id = ?',
+    [status, started ? new Date().toISOString() : null, runId]);
+  const arrange = async (stored, runs) => {
+    await backend.run('UPDATE order_items SET status = ? WHERE id = ?', [stored, line.id]);
+    await link(runA.id, runs !== 'none');
+    await link(runB.id, runs === 'oneOfTwo');
+    if (runs === 'notStarted') await setRun(runA.id, 'planned', false);
+    if (runs === 'inProgress') await setRun(runA.id, 'in_progress', true);
+    if (runs === 'completed') await setRun(runA.id, 'completed', true);
+    if (runs === 'oneOfTwo') { await setRun(runA.id, 'completed', true); await setRun(runB.id, 'planned', false); }
+  };
+
+  for (const [stored, runs, shown] of RULE) {
+    await arrange(stored, runs);
+    const inList = await listed(ctx);
+    const alone = await single(ctx);
+    const where = `stored ${stored}, runs ${runs}`;
+    assert.equal(inList.status, shown, `list: ${where}`);
+    assert.equal(alone.status, shown, `single order: ${where}`);
+    assert.equal(inList.runStatus ?? null, runs === 'none' ? null : inList.runStatus, where);
+    if (runs === 'none') assert.equal(inList.runStatus ?? null, null, `no runs, no run status: ${where}`);
+  }
+
+  // The filter, the search and the count all go by the status that is shown.
+  await arrange('draft', 'inProgress');
+  const rows = (res) => res.body.orders || res.body.data;
+  assert.equal(rows(await api('GET', `/api/orders?status=inProgress&ids=${line.id}`)).length, 1);
+  assert.equal(rows(await api('GET', `/api/orders?status=draft&ids=${line.id}`)).length, 0);
+  assert.ok(rows(await api('GET', '/api/orders?search=inprogress')).some((o) => Number(o.id) === line.id));
+  const paged = await api('GET', '/api/orders?status=inProgress&limit=1&offset=0');
+  const all = rows(await api('GET', '/api/orders?status=inProgress'));
+  assert.equal(paged.body.total ?? paged.body.meta?.total, all.length, 'the count is of the same narrowing');
+
+  // A status can still be set by hand on a line whose runs are ahead of it:
+  // the move is checked against what was set by hand, not what is shown.
+  await arrange('notStarted', 'completed');
+  const byHand = await api('PATCH', `/api/orders/${line.id}/lifecycle`, { status: 'inProgress' });
+  assert.ok(byHand.status < 300, JSON.stringify(byHand.body));
+  const storedNow = await backend.get('SELECT status FROM order_items WHERE id = ?', [line.id]);
+  assert.equal(storedNow.status, 'inProgress');
+  assert.equal((await listed(ctx)).status, 'completed', 'and the runs still show it completed');
+});
+
+test('a run moving tells the app its order line changed', async (t) => {
   const ctx = await boot();
   t.after(() => ctx.server.close());
   const { api, backend, template, line } = ctx;
   await backend.run("UPDATE order_items SET status = 'draft' WHERE id = ?", [line.id]);
-  assert.equal((await single(ctx)).status, 'draft', 'with no runs the line has its own status');
+  const changes = async () => (await backend.get(
+    "SELECT COUNT(*) AS c FROM changelog WHERE table_name = 'order_items' AND record_id = ?", [String(line.id)])).c
+    + (await backend.get(
+      "SELECT COUNT(*) AS c FROM changelog WHERE table_name = 'order_items' AND record_id = ?", [line.id])).c;
+  const plain = async () => {
+    const res = await api('GET', `/api/orders?ids=${line.id}`);
+    return (res.body.orders || res.body.data)[0].status;
+  };
 
-  const run = (await api('POST', '/runs', { templateId: template.id, name: 'Status Link', orderItemId: line.id })).body.run;
-  await backend.run('UPDATE pipeline_runs SET started_at = NULL WHERE id = ?', [run.id]);
-  assert.equal((await single(ctx)).status, 'notStarted', 'a run that has not begun');
+  let before = await changes();
+  const run = (await api('POST', '/runs', { templateId: template.id, name: 'Announce', orderItemId: line.id })).body.run;
+  assert.ok(await changes() > before, 'starting a run for the line announces the line');
+  assert.notEqual(await plain(), 'draft', 'and the list already shows it moved');
 
-  await backend.run("UPDATE pipeline_runs SET started_at = datetime('now') WHERE id = ?", [run.id]);
-  assert.equal((await single(ctx)).status, 'inProgress');
+  before = await changes();
+  const nodes = JSON.parse(template.nodes_json || '[]');
+  for (const node of nodes) {
+    await api('PUT', `/runs/${run.id}/node-status`, { nodeId: node.id, status: 'done' });
+  }
+  assert.ok(await changes() > before, 'completing the run announces the line');
+  assert.equal(await plain(), 'completed');
 
-  await backend.run("UPDATE pipeline_runs SET status = 'completed' WHERE id = ?", [run.id]);
-  assert.equal((await single(ctx)).status, 'completed');
-
-  // As it is today, and not what the code means to do: the LIST does not show
-  // the status from the runs. Its query selects `o.*` and the derived value
-  // both as `status`, then wraps that in `SELECT * FROM (…)`, where SQLite
-  // renames the second one; the stored status is what comes out, and what the
-  // status filter matches. Recorded here so a fix has to change this test.
-  assert.equal((await listed(ctx)).status, 'draft');
-  const filtered = await api('GET', `/api/orders?status=completed&ids=${line.id}&read=f`);
-  assert.equal((filtered.body.orders || filtered.body.data).length, 0);
-
-  await backend.run('DELETE FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [run.id]);
-  assert.equal((await single(ctx)).status, 'draft', 'with no runs the line has its own status again');
+  before = await changes();
+  assert.equal((await api('DELETE', `/runs/${run.id}`)).status, 200);
+  assert.ok(await changes() > before, 'removing the run announces the line');
 });
 
 test("an order's runs and reports are read through its lines", async (t) => {
