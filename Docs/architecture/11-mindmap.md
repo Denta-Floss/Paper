@@ -31,10 +31,10 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c38["⟳ Change 38: production is out: 15 of 15 modules have left server.js"]
-        c38a["registry: production evacuated; it owns stage_reconciliations, challans owns piece_barcodes"]
-        c38b["server.js is 19,700 lines, down from 35,760, and holds only the kernel"]
-        c38c["still reaching outward from production: materials, inventory sets, challans made from a stage's leftover, order links"]
+      c39["⟳ Change 39: production and its neighbours meet only at ports"]
+        c39a["production writes no inventory or challan table: produced sets, lots, stage notes and the sheet lookup go through ports"]
+        c39b["production owns the run-to-order-line link; orders, inventory and the reports ask for runs through its port"]
+        c39c["the order list embeds SQL that production publishes for a line's status from its runs"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -455,8 +455,10 @@ mindmap
           chl5["fixed: invoice edit, in-use settle"]
       Production evacuated
         pd1["runs, node status, stock on a run, stage numbers, scrap, completed output"]
-        n38x94392["⟳ left in server.js on purpose: seeds and demo scenarios, initDb, the telemetry emitter, the /runs login and write guards"]
-        n38x21713["⟳ still open: production writes materials, inventory_sets and delivery_challans rows itself, and reads piece_barcodes for a scanned sheet; those want inventory and challans ports"]
+        n39x63718["⟳ pinned fault: the order LIST shows the stored status, not the one from its runs; the single read shows the derived one"]
+        n39x42855["⟳ uses: inventoryPorts.sets.recordProduced and receipts.mintLot, challansPorts.stageNotes and sheets.findByCode, ordersPorts.lines"]
+        n38x94392["left in server.js on purpose: seeds and demo scenarios, initDb, the telemetry emitter, the /runs login and write guards"]
+        n38x21713["still open: production writes materials, inventory_sets and delivery_challans rows itself, and reads piece_barcodes for a scanned sheet; those want inventory and challans ports"]
         n33x9951["rowToRun: each input carries sourceKind and the code that addresses it"]
         n32x95640["POST runs barcodes by quantity: approved allocations are written one material each through assignMaterialToRunNode; a bad split is refused whole"]
         n31x41609["server.js, still here: assertValidStockVariationLeaf is the one rule for leaf 0; itemHoldsWholeItemStock; backfillWholeItemStock at boot; trigger trg_variation_stock_leaf_gone replaces the leaf foreign key"]
@@ -465,6 +467,8 @@ mindmap
         n33x81384["PUT runs barcodes on a sheet row: used weight up to the sheet's weight; stock and the run's batch weight move by the difference"]
         n32x45807["PUT and DELETE runs barcodes on a quantity row move the item's own stock"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
+        n39x14887["⟳ service.orderForRun and orderLineForRun: the first linked line that still exists, asked of ordersPorts.lines"]
+        n39x84970["⟳ offers, runs seen from the order side: linkedToOrderItem, unlinkOrderItem, orderItemIdsForRun, allWithOrderItem, forOrderItems, summariesForOrderItems, inputsForRun, inputsForRuns, stageTotalsForRuns; orderItemRunStatusSql as text"]
         n37x81899["offers: runs.rowById, runs.dissolve, runs.inputCountForBarcode, runs.latestInputForBarcode, runs.stagesForRun, output.sourceById, runInputsForChallanLines, machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount"]
         n36x40227["service.setNodeStatus: status and overrides, Assembly job once per run and node, completion booked once and minted as a lot with OUTPUT_MINTED"]
         n36x99224["production/routes.js registerProductionRoutes: /runs x10, /api/production-scrap x2, /api/production-runs/completed, /api/machines/:id/queue, /api/items/:id/pipeline-history"]
@@ -586,3 +590,4 @@ mindmap
 | 36 | Production step 2. `modules/production/routes.js` (`registerProductionRoutes`) takes the fifteen production routes whole: `/runs` (list, create, get, delete, node-status, barcodes POST/PUT/DELETE, node-metrics, batches), `/api/production-scrap` (two), `/api/production-runs/completed`, `/api/machines/:id/queue` and `/api/items/:id/pipeline-history`. URLs and guards are unchanged; the `app.use('/runs', …)` login and write guards stay in `server.js`, registered ahead of it. The 370-line node-status handler body becomes `setNodeStatus({ runId, payload, actor })` in the service, answering `{ run }` or `{ refusal }`. `server.js` is 19,700 lines. | API surface (unchanged paths), Orchestration, Services |
 | 37 | Production step 3. `modules/production/ports.js` stops being read-only: `runs.dissolve` replaces the two deletes orders ran on `run_barcode_inputs` and `pipeline_runs` when an order line is deleted; `runs.inputCountForBarcode`, `runs.latestInputForBarcode`, `runs.rowById` and `runs.stagesForRun` replace inventory's reads for a material's summary and control tower; `output.sourceById` replaces the challan service's read of `production_runs` at dispatch. Left as read models: two list queries in `modules/orders/service.js` that join `pipeline_runs`, and the order and challan reports. | Ports, Services |
 | 38 | Production step 4, the last module. Registry: `production.evacuated = true`, 15 of 15. Table claims corrected to who writes them: production owns `stage_reconciliations` (was listed under challans), challans owns `piece_barcodes` (was listed under production). `server.js` is 19,700 lines (35,760 at the start) and holds the kernel only: auth and gates, schema and `initDb`, seeds and demo scenarios, assets, search, the barcode resolver, the telemetry emitter, payroll. Deliberately open: production still writes `materials`, `inventory_sets` and, for a stage's leftover, `delivery_challans` rows itself, and reads `piece_barcodes` for a scanned sheet; two order list queries and the reports read production tables as read models. | Data, Ports |
+| 39 | The outward reaches of production are closed. Inventory: `sets.recordProduced` (the temporary set an Assembly stage makes, with its stock; `recordProducedSet` and `stockTemporarySet` now live in the inventory service) and `receipts.mintLot` (finished output and scrap lots). Challans: `stageNotes.find/create/setQuantity/remove` (the internal leftover and scrap notes) and `sheets.findByCode`. Orders: `lines.row/summary/idsForOrderNo/idsForItem`. Production now owns `order_pipeline_assignments` (registry moved); `orderForRun` and `orderLineForRun` in the service replace five joins. In the other direction orders, inventory and the order and challan reports read runs only through `productionPorts.runs.*`; the order list's derived-status subquery is published by production as `orderItemRunStatusSql`, as text, because the list filters, counts and pages on it in one statement. No module other than production, the seeds and `initDb` names a production table. Master reads from production (items, units, machines, pipeline templates) remain. Tests: `production-order-links.test.js` and two more in `production-api.test.js`, all run against the previous commit as well. Found and pinned, not fixed: the order list returns the stored status because its wrapping `SELECT *` renames the derived `status` column. | Ports, Services, Data, Tests |

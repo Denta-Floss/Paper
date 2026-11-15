@@ -25,6 +25,7 @@ function createChallanReportService({
   effectiveReportGroupCodesForChallan,
   listInvoices,
   normalizePositiveNumber,
+  productionPorts,
 }) {
   function rowToConversionOverrideDto(row) {
     return {
@@ -747,33 +748,11 @@ function createChallanReportService({
     }
 
     // --- the runs that made it ------------------------------------------------
-    const runRows = orderItemIds.length === 0
-      ? []
-      : await all(
-          `
-          SELECT DISTINCT r.id, r.status, r.started_at, r.completed_at, r.name
-          FROM order_pipeline_assignments a
-          JOIN pipeline_runs r ON r.id = a.pipeline_run_id
-          WHERE a.order_item_id IN (${inClause(orderItemIds)})
-          `,
-          orderItemIds,
-        );
+    const runRows = await productionPorts.runs.summariesForOrderItems(orderItemIds);
     const runIds = runRows.map((row) => row.id);
 
     // --- in: stock those runs consumed, and where it came from ----------------
-    const consumed = runIds.length === 0
-      ? []
-      : await all(
-          `
-          SELECT rbi.run_id, rbi.barcode, rbi.material_id, rbi.scanned_at,
-                 rbi.challan_item_id, rbi.item_id, rbi.variation_leaf_node_id,
-                 rbi.consumed_qty, rbi.source_kind
-          FROM run_barcode_inputs rbi
-          WHERE rbi.run_id IN (${inClause(runIds)})
-          ORDER BY rbi.scanned_at ASC
-          `,
-          runIds,
-        );
+    const consumed = await productionPorts.runs.inputsForRuns(runIds);
 
     // Where the consumed stock came in.
     //
@@ -845,17 +824,7 @@ function createChallanReportService({
     // --- scrap and yield, per stage, for those runs ---------------------------
     const scrapRow = runIds.length === 0
       ? null
-      : await get(
-          `
-          SELECT COALESCE(SUM(allotted), 0) AS allotted,
-                 COALESCE(SUM(output), 0) AS output,
-                 COALESCE(SUM(scrap), 0) AS scrap,
-                 COALESCE(SUM(leftover), 0) AS leftover
-          FROM stage_reconciliations
-          WHERE run_id IN (${inClause(runIds)})
-          `,
-          runIds,
-        );
+      : await productionPorts.runs.stageTotalsForRuns(runIds);
 
     // --- what could not be traced, said out loud ------------------------------
     const tracedBarcodes = new Set(

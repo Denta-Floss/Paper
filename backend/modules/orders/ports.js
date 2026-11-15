@@ -77,6 +77,38 @@ function createOrdersPorts({ get, all, run, saveOrder }) {
 
     /// Save one order line. The same function the orders screens use.
     saveOrder: (...args) => saveOrder(...args),
+
+    /// Order lines, as production needs to see them: what a run was started
+    /// for. Production keeps the link from a run to an order line and asks
+    /// here what that line is.
+    lines: {
+      /// The line itself: which item and variation it is for, or undefined.
+      row: (orderItemId) => get(
+        'SELECT id, order_no, item_id, variation_leaf_node_id, variation_path_label FROM order_items WHERE id = ?',
+        [orderItemId],
+      ),
+
+      /// The line with its order and client: `{ order_item_id, order_no,
+      /// client_name }`, or undefined when the line or its order is gone.
+      summary: (orderItemId) => get(
+        `SELECT i.id AS order_item_id, h.order_no, c.name AS client_name
+           FROM order_items i
+           JOIN order_headers h ON i.order_no = h.order_no
+           LEFT JOIN clients c ON h.client_id = c.id
+          WHERE i.id = ?`,
+        [orderItemId],
+      ),
+
+      async idsForOrderNo(orderNo) {
+        const rows = await all('SELECT id FROM order_items WHERE order_no = ?', [orderNo]);
+        return rows.map((row) => row.id);
+      },
+
+      async idsForItem(itemId) {
+        const rows = await all('SELECT id FROM order_items WHERE item_id = ?', [itemId]);
+        return rows.map((row) => row.id);
+      },
+    },
   };
 }
 

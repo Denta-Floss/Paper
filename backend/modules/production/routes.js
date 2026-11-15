@@ -34,11 +34,12 @@ const barcodes = require('../../kernel/barcodes');
 function registerProductionRoutes(app, {
   actorFromRequest,
   all,
-  generateChallanNumber,
+  challansPorts,
   get,
   getMaterialRowByBarcode,
   inventoryPorts,
   itemsPorts,
+  ordersPorts,
   parseJson,
   recordLedgerEvent,
   requirePermission,
@@ -54,6 +55,7 @@ function registerProductionRoutes(app, {
     rowToRun,
     upsertStageReconciliation,
     setNodeStatus,
+    orderForRun,
   } = production;
 
   app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
@@ -167,26 +169,30 @@ function registerProductionRoutes(app, {
         return;
       }
 
+      // The runs made for this item's order lines, and, when the item has a
+      // default pipeline, every run of that pipeline too.
+      const lineIds = await ordersPorts.lines.idsForItem(itemId);
+      const linked = lineIds.length
+        ? `opa.order_item_id IN (${lineIds.map(() => '?').join(', ')})`
+        : '0';
       let runRows = [];
       if (item.default_pipeline_id) {
         runRows = await all(
           `SELECT DISTINCT pr.* 
            FROM pipeline_runs pr
            LEFT JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-           LEFT JOIN order_items oi ON opa.order_item_id = oi.id
-           WHERE pr.template_id = ? OR oi.item_id = ?
+           WHERE pr.template_id = ? OR ${linked}
            ORDER BY pr.created_at DESC`,
-          [item.default_pipeline_id, itemId]
+          [item.default_pipeline_id, ...lineIds]
         );
       } else {
         runRows = await all(
           `SELECT DISTINCT pr.* 
            FROM pipeline_runs pr
            JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-           JOIN order_items oi ON opa.order_item_id = oi.id
-           WHERE oi.item_id = ?
+           WHERE ${linked}
            ORDER BY pr.created_at DESC`,
-          [itemId]
+          lineIds
         );
       }
 
@@ -476,17 +482,7 @@ function registerProductionRoutes(app, {
       // (piece_barcodes) rather than a SKU (materials), record the exact sheet
       // consumed so the run traces back to the original vendor sheet. Backward
       // compatible — SKU scans fall through to the unchanged path below.
-      const sheet = await get(
-        `
-        SELECT pb.parent_code, pb.child_code, pb.weight, pb.challan_item_id,
-               ci.item_id, c.vendor_id, c.vendor_name, c.challan_no AS reception_challan_no
-        FROM piece_barcodes pb
-        JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
-        JOIN delivery_challans c ON ci.challan_id = c.id
-        WHERE pb.parent_code = ? OR pb.child_code = ?
-        `,
-        [payload.barcode, payload.barcode],
-      );
+      const sheet = await challansPorts.sheets.findByCode(payload.barcode);
       if (sheet) {
         const sheetInputId = `barcode-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         await run(
@@ -942,17 +938,7 @@ function registerProductionRoutes(app, {
       // that it was processed.
       const isFullBooking = metrics.outputTime !== undefined;
       if (stageChanged && (isFullBooking || priorStage)) {
-        const stageOrder = await get(
-          `
-          SELECT h.order_no
-          FROM order_pipeline_assignments opa
-          JOIN order_items i ON opa.order_item_id = i.id
-          JOIN order_headers h ON i.order_no = h.order_no
-          WHERE opa.pipeline_run_id = ?
-          LIMIT 1
-          `,
-          [req.params.id],
-        );
+        const stageOrder = await orderForRun(req.params.id);
         const stageInputs = await all(
           'SELECT DISTINCT barcode FROM run_barcode_inputs WHERE run_id = ? AND node_id = ?',
           [req.params.id, nodeId],
@@ -1007,34 +993,21 @@ function registerProductionRoutes(app, {
         }
       
         if (itemId) {
-          let existingChallan = await get('SELECT id FROM delivery_challans WHERE source_reference = ?', [sourceRef]);
+          const existingChallan = await challansPorts.stageNotes.find(sourceRef);
           if (existingChallan) {
             if (Number(metrics.remaining) > 0) {
-              await run(`UPDATE delivery_challan_items SET quantity_pcs = ?, weight = ? WHERE challan_id = ?`, [Number(metrics.remaining), Number(metrics.remaining), existingChallan.id]);
+              await challansPorts.stageNotes.setQuantity(existingChallan.id, metrics.remaining);
             } else {
-              // If they set it back to 0, let's delete the challan items or the whole challan
-              await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [existingChallan.id]);
-              await run('DELETE FROM delivery_challans WHERE id = ?', [existingChallan.id]);
+              // If they set it back to 0, the note goes.
+              await challansPorts.stageNotes.remove(existingChallan.id);
             }
           } else if (Number(metrics.remaining) > 0) {
-            const challanNo = await generateChallanNumber('internal');
-            const challanRes = await run(
-              `INSERT INTO delivery_challans (
-                type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                'internal', challanNo, new Date().toISOString(), 'MAIN', sourceRef, 'completed', 0, 'manufacturing', 'leftover', new Date().toISOString(), new Date().toISOString()
-              ]
-            );
-            const challanId = challanRes.lastID;
-            await run(
-              `INSERT INTO delivery_challan_items (
-                challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [
-                challanId, itemId, Number(metrics.remaining), Number(metrics.remaining), 1, new Date().toISOString(), new Date().toISOString()
-              ]
-            );
+            await challansPorts.stageNotes.create({
+              sourceReference: sourceRef,
+              kind: 'leftover',
+              itemId,
+              quantity: metrics.remaining,
+            });
           }
         }
       }
@@ -1111,26 +1084,17 @@ function registerProductionRoutes(app, {
           : `Scrap - ${sourceMaterial.name}`;
         const lotUnit = sourceMaterial?.unit || scrapItem?.unit_symbol || 'pcs';
 
-        await run(`
-          INSERT INTO materials (
-            barcode, name, type, kind, group_mode,
-            linked_group_id, linked_item_id, linked_variation_leaf_node_id,
-            unit, unit_id, inventory_state, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          newLotBarcode,
-          lotName,
-          sourceMaterial?.type ?? 'Scrap',
-          'lot',
-          'tracked',
-          scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
-          scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
-          scrapItem ? null : sourceMaterial.linked_variation_leaf_node_id,
-          lotUnit,
-          sourceMaterial?.unit_id ?? scrapItem?.unit_id ?? null,
-          'available',
-          new Date().toISOString()
-        ]);
+        await inventoryPorts.receipts.mintLot({
+          barcode: newLotBarcode,
+          name: lotName,
+          type: sourceMaterial?.type ?? 'Scrap',
+          groupId: scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
+          itemId: scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
+          leafNodeId: scrapItem ? null : sourceMaterial.linked_variation_leaf_node_id,
+          unit: lotUnit,
+          unitId: sourceMaterial?.unit_id ?? scrapItem?.unit_id ?? null,
+          createdAt: new Date().toISOString(),
+        });
 
         await inventoryPorts.movements.applyCore({
           barcode: newLotBarcode,
@@ -1146,26 +1110,13 @@ function registerProductionRoutes(app, {
           lotCode: newLotBarcode,
         }, { useTransaction: false });
 
-        // Auto-generate internal challan for scrap so it appears in Ledger
-        const challanNo = await generateChallanNumber('internal');
-        const challanRes = await run(
-          `INSERT INTO delivery_challans (
-            type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'internal', challanNo, new Date().toISOString(), 'MAIN', `Scrap/Run ${pipelineRunId}/Node ${nodeId}`, 'completed', 0, 'manufacturing', 'scrap', new Date().toISOString(), new Date().toISOString()
-          ]
-        );
-      
-        const challanId = challanRes.lastID;
-        await run(
-          `INSERT INTO delivery_challan_items (
-            challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            challanId, scrapItem ? scrapItem.id : sourceMaterial.linked_item_id, Number(scrapQty), Number(scrapQty), 1, new Date().toISOString(), new Date().toISOString()
-          ]
-        );
+        // An internal note for the scrap, so it appears in the challan ledger.
+        await challansPorts.stageNotes.create({
+          sourceReference: `Scrap/Run ${pipelineRunId}/Node ${nodeId}`,
+          kind: 'scrap',
+          itemId: scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
+          quantity: scrapQty,
+        });
       }
 
       res.status(201).json({ success: true });

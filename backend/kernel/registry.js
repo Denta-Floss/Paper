@@ -41,7 +41,7 @@ const MODULES = {
     recordSource: { table: 'order_items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(order_no), ''), 'Order ' || id)" },
     tables: [
       'order_headers', 'order_items', 'order_activity_log', 'order_status_history',
-      'order_material_requirements', 'order_pipeline_assignments', 'order_po_documents',
+      'order_material_requirements', 'order_po_documents',
       'po_documents', 'po_upload_sessions',
       'procurement_requests', 'procurement_request_lines',
       'procurement_request_line_sources', 'procurement_activity_log',
@@ -85,7 +85,12 @@ const MODULES = {
     // stage_reconciliations is written only by production (a stage's numbers).
     // piece_barcodes is not here: the tags are made and marked returned by
     // challans, and production only reads one when a sheet is scanned.
-    tables: ['production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap', 'stage_reconciliations'],
+    // order_pipeline_assignments is the run's link to the order lines it makes:
+    // production writes it when a run is created.
+    tables: [
+      'production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap',
+      'stage_reconciliations', 'order_pipeline_assignments',
+    ],
     evacuated: true,
   },
   jobs: {

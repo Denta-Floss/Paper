@@ -15,12 +15,11 @@ const barcodes = require('../../kernel/barcodes');
 //   GET  /api/orders/:orderNo/trace              backward lineage: runs, sheets,
 //                                                pieces, challans, returns
 //
-// These read across production's and challans' tables (pipeline_runs, run
-// barcodes, delivery challans) as well as orders'. They keep their SQL on
-// purpose: each is one read model of an order's history, and they are the
-// reason those tables are joined at all. The production helpers they shape rows
-// with come in by name. Handlers are the ones that lived in server.js, moved
-// whole.
+// Each is one read model of an order's history. The order's lines are read
+// here; its runs, their inputs and stage numbers are asked of production
+// through productionPorts.runs. Challan tables (delivery challans, sheet tags)
+// and machines and dies are still read here directly. The production helpers
+// they shape rows with come in by name.
 //
 // NOT here, and still in server.js until their modules move:
 //   GET /api/orders/:orderId/delivery-challans   (challans)
@@ -41,7 +40,16 @@ module.exports = function registerOrderReportRoutes(ctx) {
     dieRowToDto,
     actorFromRequest,
     recordLedgerEvent,
+    productionPorts,
   } = ctx;
+
+  /// An order's runs, newest first, one row per run-and-line link, each with
+  /// the `order_item_id` it is for. The lines are this module's; the runs are
+  /// asked of production.
+  async function runsForOrderNo(orderNo) {
+    const lines = await all('SELECT id FROM order_items WHERE order_no = ?', [orderNo]);
+    return productionPorts.runs.forOrderItems(lines.map((line) => line.id));
+  }
 
   // Fulfilment rollup for the whole order book, in one request. Everything else
   // production-side is keyed :orderNo one at a time, which makes a per-row
@@ -115,11 +123,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
         return entry;
       };
 
-      const assignments = await all(`
-        SELECT opa.order_item_id, pr.*
-        FROM order_pipeline_assignments opa
-        JOIN pipeline_runs pr ON pr.id = opa.pipeline_run_id
-      `);
+      const assignments = await productionPorts.runs.allWithOrderItem();
       const runsByOrderItem = new Map();
       for (const run of assignments) {
         const list = runsByOrderItem.get(run.order_item_id) || [];
@@ -230,14 +234,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
   app.get('/api/orders/:orderNo/pipeline-runs', requirePermission('config.read'), async (req, res) => {
     try {
       const orderNo = req.params.orderNo;
-      const rows = await all(`
-        SELECT pr.*
-        FROM pipeline_runs pr
-        JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-        JOIN order_items i ON opa.order_item_id = i.id
-        WHERE i.order_no = ?
-        ORDER BY pr.created_at DESC
-      `, [orderNo]);
+      const rows = await runsForOrderNo(orderNo);
 
       const runs = [];
       for (const row of rows) {
@@ -268,14 +265,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
         SELECT id, item_name, variation_path_label, quantity, unit_name, unit_symbol, unit_price
         FROM order_items WHERE order_no = ? ORDER BY id ASC
       `, [orderNo]);
-      const runRows = await all(`
-        SELECT pr.*, opa.order_item_id
-        FROM pipeline_runs pr
-        JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-        JOIN order_items i ON opa.order_item_id = i.id
-        WHERE i.order_no = ?
-        ORDER BY pr.created_at DESC
-      `, [orderNo]);
+      const runRows = await runsForOrderNo(orderNo);
       const itemById = new Map(items.map((item) => [item.id, item]));
       const machineRows = await all('SELECT * FROM machines');
       const machineByKey = new Map();
@@ -522,14 +512,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
       }
       const returns = (await all('SELECT * FROM order_returns WHERE order_no = ? ORDER BY created_at DESC', [orderNo]))
         .map(orderReturnRowToDto);
-      const runRows = await all(`
-        SELECT pr.*, opa.order_item_id
-        FROM pipeline_runs pr
-        JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
-        JOIN order_items i ON opa.order_item_id = i.id
-        WHERE i.order_no = ?
-        ORDER BY pr.created_at DESC
-      `, [orderNo]);
+      const runRows = await runsForOrderNo(orderNo);
 
       const machineByKey = new Map();
       for (const row of await all('SELECT * FROM machines')) {
@@ -574,7 +557,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
             };
           });
 
-        const inputs = await all('SELECT * FROM run_barcode_inputs WHERE run_id = ?', [runRow.id]);
+        const inputs = await productionPorts.runs.inputsForRun(runRow.id);
         const sheets = [];
         for (const inp of inputs) {
           if (inp.source_kind === 'sheet' && inp.piece_parent_code) {

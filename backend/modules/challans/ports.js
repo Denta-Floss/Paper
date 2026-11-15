@@ -13,8 +13,22 @@
 // different, deliberate port.
 // ---------------------------------------------------------------------------
 
-function createChallansPorts({ get, all }) {
+function createChallansPorts({ get, all, service }) {
   return {
+    /// The internal notes a production stage leaves in the challan ledger for
+    /// its leftover and its scrap. `service` is the challans service.
+    stageNotes: {
+      find: (sourceReference) => service.findStageNote(sourceReference),
+      create: (args) => service.createStageNote(args),
+      setQuantity: (challanId, quantity) => service.setStageNoteQuantity(challanId, quantity),
+      remove: (challanId) => service.removeStageNote(challanId),
+    },
+
+    /// The vendor sheet a scanned tag belongs to, or undefined.
+    sheets: {
+      findByCode: (code) => service.findSheetByCode(code),
+    },
+
     /// How many challans name this vendor.
     async vendorUsageCount(vendorId) {
       const row = await get(

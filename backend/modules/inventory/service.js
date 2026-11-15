@@ -1690,7 +1690,7 @@ function createInventoryService({
       const runId = activePipelineInput.run_id;
       const runRow = await production.runs.rowById(runId);
       if (runRow) {
-         const orderRows = await all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]);
+         const orderRows = await production.runs.orderItemIdsForRun(runId);
          const orderIds = orderRows.map(r => r.order_item_id);
        
          const template = await get('SELECT nodes_json, stage_labels_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
@@ -2707,6 +2707,153 @@ function createInventoryService({
     );
   }
 
+  /// The set an Assembly stage produced, kept as a temporary set with its own
+  /// stock. `lines` is what fed the stage on this run: `{ itemId, leafId,
+  /// quantity }` each. Keyed on (run, node): reconciling the same stage again
+  /// updates the set it already produced. Answers the set's id.
+  async function recordProducedSet({ runId, nodeId, nodeName, lines, producedQty }) {
+    // Match the composition against the defined sets: same (item, variation) on
+    // both sides, ignoring quantity — a Starter Pack is a Starter Pack whether
+    // one or a thousand came off the line.
+    const signature = (rows) => rows
+      .map((l) => `${l.itemId}:${l.leafId}`)
+      .sort()
+      .join('|');
+    const ours = signature(lines);
+    let matched = null;
+    const defined = await all(
+      'SELECT id, name FROM inventory_sets WHERE COALESCE(is_temporary, 0) = 0',
+    );
+    for (const candidate of defined) {
+      const candidateLines = await all(
+        'SELECT item_id AS itemId, variation_leaf_node_id AS leafId FROM inventory_set_lines WHERE set_id = ?',
+        [candidate.id],
+      );
+      if (candidateLines.length && signature(candidateLines) === ours) {
+        matched = candidate;
+        break;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const label = matched ? matched.name : (nodeName || 'Assembly');
+    const name = `Temporary · ${label} · ${runId}`;
+
+    const existing = await get(
+      'SELECT id FROM inventory_sets WHERE origin_run_id = ? AND origin_node_id = ?',
+      [runId, nodeId],
+    );
+    let setId;
+    if (existing) {
+      setId = existing.id;
+      // Bumped, but never conditional: a run must not fail because somebody has
+      // the produced set open in the editor. The bump is what makes their save
+      // bounce off instead of overwriting what the run just recorded — production
+      // wins, and the person is told rather than silently losing.
+      await run(
+        `UPDATE inventory_sets
+            SET name = ?, source_set_id = ?, produced_at = ?, updated_at = ?,
+                version = version + 1
+          WHERE id = ?`,
+        [name, matched?.id ?? null, now, now, setId],
+      );
+      await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
+    } else {
+      // No group link, deliberately: a produced set is run output, not the
+      // definition it matched, so it does not inherit source_set_id's group and
+      // reads as ungrouped everywhere.
+      const inserted = await run(
+        `INSERT INTO inventory_sets
+           (name, created_at, updated_at, origin_run_id, origin_node_id,
+            source_set_id, produced_at, is_temporary)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        [name, now, now, runId, nodeId, matched?.id ?? null, now],
+      );
+      setId = inserted.lastID;
+    }
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      await run(
+        `INSERT INTO inventory_set_lines
+           (set_id, item_id, variation_leaf_node_id, quantity, position)
+         VALUES (?, ?, ?, ?, ?)`,
+        // variation_leaf_node_id is a foreign key into item_variation_nodes, so a
+        // base item with no variation stores NULL — 0 is not a node.
+        [setId, line.itemId, line.leafId || null, line.quantity, i],
+      );
+    }
+
+    await stockTemporarySet(setId, name, runId, nodeId, producedQty);
+    return setId;
+  }
+
+  /**
+   * The set holds stock like anything else in inventory, so it gets a materials
+   * row and a ledger. The first entry is the one that just happened: it came IN
+   * off the production run. It leaves later, when the job is handed to a worker.
+   */
+  async function stockTemporarySet(setId, name, runId, nodeId, producedQty) {
+    const barcode = `SET-${runId}-${nodeId}`;
+    const now = new Date().toISOString();
+    const existing = await getMaterialRowByBarcode(barcode);
+    if (!existing) {
+      await run(
+        `INSERT INTO materials
+           (barcode, name, type, kind, unit, created_at, updated_at, linked_set_id,
+            material_class, workflow_status, location, on_hand_qty)
+         VALUES (?, ?, 'set', 'standalone', 'Set', ?, ?, ?, 'assembled_set', 'active', 'MAIN', 0)`,
+        [barcode, name, now, now, setId],
+      );
+    } else {
+      await run(
+        'UPDATE materials SET name = ?, updated_at = ?, linked_set_id = ? WHERE barcode = ?',
+        [name, now, setId, barcode],
+      );
+    }
+
+    // Book the production receipt as the difference from what the ledger already
+    // holds, so a corrected reconciliation adjusts rather than double-counts.
+    const received = await get(
+      `SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_movements
+        WHERE material_barcode = ? AND movement_type = 'receive' AND reason_code = 'production'`,
+      [barcode],
+    );
+    const delta = Number(producedQty || 0) - Number(received?.qty || 0);
+    if (delta > 0) {
+      await applyInventoryMovementCore({
+        barcode,
+        // Movement types are receive/issue/transfer/adjust/… — 'in' and 'out'
+        // silently normalise to 'adjust' and the ledger loses its direction.
+        movementType: 'receive',
+        qty: delta,
+        reasonCode: 'production',
+        referenceType: 'pipeline_run',
+        referenceId: runId,
+        actor: 'assembly',
+      }, { useTransaction: false });
+    }
+    return barcode;
+  }
+
+  /// A lot of stock that production brought into being: finished output, or
+  /// scrap off a stage. The row only; the caller books the quantity with a
+  /// receive movement.
+  async function mintLot({ barcode, name, type, groupId, itemId, leafNodeId, unit, unitId, createdAt }) {
+    await run(
+      `INSERT INTO materials (
+        barcode, name, type, kind, group_mode,
+        linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+        unit, unit_id, inventory_state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        barcode, name, type, 'lot', 'tracked',
+        groupId, itemId, leafNodeId,
+        unit, unitId, 'available', createdAt,
+      ],
+    );
+  }
+
   /// The stock lot one bucket of an in-use challan settle is received into.
   async function mintReconcileLot({ lotBarcode, name, groupId, itemId, unitSymbol, unitId, createdAt }) {
     await run(
@@ -2988,6 +3135,8 @@ function createInventoryService({
     movementsForChallan,
     recordChallanReversal,
     receivedUsageForChallan,
+    recordProducedSet,
+    mintLot,
     stockSourcesForItem,
     proposeStockAllocation,
     receivedMaterialForChallanLine,

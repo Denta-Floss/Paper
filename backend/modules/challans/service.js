@@ -2047,6 +2047,72 @@ function createChallanService({
     return getDeliveryChallanRowById(id);
   }
 
+  // --- what production asks of challans -----------------------------------
+  //
+  // A stage on the floor leaves two kinds of paper behind: an internal note for
+  // leftover material and one for scrap, so both show in the challan ledger.
+  // They are written directly, already 'completed' and with stock tracking off:
+  // they record what the stage reported and move no stock themselves.
+
+  /// The id of the note written under this source reference, or undefined.
+  function findStageNote(sourceReference) {
+    return get('SELECT id FROM delivery_challans WHERE source_reference = ?', [sourceReference]);
+  }
+
+  /// Writes a one-line internal note for a stage: `kind` is 'leftover' or
+  /// 'scrap'. Answers the new challan's id.
+  async function createStageNote({ sourceReference, kind, itemId, quantity }) {
+    const challanNo = await generateChallanNumber('internal');
+    const challanRes = await run(
+      `INSERT INTO delivery_challans (
+        type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'internal', challanNo, new Date().toISOString(), 'MAIN', sourceReference, 'completed', 0, 'manufacturing', kind, new Date().toISOString(), new Date().toISOString()
+      ]
+    );
+    const challanId = challanRes.lastID;
+    await run(
+      `INSERT INTO delivery_challan_items (
+        challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        challanId, itemId, Number(quantity), Number(quantity), 1, new Date().toISOString(), new Date().toISOString()
+      ]
+    );
+    return challanId;
+  }
+
+  /// A corrected stage: the note's line takes the new quantity.
+  function setStageNoteQuantity(challanId, quantity) {
+    return run(
+      `UPDATE delivery_challan_items SET quantity_pcs = ?, weight = ? WHERE challan_id = ?`,
+      [Number(quantity), Number(quantity), challanId],
+    );
+  }
+
+  /// A stage corrected back to nothing left over: the note goes.
+  async function removeStageNote(challanId) {
+    await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
+    await run('DELETE FROM delivery_challans WHERE id = ?', [challanId]);
+  }
+
+  /// The vendor sheet a scanned tag belongs to, with the reception line and
+  /// vendor it came in from, or undefined when the code is not a sheet tag.
+  function findSheetByCode(code) {
+    return get(
+      `
+      SELECT pb.parent_code, pb.child_code, pb.weight, pb.challan_item_id,
+             ci.item_id, c.vendor_id, c.vendor_name, c.challan_no AS reception_challan_no
+      FROM piece_barcodes pb
+      JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+      JOIN delivery_challans c ON ci.challan_id = c.id
+      WHERE pb.parent_code = ? OR pb.child_code = ?
+      `,
+      [code, code],
+    );
+  }
+
   async function deleteDraftDeliveryChallan(id, actor = null) {
     const existing = await getDeliveryChallanRowById(id);
     if (!existing) {
@@ -2188,6 +2254,11 @@ function createChallanService({
     saveDeliveryChallan,
     issueDeliveryChallan,
     cancelDeliveryChallan,
+    findStageNote,
+    createStageNote,
+    setStageNoteQuantity,
+    removeStageNote,
+    findSheetByCode,
     deleteDraftDeliveryChallan,
     completeOrderItemBestEffort,
     resolveReconcileOrderNo,

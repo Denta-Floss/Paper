@@ -29,6 +29,7 @@ function createProductionService({
   inventoryPorts,
   itemsPorts,
   jobsService,
+  ordersPorts,
   parseJson,
   recordLedgerEvent,
   rowToMaterialDto,
@@ -118,128 +119,16 @@ function createProductionService({
     }
     if (!lines.length) return null;
 
-    // Match the composition against the defined sets: same (item, variation) on
-    // both sides, ignoring quantity — a Starter Pack is a Starter Pack whether
-    // one or a thousand came off the line.
-    const signature = (rows) => rows
-      .map((l) => `${l.itemId}:${l.leafId}`)
-      .sort()
-      .join('|');
-    const ours = signature(lines);
-    let matched = null;
-    const defined = await all(
-      'SELECT id, name FROM inventory_sets WHERE COALESCE(is_temporary, 0) = 0',
-    );
-    for (const candidate of defined) {
-      const candidateLines = await all(
-        'SELECT item_id AS itemId, variation_leaf_node_id AS leafId FROM inventory_set_lines WHERE set_id = ?',
-        [candidate.id],
-      );
-      if (candidateLines.length && signature(candidateLines) === ours) {
-        matched = candidate;
-        break;
-      }
-    }
-
-    const now = new Date().toISOString();
-    const label = matched ? matched.name : (node.name || 'Assembly');
-    const name = `Temporary · ${label} · ${runId}`;
-
-    const existing = await get(
-      'SELECT id FROM inventory_sets WHERE origin_run_id = ? AND origin_node_id = ?',
-      [runId, nodeId],
-    );
-    let setId;
-    if (existing) {
-      setId = existing.id;
-      // Bumped, but never conditional: a run must not fail because somebody has
-      // the produced set open in the editor. The bump is what makes their save
-      // bounce off instead of overwriting what the run just recorded — production
-      // wins, and the person is told rather than silently losing.
-      await run(
-        `UPDATE inventory_sets
-            SET name = ?, source_set_id = ?, produced_at = ?, updated_at = ?,
-                version = version + 1
-          WHERE id = ?`,
-        [name, matched?.id ?? null, now, now, setId],
-      );
-      await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
-    } else {
-      // No group link, deliberately: a produced set is run output, not the
-      // definition it matched, so it does not inherit source_set_id's group and
-      // reads as ungrouped everywhere.
-      const inserted = await run(
-        `INSERT INTO inventory_sets
-           (name, created_at, updated_at, origin_run_id, origin_node_id,
-            source_set_id, produced_at, is_temporary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-        [name, now, now, runId, nodeId, matched?.id ?? null, now],
-      );
-      setId = inserted.lastID;
-    }
-
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      await run(
-        `INSERT INTO inventory_set_lines
-           (set_id, item_id, variation_leaf_node_id, quantity, position)
-         VALUES (?, ?, ?, ?, ?)`,
-        // variation_leaf_node_id is a foreign key into item_variation_nodes, so a
-        // base item with no variation stores NULL — 0 is not a node.
-        [setId, line.itemId, line.leafId || null, line.quantity, i],
-      );
-    }
-
-    await stockTemporarySet(setId, name, runId, nodeId, producedQty);
-    return setId;
-  }
-
-  /**
-   * The set holds stock like anything else in inventory, so it gets a materials
-   * row and a ledger. The first entry is the one that just happened: it came IN
-   * off the production run. It leaves later, when the job is handed to a worker.
-   */
-  async function stockTemporarySet(setId, name, runId, nodeId, producedQty) {
-    const barcode = `SET-${runId}-${nodeId}`;
-    const now = new Date().toISOString();
-    const existing = await getMaterialRowByBarcode(barcode);
-    if (!existing) {
-      await run(
-        `INSERT INTO materials
-           (barcode, name, type, kind, unit, created_at, updated_at, linked_set_id,
-            material_class, workflow_status, location, on_hand_qty)
-         VALUES (?, ?, 'set', 'standalone', 'Set', ?, ?, ?, 'assembled_set', 'active', 'MAIN', 0)`,
-        [barcode, name, now, now, setId],
-      );
-    } else {
-      await run(
-        'UPDATE materials SET name = ?, updated_at = ?, linked_set_id = ? WHERE barcode = ?',
-        [name, now, setId, barcode],
-      );
-    }
-
-    // Book the production receipt as the difference from what the ledger already
-    // holds, so a corrected reconciliation adjusts rather than double-counts.
-    const received = await get(
-      `SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_movements
-        WHERE material_barcode = ? AND movement_type = 'receive' AND reason_code = 'production'`,
-      [barcode],
-    );
-    const delta = Number(producedQty || 0) - Number(received?.qty || 0);
-    if (delta > 0) {
-      await inventoryPorts.movements.applyCore({
-        barcode,
-        // Movement types are receive/issue/transfer/adjust/… — 'in' and 'out'
-        // silently normalise to 'adjust' and the ledger loses its direction.
-        movementType: 'receive',
-        qty: delta,
-        reasonCode: 'production',
-        referenceType: 'pipeline_run',
-        referenceId: runId,
-        actor: 'assembly',
-      }, { useTransaction: false });
-    }
-    return barcode;
+    // Inventory owns sets and their stock: it matches the composition against
+    // the defined sets, keeps the one produced set for this run and node, and
+    // books its stock.
+    return inventoryPorts.sets.recordProduced({
+      runId,
+      nodeId,
+      nodeName: node.name || '',
+      lines,
+      producedQty,
+    });
   }
 
   // One-time copy of legacy pipeline_runs.node_metrics_json into the table so
@@ -292,6 +181,36 @@ function createProductionService({
     return nodeMetrics;
   }
 
+  // --- a run and the order line it was started for -------------------------
+  //
+  // The link (order_pipeline_assignments) is production's. What the linked line
+  // IS belongs to orders, and is asked for through its port. A run can be linked
+  // to several lines; like the joins these replace, the first link whose line
+  // still exists is the one that answers.
+
+  async function firstLinkedLine(runId, lookup) {
+    const links = await all(
+      'SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ? ORDER BY rowid ASC',
+      [runId],
+    );
+    for (const link of links) {
+      const found = await lookup(link.order_item_id);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  /// The order line a run makes: `{ item_id, variation_leaf_node_id,
+  /// variation_path_label, … }`, or undefined when the run is not order-linked.
+  function orderLineForRun(runId) {
+    return firstLinkedLine(runId, (orderItemId) => ordersPorts.lines.row(orderItemId));
+  }
+
+  /// The order a run belongs to: `{ order_item_id, order_no, client_name }`.
+  function orderForRun(runId) {
+    return firstLinkedLine(runId, (orderItemId) => ordersPorts.lines.summary(orderItemId));
+  }
+
   async function rowToRun(row) {
     if (!row) {
       return null;
@@ -319,15 +238,7 @@ function createProductionService({
       });
     }
 
-    const orderAssignment = await get(`
-      SELECT h.order_no, c.name as client_name, opa.order_item_id
-      FROM order_pipeline_assignments opa
-      JOIN order_items i ON opa.order_item_id = i.id
-      JOIN order_headers h ON i.order_no = h.order_no
-      LEFT JOIN clients c ON h.client_id = c.id
-      WHERE opa.pipeline_run_id = ?
-      LIMIT 1
-    `, [row.id]);
+    const orderAssignment = await orderForRun(row.id);
 
     const nodeMetrics = await getMergedNodeMetrics(row);
 
@@ -484,14 +395,10 @@ function createProductionService({
         [orderItemId, runId]
       );
     } else if (orderNo) {
-      const orderItems = await all(
-        'SELECT id FROM order_items WHERE order_no = ?',
-        [orderNo]
-      );
-      for (const item of orderItems) {
+      for (const lineId of await ordersPorts.lines.idsForOrderNo(orderNo)) {
         await run(
           'INSERT INTO order_pipeline_assignments (order_item_id, pipeline_run_id) VALUES (?, ?)',
-          [item.id, runId]
+          [lineId, runId]
         );
       }
     }
@@ -830,14 +737,7 @@ function createProductionService({
         // and finally to the node's own binding for older templates that still
         // carry one.
         let itemId = 0;
-        const orderLink = await get(
-          `SELECT i.item_id
-             FROM order_pipeline_assignments opa
-             JOIN order_items i ON opa.order_item_id = i.id
-            WHERE opa.pipeline_run_id = ?
-            LIMIT 1`,
-          [runRow.id],
-        );
+        const orderLink = await orderLineForRun(runRow.id);
         if (orderLink?.item_id) itemId = orderLink.item_id;
 
         if (!itemId) {
@@ -926,16 +826,7 @@ function createProductionService({
             // It was also a guess even when it did match: LIMIT 1 with no
             // ordering picks an arbitrary variation, which would have labelled
             // the finished goods with whichever one happened to come first.
-            const assignedLine = await get(
-              `
-              SELECT oi.item_id, oi.variation_leaf_node_id, oi.variation_path_label
-              FROM order_pipeline_assignments opa
-              JOIN order_items oi ON opa.order_item_id = oi.id
-              WHERE opa.pipeline_run_id = ?
-              LIMIT 1
-              `,
-              [runId],
-            );
+            const assignedLine = await orderLineForRun(runId);
             // Only when the order line is for the same item the template says it
             // outputs. Otherwise this would stamp one item's variation onto
             // another item's goods.
@@ -1040,30 +931,21 @@ function createProductionService({
               const uom = snapshot.item.unit || 'pcs';
               const uomId = snapshot.item.unit_id || null;
               
-              await run(`
-                INSERT INTO materials (
-                  barcode, name, type, kind, group_mode, 
-                  linked_group_id, linked_item_id, linked_variation_leaf_node_id,
-                  unit, unit_id, inventory_state, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              `, [
-                freshBarcode,
+              await inventoryPorts.receipts.mintLot({
+                barcode: freshBarcode,
                 // `particulars` is what the snapshot actually returns; there is
                 // no `fullName` on it, so this read undefined every time and
                 // every finished lot in the system was literally called
                 // "Finished Good".
-                snapshot.particulars || 'Finished Good',
-                'material',
-                'lot',
-                'tracked',
-                snapshot.item.group_id,
+                name: snapshot.particulars || 'Finished Good',
+                type: 'material',
+                groupId: snapshot.item.group_id,
                 itemId,
-                variationLeafNodeId,
-                uom,
-                uomId,
-                'available',
-                now
-              ]);
+                leafNodeId: variationLeafNodeId,
+                unit: uom,
+                unitId: uomId,
+                createdAt: now,
+              });
               
               await inventoryPorts.movements.applyCore({
                 barcode: freshBarcode,
@@ -1100,17 +982,7 @@ function createProductionService({
               // The order is read from order_pipeline_assignments, the way
               // rowToRun does it. `pipeline_runs` has no order_item_id column,
               // despite one place in this file reading it.
-              const outputOrderLink = await get(
-                `
-                SELECT h.order_no
-                FROM order_pipeline_assignments opa
-                JOIN order_items i ON opa.order_item_id = i.id
-                JOIN order_headers h ON i.order_no = h.order_no
-                WHERE opa.pipeline_run_id = ?
-                LIMIT 1
-                `,
-                [runId],
-              );
+              const outputOrderLink = await orderForRun(runId);
               await recordLedgerEvent({
                 subjectBarcode: barcodes.encode('MFG', runCode),
                 eventType: 'OUTPUT_MINTED',
@@ -1149,7 +1021,6 @@ function createProductionService({
   return {
     upsertStageReconciliation,
     ensureTemporarySetFromAssembly,
-    stockTemporarySet,
     backfillStageReconciliations,
     getMergedNodeMetrics,
     rowToRun,
@@ -1161,6 +1032,8 @@ function createProductionService({
     assignMaterialToRunNode,
     STAGE_RECON_COLUMNS,
     setNodeStatus,
+    orderForRun,
+    orderLineForRun,
   };
 }
 

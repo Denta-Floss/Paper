@@ -4,7 +4,7 @@
 // What other modules may ask of the production module.
 //
 // Production owns pipeline_runs, run_barcode_inputs, production_runs,
-// production_scrap and stage_reconciliations. Another module that needs to
+// production_scrap, stage_reconciliations and order_pipeline_assignments. Another module that needs to
 // know something about a run, or to remove one, asks here and carries no SQL
 // against those tables.
 //
@@ -14,11 +14,16 @@
 //   runs.inputCountForBarcode(barcode)   how many run inputs name a material
 //   runs.latestInputForBarcode(barcode)  the last run and node a material went to
 //   runs.stagesForRun(runId)             a run's stage reconciliation rows
+//   runs.linkedToOrderItem, unlinkOrderItem, orderItemIdsForRun, allWithOrderItem,
+//   runs.forOrderItems, summariesForOrderItems, inputsForRun, inputsForRuns,
+//   runs.stageTotalsForRuns             runs seen from the order side, for
+//                                        orders, inventory and the reports
+//   orderItemRunStatusSql(expr)          (module export) the SQL the order list
+//                                        embeds for a line's status from its runs
 //   output.sourceById(productionRunId)   a finished run's code and where it came from
 //   runInputsForChallanLines(lineIds)    what runs have claimed from reception lines
 //   machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount
-//
-// The order and challan reports read these tables directly, as read models.
+
 // ---------------------------------------------------------------------------
 
 function createProductionPorts({ get, all, run }) {
@@ -66,6 +71,91 @@ function createProductionPorts({ get, all, run }) {
       ),
 
       stagesForRun: (runId) => all('SELECT * FROM stage_reconciliations WHERE run_id = ?', [runId]),
+
+      // --- runs and the order lines they were started for -------------------
+      // order_pipeline_assignments is production's: a run is linked to the
+      // order lines it makes when it is created.
+
+      /// The links from one order line to its runs.
+      linkedToOrderItem: (orderItemId) =>
+        all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderItemId]),
+
+      /// Forgets an order line's runs (the line is being deleted).
+      unlinkOrderItem: (orderItemId) =>
+        run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderItemId]),
+
+      orderItemIdsForRun: (runId) =>
+        all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]),
+
+      /// Every linked run, one row per link, with the order line it is for.
+      allWithOrderItem: () => all(`
+        SELECT opa.order_item_id, pr.*
+        FROM order_pipeline_assignments opa
+        JOIN pipeline_runs pr ON pr.id = opa.pipeline_run_id
+      `),
+
+      /// The runs of these order lines, newest first, one row per link, each
+      /// with its `order_item_id`.
+      forOrderItems(orderItemIds) {
+        const ids = (orderItemIds || []).map((id) => Number(id)).filter((id) => id > 0);
+        if (ids.length === 0) return Promise.resolve([]);
+        return all(
+          `SELECT pr.*, opa.order_item_id
+             FROM pipeline_runs pr
+             JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+            WHERE opa.order_item_id IN (${ids.map(() => '?').join(', ')})
+            ORDER BY pr.created_at DESC`,
+          ids,
+        );
+      },
+
+      /// The same runs once each, with only what a summary needs.
+      summariesForOrderItems(orderItemIds) {
+        const ids = (orderItemIds || []).map((id) => Number(id)).filter((id) => id > 0);
+        if (ids.length === 0) return Promise.resolve([]);
+        return all(
+          `
+          SELECT DISTINCT r.id, r.status, r.started_at, r.completed_at, r.name
+          FROM order_pipeline_assignments a
+          JOIN pipeline_runs r ON r.id = a.pipeline_run_id
+          WHERE a.order_item_id IN (${ids.map(() => '?').join(', ')})
+          `,
+          ids,
+        );
+      },
+
+      inputsForRun: (runId) => all('SELECT * FROM run_barcode_inputs WHERE run_id = ?', [runId]),
+
+      /// What these runs consumed, oldest first.
+      inputsForRuns(runIds) {
+        if (!runIds || runIds.length === 0) return Promise.resolve([]);
+        return all(
+          `
+          SELECT rbi.run_id, rbi.barcode, rbi.material_id, rbi.scanned_at,
+                 rbi.challan_item_id, rbi.item_id, rbi.variation_leaf_node_id,
+                 rbi.consumed_qty, rbi.source_kind
+          FROM run_barcode_inputs rbi
+          WHERE rbi.run_id IN (${runIds.map(() => '?').join(', ')})
+          ORDER BY rbi.scanned_at ASC
+          `,
+          runIds,
+        );
+      },
+
+      /// Allotted, output, scrap and leftover summed over these runs' stages.
+      stageTotalsForRuns(runIds) {
+        return get(
+          `
+          SELECT COALESCE(SUM(allotted), 0) AS allotted,
+                 COALESCE(SUM(output), 0) AS output,
+                 COALESCE(SUM(scrap), 0) AS scrap,
+                 COALESCE(SUM(leftover), 0) AS leftover
+          FROM stage_reconciliations
+          WHERE run_id IN (${runIds.map(() => '?').join(', ')})
+          `,
+          runIds,
+        );
+      },
     },
 
     output: {
@@ -121,4 +211,24 @@ function createProductionPorts({ get, all, run }) {
   };
 }
 
-module.exports = { createProductionPorts };
+/// SQL for "what do this order line's runs say its status is": completed when
+/// every run is, in progress once any has started, not started otherwise, and
+/// NULL when the line has no runs. `orderItemIdSql` is the SQL expression for
+/// the order line's id in the caller's query. It is handed out as text because
+/// the order list filters, counts and pages on this value inside one query;
+/// asking per row would turn one statement into one per order line.
+function orderItemRunStatusSql(orderItemIdSql) {
+  return `(SELECT 
+            CASE 
+              WHEN COUNT(opa.id) = 0 THEN NULL
+              WHEN SUM(CASE WHEN pr.status = 'completed' THEN 1 ELSE 0 END) = COUNT(opa.id) THEN 'completed'
+              WHEN SUM(CASE WHEN pr.started_at IS NOT NULL THEN 1 ELSE 0 END) > 0 THEN 'inProgress'
+              ELSE 'notStarted'
+            END
+           FROM order_pipeline_assignments opa
+           JOIN pipeline_runs pr ON opa.pipeline_run_id = pr.id
+           WHERE opa.order_item_id = ${orderItemIdSql}
+          )`;
+}
+
+module.exports = { createProductionPorts, orderItemRunStatusSql };

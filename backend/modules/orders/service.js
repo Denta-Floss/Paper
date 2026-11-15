@@ -27,6 +27,9 @@ const path = require('path');
 // ---------------------------------------------------------------------------
 
 function createOrdersService({
+  // The SQL for an order line's status as its production runs tell it. It is
+  // production's, and comes as text: see orderItemRunStatusSql.
+  runStatusSql,
   get,
   all,
   run,
@@ -274,17 +277,7 @@ function createOrdersService({
          JOIN delivery_challans dc ON dci.challan_id = dc.id 
          WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
         COALESCE(
-          (SELECT 
-            CASE 
-              WHEN COUNT(opa.id) = 0 THEN NULL
-              WHEN SUM(CASE WHEN pr.status = 'completed' THEN 1 ELSE 0 END) = COUNT(opa.id) THEN 'completed'
-              WHEN SUM(CASE WHEN pr.started_at IS NOT NULL THEN 1 ELSE 0 END) > 0 THEN 'inProgress'
-              ELSE 'notStarted'
-            END
-           FROM order_pipeline_assignments opa
-           JOIN pipeline_runs pr ON opa.pipeline_run_id = pr.id
-           WHERE opa.order_item_id = o.id
-          ), o.status
+          ${runStatusSql('o.id')}, o.status
         ) AS status
       FROM order_items o 
       WHERE o.id = ?
@@ -421,17 +414,7 @@ function createOrdersService({
          JOIN delivery_challans dc ON dci.challan_id = dc.id 
          WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty,
         COALESCE(
-          (SELECT 
-            CASE 
-              WHEN COUNT(opa.id) = 0 THEN NULL
-              WHEN SUM(CASE WHEN pr.status = 'completed' THEN 1 ELSE 0 END) = COUNT(opa.id) THEN 'completed'
-              WHEN SUM(CASE WHEN pr.started_at IS NOT NULL THEN 1 ELSE 0 END) > 0 THEN 'inProgress'
-              ELSE 'notStarted'
-            END
-           FROM order_pipeline_assignments opa
-           JOIN pipeline_runs pr ON opa.pipeline_run_id = pr.id
-           WHERE opa.order_item_id = o.id
-          ), o.status
+          ${runStatusSql('o.id')}, o.status
         ) AS status
       FROM order_items o
   `;

@@ -202,3 +202,109 @@ test('a machine queue lists the live runs that name it, and an item shows its pi
   assert.ok(Array.isArray(history.body.runs));
   assert.ok(history.body.runs.every((r) => typeof r.pipelineName === 'string'));
 });
+
+test('a stage leaves a scrap lot and internal notes for scrap and leftover', async (t) => {
+  const ctx = await boot();
+  t.after(() => ctx.server.close());
+  const { api, template, backend } = ctx;
+  const run = (await api('POST', '/runs', { templateId: template.id, name: 'Notes Run' })).body.run;
+  const nodes = JSON.parse(template.nodes_json || '[]');
+  // A material linked to an item, received the ordinary way.
+  const item = await backend.get('SELECT * FROM items LIMIT 1');
+  const leaf = await backend.get(
+    `SELECT n.id FROM item_variation_nodes n
+      WHERE n.item_id = ? AND n.kind = 'value' AND n.is_archived = 0
+        AND NOT EXISTS (SELECT 1 FROM item_variation_nodes c WHERE c.parent_node_id = n.id AND c.is_archived = 0)
+      LIMIT 1`, [item.id]);
+  const vendor = (await api('POST', '/api/vendors', { name: 'Notes Vendor' })).body.vendor;
+  const reception = (await api('POST', '/api/challans', {
+    type: 'reception', challanNo: 'PN-REC-1', date: '2026-11-15', status: 'draft', maintainStocks: true,
+    vendorId: vendor.id, vendorName: vendor.name, purpose: 'purchase',
+    items: [{ itemId: item.id, variationLeafNodeId: leaf.id, particulars: 'Sheet stock', quantityPcs: '9', lineNo: 1 }],
+  })).body.data;
+  assert.equal((await api('POST', `/api/challans/${reception.id}/issue`, {})).status, 200);
+  const material = await backend.get('SELECT * FROM materials WHERE barcode = ?', ['PN-REC-1-L1']);
+  assert.ok(material);
+
+  // Scrap booked against a real material: a lot in the scrap bin, and a note.
+  const scrap = await api('POST', '/api/production-scrap', {
+    pipelineRunId: run.id, nodeId: nodes[0].id, orderNo: 'ORD-N', materialBarcode: material.barcode, scrapQty: 2,
+  });
+  assert.equal(scrap.status, 201, JSON.stringify(scrap.body));
+  const lot = await backend.get("SELECT * FROM materials WHERE barcode LIKE 'LOT-SCRAP-%' ORDER BY id DESC LIMIT 1");
+  assert.equal(lot.name, `Scrap - ${material.name}`);
+  assert.equal(lot.kind, 'lot');
+  assert.equal(lot.group_mode, 'tracked');
+  assert.equal(lot.linked_item_id, material.linked_item_id);
+  assert.equal(lot.linked_variation_leaf_node_id, material.linked_variation_leaf_node_id);
+  assert.equal(lot.on_hand_qty, 2);
+  const lotPosition = await backend.get('SELECT * FROM inventory_stock_positions WHERE material_barcode = ?', [lot.barcode]);
+  assert.equal(lotPosition.location_id, 'SCRAP-BIN');
+  const scrapNote = await backend.get(
+    'SELECT * FROM delivery_challans WHERE source_reference = ?', [`Scrap/Run ${run.id}/Node ${nodes[0].id}`]);
+  assert.equal(scrapNote.type, 'internal');
+  assert.equal(scrapNote.status, 'completed');
+  assert.equal(scrapNote.maintain_stocks, 0);
+  assert.equal(scrapNote.purpose, 'manufacturing');
+  assert.equal(scrapNote.internal_purpose, 'scrap');
+  assert.match(scrapNote.challan_no, /^IC-/);
+  const scrapLine = await backend.get('SELECT * FROM delivery_challan_items WHERE challan_id = ?', [scrapNote.id]);
+  assert.equal(scrapLine.item_id, material.linked_item_id);
+  assert.equal(Number(scrapLine.quantity_pcs), 2);
+  assert.equal(Number(scrapLine.weight), 2);
+  assert.equal(scrapLine.line_no, 1);
+
+  // Leftover reported on a stage: one note per run and node, corrected in
+  // place, and removed when the leftover goes back to nothing.
+  // The note is for the stage's input item, found by the name the template
+  // gives it, so the first node is made to take the item received above.
+  const node = nodes[0];
+  node.inputs = [item.name];
+  await backend.run('UPDATE pipeline_templates SET nodes_json = ? WHERE id = ?', [JSON.stringify(nodes), template.id]);
+  const sourceRef = `Leftover/Run ${run.id}/Node ${node.id}`;
+  const note = () => backend.get('SELECT * FROM delivery_challans WHERE source_reference = ?', [sourceRef]);
+  const put = (remaining) => api('PUT', `/runs/${run.id}/node-metrics`, { nodeId: node.id, metrics: { remaining } });
+  assert.equal((await put(4)).status, 200);
+  const first = await note();
+  assert.ok(first, 'a leftover note was written');
+  assert.equal(first.internal_purpose, 'leftover');
+  assert.equal(first.status, 'completed');
+  assert.equal(Number((await backend.get('SELECT quantity_pcs FROM delivery_challan_items WHERE challan_id = ?', [first.id])).quantity_pcs), 4);
+  assert.equal((await put(1.5)).status, 200);
+  assert.equal((await note()).id, first.id, 'corrected in place');
+  assert.equal(Number((await backend.get('SELECT quantity_pcs FROM delivery_challan_items WHERE challan_id = ?', [first.id])).quantity_pcs), 1.5);
+  assert.equal((await put(0)).status, 200);
+  assert.equal(await note(), undefined);
+});
+
+test('an order-linked run names its order, and the order line is what it makes', async (t) => {
+  const ctx = await boot();
+  t.after(() => ctx.server.close());
+  const { api, template, backend } = ctx;
+  const line = await backend.get(
+    `SELECT oi.id, oi.order_no, oi.item_id, c.name AS client_name
+       FROM order_items oi JOIN order_headers h ON h.order_no = oi.order_no
+       LEFT JOIN clients c ON c.id = h.client_id LIMIT 1`);
+  assert.ok(line, 'the demo seed has an order line');
+
+  const byLine = (await api('POST', '/runs', { templateId: template.id, name: 'Line Run', orderItemId: line.id })).body.run;
+  assert.equal(byLine.orderNo, line.order_no);
+  assert.equal(byLine.orderItemId, line.id);
+  assert.equal(byLine.clientName ?? null, line.client_name ?? null);
+  const links = await backend.all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [byLine.id]);
+  assert.deepEqual(links.map((l) => l.order_item_id), [line.id]);
+
+  // Started for a whole order: linked to every line of it.
+  const byOrder = (await api('POST', '/runs', { templateId: template.id, name: 'Order Run', orderNo: line.order_no })).body.run;
+  const all = await backend.all('SELECT id FROM order_items WHERE order_no = ? ORDER BY id', [line.order_no]);
+  const linked = await backend.all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ? ORDER BY order_item_id', [byOrder.id]);
+  assert.deepEqual(linked.map((l) => l.order_item_id), all.map((l) => l.id));
+  assert.equal(byOrder.orderNo, line.order_no);
+
+  const history = await api('GET', `/api/items/${line.item_id}/pipeline-history`);
+  assert.ok(history.body.runs.some((r) => r.id === byLine.id), 'the item shows the run made for its order line');
+
+  const orderRuns = await api('GET', `/api/orders/${encodeURIComponent(line.order_no)}/pipeline-runs`);
+  assert.equal(orderRuns.status, 200, JSON.stringify(orderRuns.body));
+  assert.ok(JSON.stringify(orderRuns.body).includes(byLine.id));
+});

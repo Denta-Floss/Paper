@@ -392,7 +392,7 @@ module.exports = function registerOrderRoutes(ctx) {
       const wipQty = Number(req.body?.wip_qty || 0);
       const recoveredMovements = [];
 
-      const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
+      const assignments = await productionPorts.runs.linkedToOrderItem(orderId);
       for (const assignment of assignments) {
         const runId = assignment.pipeline_run_id;
 
@@ -436,7 +436,7 @@ module.exports = function registerOrderRoutes(ctx) {
         recoveredMovements.push({ barcode: wipBarcode, qty: wipQty, reason: 'WIP Recovery' });
       }
 
-      await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
+      await productionPorts.runs.unlinkOrderItem(orderId);
       await run('DELETE FROM order_status_history WHERE order_id = ?', [orderId]);
       await run('DELETE FROM order_activity_log WHERE order_id = ?', [orderId]);
       await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);

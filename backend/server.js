@@ -47,7 +47,7 @@ const { createJobsService } = require('./modules/jobs/service');
 const registerJobsRoutes = require('./modules/jobs/routes');
 // The machine master. Whether a live run holds a machine is asked of the
 // production port.
-const { createProductionPorts } = require('./modules/production/ports');
+const { createProductionPorts, orderItemRunStatusSql } = require('./modules/production/ports');
 const { createProductionService } = require('./modules/production/service');
 const { registerProductionRoutes } = require('./modules/production/routes');
 const { createMachineService } = require('./modules/machines/service');
@@ -3072,6 +3072,7 @@ const jobsService = createJobsService({
 // them. Inventory is created later in this file, so it is looked up when used.
 const lateBound = (resolve) => new Proxy({}, { get: (_target, key) => resolve()[key] });
 const productionService = createProductionService({
+  ordersPorts: lateBound(() => ordersPorts),
   all,
   get,
   getMaterialRowByBarcode,
@@ -8553,7 +8554,12 @@ async function ensureDemoClientsPresent() {
 // The vendor master left for modules/vendors; its delivery_challans reads go
 // through the challans port. Destructured under the old names because challan,
 // seed and test code still call them directly.
-const challansPorts = createChallansPorts({ get, all });
+const challansPorts = createChallansPorts({
+  get,
+  all,
+  // The challans service is built further down, so it is looked up when used.
+  service: lateBound(() => challansService),
+});
 const vendorsService = createVendorService({ get, all, run, logChange, challans: challansPorts });
 const {
   getVendorRowById,
@@ -8570,6 +8576,7 @@ const {
 // orders port hands saveOrder to the B2B portal at load. The client lookup it
 // needs is defined just below, so it is reached through a function.
 const ordersService = createOrdersService({
+  runStatusSql: orderItemRunStatusSql,
   get,
   all,
   run,
@@ -8900,6 +8907,8 @@ const challanReportService = createChallanReportService({
   effectiveReportGroupCodesForChallan: (...args) => effectiveReportGroupCodesForChallan(...args),
   listInvoices,
   normalizePositiveNumber,
+  // Built further down, so it is looked up when used.
+  productionPorts: lateBound(() => productionPorts),
 });
 const {
   listConversionOverrides,
@@ -18998,6 +19007,7 @@ registerOrderReportRoutes({
   dieRowToDto: (...args) => dieRowToDto(...args),
   actorFromRequest,
   recordLedgerEvent,
+  productionPorts,
 });
 
 // Challan templates. /scans and POST /test-print must stay ahead of /:id inside
@@ -19081,11 +19091,12 @@ registerUnitRoutes(app, { run, get, all, requirePermission, trackCreate });
 registerProductionRoutes(app, {
   actorFromRequest,
   all,
-  generateChallanNumber,
+  challansPorts,
   get,
   getMaterialRowByBarcode,
   inventoryPorts,
   itemsPorts,
+  ordersPorts,
   parseJson,
   recordLedgerEvent,
   requirePermission,

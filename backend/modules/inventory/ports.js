@@ -36,6 +36,10 @@
 //   receipts.mintFromChallanLine(args)   a reception line becomes a material
 //                                        with a stock position
 //   receipts.mintReconcileLot(args)      the lot an in-use settle receives into
+//   receipts.mintLot(args)               a lot production made: finished output
+//                                        or scrap off a stage
+//   sets.recordProduced(args)            the temporary set an Assembly stage
+//                                        produced, with its stock
 //   receipts.usageForChallan(id)         what a reception brought in and how much
 //                                        of it the stock tables still hold
 //   receipts.materialForChallanLine(id)  the material a reception line became
@@ -57,6 +61,7 @@ function createInventoryPorts({ inventory }) {
       deleteById: (setId) => inventory.deleteInventorySet(setId),
       removeLinesForItem: (itemId) => inventory.removeSetLinesForItem(itemId),
       membershipForItem: (itemId) => inventory.getItemSetMembership(itemId),
+      recordProduced: (args) => inventory.recordProducedSet(args),
     },
     materials: {
       delete: (barcode) => inventory.deleteMaterialRecord(barcode),
@@ -76,6 +81,7 @@ function createInventoryPorts({ inventory }) {
     receipts: {
       mintFromChallanLine: (args) => inventory.mintReceivedFromChallanLine(args),
       mintReconcileLot: (args) => inventory.mintReconcileLot(args),
+      mintLot: (args) => inventory.mintLot(args),
       usageForChallan: (challanId) => inventory.receivedUsageForChallan(challanId),
       materialForChallanLine: (lineId) => inventory.receivedMaterialForChallanLine(lineId),
       retire: (barcode, now) => inventory.retireReceivedMaterial(barcode, now),
