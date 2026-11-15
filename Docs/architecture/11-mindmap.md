@@ -31,10 +31,12 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c17["⟳ Change 17: a server with no database file now starts"]
-        c17a["migrate.js skips a migration whose table or column is not created yet"]
-        c17b["initDb then creates the schema and runs every migration again"]
-        c17c["empty-database-boot test added, 333 total"]
+      c18["⟳ Change 18: challans step 1, templates and their PDFs"]
+        c18a["14 routes and 49 functions moved to modules/challans: templates.js and template-routes.js"]
+        c18b["the challan readers the PDF prints from are still in server.js, passed by name"]
+        c18c["route order kept: /scans and POST /test-print ahead of /:id"]
+        c18d["challans-routes test added first: 11 tests, 344 total; four broken things recorded as they are"]
+      c17["Change 17: a server with no database file now starts"]
       c16["Change 16: orders step 3, the report routes and the flag"]
       c15["Change 15: orders step 2, the line routes"]
       c14["Change 14: orders step 1, the service"]
@@ -55,7 +57,7 @@ mindmap
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
       k3["contracts.js, barcodes.js, event-logger.js"]
-      k4["boot order ⟳"]
+      k4["boot order"]
         k4a["startServer: runMigrations in migrate.js, then initDb"]
         k4b["initDb: inline CREATE TABLEs, then runPendingMigrations in modules/kernel/migration-runner.js"]
         k4c["two ledgers: _migrations and schema_migrations"]
@@ -391,7 +393,13 @@ mindmap
           ivn5["seeds and backfills: ensureFullSeedMaterial, backfillInventoryLedgerForMaterials, ensureDemoInventoryPresent"]
           ivn6["items reads inventory tables for usage counts, and its Sets card route reads inventory_sets"]
           ivn7["getMaterialRowByBarcode and the group property normalisers stay: items and inventory both use them"]
-      Challans legacy
+      Challans ⟳ moving, step 1 of 5
+        chT["Templates: modules/challans/templates.js and template-routes.js ⟳"]
+          cht1["createChallanTemplateService: listChallanTemplates, saveChallanTemplate, deleteChallanTemplate"]
+          cht2["generateChallanTemplatePdf, buildChallanTemplateSnapshot, buildTemplateTestChallanDto"]
+          cht3["scan uploads: createChallanTemplateUploadIntent, completeChallanTemplateUpload, listChallanTemplateScans"]
+          cht4["14 routes under /api/challan-templates, /api/templates/:id/test-print, print-template-preview"]
+          cht5["KNOWN BUG kept: GET /api/challan-templates/test-print is answered by /:id as 404"]
         ch1["about 26 endpoints, each served twice, 14 tables"]
         ch2["⟳ challans ports file created, vendor reads only"]
       Production legacy
@@ -493,3 +501,4 @@ mindmap
 | 15 | Orders step 2 of 3: the line routes. `modules/orders/routes.js` takes 14 routes (list, one, create, edit, lifecycle, delete, activity, status history, material requirements, PO documents and uploads). Verbatim, oddities pinned. DELETE still runs SQL on production's run tables until production has a write port. | API surface (unchanged paths), Orchestration |
 | 16 | Orders step 3 of 3: `modules/orders/reports.js` takes fulfilment, pipeline-runs, production-report, returns (read and write) and trace, with production's helpers injected by name. Registry: orders `evacuated: true` and claims `order_returns`. Territory: 13 of 15; `server.js` is 28,019 lines. Two order-path routes (delivery-challans, reconciliation) stay for the challans round. | API surface (unchanged paths), Orchestration, Data ownership |
 | 17 | A server started with no database file failed with "no such table: order_items": the old runner in `migrate.js` runs before `initDb` creates the schema, and migration 007 alters a table that is not there yet. It now skips, unrecorded, any migration that finds a missing table or column; `initDb` then creates the schema and its own runner applies every migration. Existing databases are unaffected. | Kernel (boot), Tests |
+| 18 | Challans step 1 of 5: templates. `modules/challans/templates.js` (template master, mapping normalisers, page geometry, snapshot, test fixture, PDF generator, scan uploads; about 1,720 lines) and `template-routes.js` (14 routes). The eleven-test challans route suite was committed first and records four things broken today. A local named `templates` shadowed the injected service on the first attempt; the tests caught it and the lifting tool now refuses such clashes. | API surface (unchanged paths), Orchestration, Services, Tests |
