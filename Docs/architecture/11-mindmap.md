@@ -31,9 +31,10 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c37["⟳ Change 37: production step 3 of 4: the port"]
-        c37a["orders, inventory and challans ask the production port; none of their write paths names a production table"]
-        c37b["runs.dissolve, runs.rowById, inputCountForBarcode, latestInputForBarcode, stagesForRun, output.sourceById"]
+      c38["⟳ Change 38: production is out: 15 of 15 modules have left server.js"]
+        c38a["registry: production evacuated; it owns stage_reconciliations, challans owns piece_barcodes"]
+        c38b["server.js is 19,700 lines, down from 35,760, and holds only the kernel"]
+        c38c["still reaching outward from production: materials, inventory sets, challans made from a stage's leftover, order links"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -452,8 +453,10 @@ mindmap
           chl4["fixed: GET challan-templates/test-print is reachable"]
           chl6["fixed: challan photo upload, intent and complete"]
           chl5["fixed: invoice edit, in-use settle"]
-      Production legacy
-        pd1["runs, node-status, scrap; touches everything"]
+      Production evacuated
+        pd1["runs, node status, stock on a run, stage numbers, scrap, completed output"]
+        n38x94392["⟳ left in server.js on purpose: seeds and demo scenarios, initDb, the telemetry emitter, the /runs login and write guards"]
+        n38x21713["⟳ still open: production writes materials, inventory_sets and delivery_challans rows itself, and reads piece_barcodes for a scanned sheet; those want inventory and challans ports"]
         n33x9951["rowToRun: each input carries sourceKind and the code that addresses it"]
         n32x95640["POST runs barcodes by quantity: approved allocations are written one material each through assignMaterialToRunNode; a bad split is refused whole"]
         n31x41609["server.js, still here: assertValidStockVariationLeaf is the one rule for leaf 0; itemHoldsWholeItemStock; backfillWholeItemStock at boot; trigger trg_variation_stock_leaf_gone replaces the leaf foreign key"]
@@ -462,7 +465,7 @@ mindmap
         n33x81384["PUT runs barcodes on a sheet row: used weight up to the sheet's weight; stock and the run's batch weight move by the difference"]
         n32x45807["PUT and DELETE runs barcodes on a quantity row move the item's own stock"]
         pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
-        n37x81899["⟳ offers: runs.rowById, runs.dissolve, runs.inputCountForBarcode, runs.latestInputForBarcode, runs.stagesForRun, output.sourceById, runInputsForChallanLines, machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount"]
+        n37x81899["offers: runs.rowById, runs.dissolve, runs.inputCountForBarcode, runs.latestInputForBarcode, runs.stagesForRun, output.sourceById, runInputsForChallanLines, machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount"]
         n36x40227["service.setNodeStatus: status and overrides, Assembly job once per run and node, completion booked once and minted as a lot with OUTPUT_MINTED"]
         n36x99224["production/routes.js registerProductionRoutes: /runs x10, /api/production-scrap x2, /api/production-runs/completed, /api/machines/:id/queue, /api/items/:id/pipeline-history"]
         n35x5019["production/service.js createProductionService: rowToRun, getMergedNodeMetrics, createRunFromTemplate, ensurePipelineRunRecord, upsertStageReconciliation, backfillStageReconciliations, ensureTemporarySetFromAssembly, stockTemporarySet, listCompletedProductionRuns, getProductionRunRowById, assignMaterialToRunNode, STAGE_RECON_COLUMNS"]
@@ -582,3 +585,4 @@ mindmap
 | 35 | Production begins to leave `server.js` (module 15 of 15). `backend/test/production-api.test.js` pins runs (create, list, get, delete), node status through to a completed and booked run, batches, scrap, completed production runs, the machine queue and pipeline history. `modules/production/service.js` (`createProductionService`) takes twelve helpers whole: `rowToRun`, `getMergedNodeMetrics`, `rowToProductionRunDto`, `listCompletedProductionRuns`, `getProductionRunRowById`, `createRunFromTemplate`, `ensurePipelineRunRecord`, `upsertStageReconciliation`, `backfillStageReconciliations`, `ensureTemporarySetFromAssembly`, `stockTemporarySet`, `assignMaterialToRunNode`, plus `STAGE_RECON_COLUMNS`. It is built right after the jobs service; inventory is created later in the file and is handed in through `lateBound`, a proxy that resolves when used. Old names are kept in `server.js` by destructuring. | Services, Tests |
 | 36 | Production step 2. `modules/production/routes.js` (`registerProductionRoutes`) takes the fifteen production routes whole: `/runs` (list, create, get, delete, node-status, barcodes POST/PUT/DELETE, node-metrics, batches), `/api/production-scrap` (two), `/api/production-runs/completed`, `/api/machines/:id/queue` and `/api/items/:id/pipeline-history`. URLs and guards are unchanged; the `app.use('/runs', …)` login and write guards stay in `server.js`, registered ahead of it. The 370-line node-status handler body becomes `setNodeStatus({ runId, payload, actor })` in the service, answering `{ run }` or `{ refusal }`. `server.js` is 19,700 lines. | API surface (unchanged paths), Orchestration, Services |
 | 37 | Production step 3. `modules/production/ports.js` stops being read-only: `runs.dissolve` replaces the two deletes orders ran on `run_barcode_inputs` and `pipeline_runs` when an order line is deleted; `runs.inputCountForBarcode`, `runs.latestInputForBarcode`, `runs.rowById` and `runs.stagesForRun` replace inventory's reads for a material's summary and control tower; `output.sourceById` replaces the challan service's read of `production_runs` at dispatch. Left as read models: two list queries in `modules/orders/service.js` that join `pipeline_runs`, and the order and challan reports. | Ports, Services |
+| 38 | Production step 4, the last module. Registry: `production.evacuated = true`, 15 of 15. Table claims corrected to who writes them: production owns `stage_reconciliations` (was listed under challans), challans owns `piece_barcodes` (was listed under production). `server.js` is 19,700 lines (35,760 at the start) and holds the kernel only: auth and gates, schema and `initDb`, seeds and demo scenarios, assets, search, the barcode resolver, the telemetry emitter, payroll. Deliberately open: production still writes `materials`, `inventory_sets` and, for a stage's leftover, `delivery_challans` rows itself, and reads `piece_barcodes` for a scanned sheet; two order list queries and the reports read production tables as read models. | Data, Ports |

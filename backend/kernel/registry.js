@@ -75,15 +75,18 @@ const MODULES = {
       'delivery_challan_report_groups', 'delivery_challan_activity_log',
       'challan_templates', 'challan_template_mappings', 'challan_template_upload_sessions',
       'report_groups', 'invoice_headers', 'invoice_lines',
-      'stage_reconciliations', 'reconciliation_conversion_overrides', 'reconciliation_waste_audit',
+      'piece_barcodes', 'reconciliation_conversion_overrides', 'reconciliation_waste_audit',
     ],
     evacuated: true,
   },
   production: {
     label: 'Production',
     pathSegments: ['production', 'production-runs', 'pipeline-runs', 'telemetry'],
-    tables: ['production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap', 'piece_barcodes'],
-    evacuated: false,
+    // stage_reconciliations is written only by production (a stage's numbers).
+    // piece_barcodes is not here: the tags are made and marked returned by
+    // challans, and production only reads one when a sheet is scanned.
+    tables: ['production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap', 'stage_reconciliations'],
+    evacuated: true,
   },
   jobs: {
     label: 'Jobs',

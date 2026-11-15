@@ -26,7 +26,9 @@ const barcodes = require('../../kernel/barcodes');
 // challan-stock-rows.test.js: issue and cancel write their own ledger rows and
 // adjust variation stock, while deleting an issued reception goes through the
 // general movement engine (inventoryPorts.movements.applyCore).
-// Still written here by hand: piece_barcodes, which is production's table.
+// piece_barcodes (the vendor sheet tags) is written here: the tags are made at
+// reception and marked when a sheet is returned. Production reads one when a
+// sheet is scanned onto a run.
 //
 // Takes {get, all, run} and, by name, what it needs from around it: vendors,
 // orders (row and lifecycle), the company profile, the template snapshot
