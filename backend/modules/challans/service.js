@@ -1483,11 +1483,7 @@ function createChallanService({
             barcode: returnedBarcode,
             qty: movementQty,
             uom: movementUom,
-            itemId,
-            leafNodeId,
-            locationId,
             actor,
-            now,
           });
           continue;
         }
@@ -1802,7 +1798,7 @@ function createChallanService({
   /// One line of a vendor return leaving stock, against the received material
   /// it names.
   async function issueReturnLine({
-    challan, line, barcode, qty, uom, itemId, leafNodeId, locationId, actor, now,
+    challan, line, barcode, qty, uom, actor,
   }) {
     const usage = await receptionUsage(challan.source_reception_challan_id);
     const entry = usage.find((candidate) => candidate.barcode === barcode);
@@ -1836,17 +1832,6 @@ function createChallanService({
       },
       { useTransaction: false },
     );
-    // The engine lowers the item's stock only for a material that names a
-    // variation. A simple item has none, so it is lowered here.
-    if (!(leafNodeId > 0)) {
-      await itemStock.applyDelta({
-        itemId,
-        variationLeafNodeId: leafNodeId,
-        locationId,
-        delta: -qty,
-        now,
-      });
-    }
   }
 
   /// The draft vendor return for what is still free of a partly used reception.
@@ -1963,17 +1948,6 @@ function createChallanService({
           },
           { useTransaction: false },
         );
-        // The engine moves the item's stock only for a material that names
-        // a variation; a simple item is moved here.
-        if (!(Number(movement.variation_leaf_node_id || 0) > 0)) {
-          await itemStock.applyDelta({
-            itemId: movement.item_id,
-            variationLeafNodeId: movement.variation_leaf_node_id,
-            locationId: stockLocation,
-            delta: reverseType === 'receive' ? qty : -qty,
-            now,
-          });
-        }
         if (receivedBarcodes.has(barcode)) {
           await inventoryPorts.receipts.retire(barcode, now);
         }

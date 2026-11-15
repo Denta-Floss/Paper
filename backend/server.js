@@ -4117,20 +4117,45 @@ async function initDb() {
     )
   `);
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS variation_stock (
+  // An item's stock. With variations it is kept per variation leaf. An item with
+  // none keeps one figure for the whole item, under leaf 0, which is why the
+  // leaf is not a foreign key: 0 names no node. A real leaf is checked on the
+  // way in by assertValidStockVariationLeaf (the only write path), and a
+  // trigger below removes a leaf's stock rows when the leaf is deleted.
+  const variationStockColumns = `
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE CHECK (item_id > 0),
-      variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE CHECK (variation_leaf_node_id > 0),
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0 CHECK (variation_leaf_node_id >= 0),
       quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
       location_id TEXT DEFAULT 'MAIN',
       variation_path_label TEXT DEFAULT '',
       variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
       custom_variation_values_json TEXT DEFAULT '{}',
       updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(item_id, variation_leaf_node_id, location_id)
-    );
-  `);
+      UNIQUE(item_id, variation_leaf_node_id, location_id)`;
+  await run(`CREATE TABLE IF NOT EXISTS variation_stock (${variationStockColumns})`);
+  // A database made before whole-item stock still has the table that refuses
+  // leaf 0. A CHECK cannot be altered in SQLite, so the table is rebuilt once
+  // and its rows carried over. Nothing references this table.
+  const oldStockTable = await get(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'variation_stock'",
+  );
+  if (/variation_leaf_node_id\s*>\s*0/.test(String(oldStockTable?.sql || ''))) {
+    const have = new Set((await all('PRAGMA table_info(variation_stock)')).map((c) => c.name));
+    const carried = [
+      'id', 'item_id', 'variation_leaf_node_id', 'quantity', 'location_id',
+      'variation_path_label', 'variation_path_node_ids_json', 'custom_variation_values_json', 'updated_at',
+    ].filter((name) => have.has(name)).join(', ');
+    // Dropped first: a trigger that names the table blocks the rename. It is
+    // created again further down, with the table's other triggers.
+    await run('DROP TRIGGER IF EXISTS trg_variation_stock_leaf_gone');
+    await run('DROP TABLE IF EXISTS variation_stock_rebuilt');
+    await run(`CREATE TABLE variation_stock_rebuilt (${variationStockColumns})`);
+    await run(`INSERT INTO variation_stock_rebuilt (${carried}) SELECT ${carried} FROM variation_stock`);
+    await run('DROP TABLE variation_stock');
+    await run('ALTER TABLE variation_stock_rebuilt RENAME TO variation_stock');
+    console.log('Rebuilt variation_stock: an item with no variations can now hold stock.');
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS inventory_stock_positions (
@@ -5576,12 +5601,17 @@ async function initDb() {
       END
     `);
   }
+  // Leaf 0 is the stock of an item that has no variations: one figure for the
+  // whole item. Only a negative leaf is nonsense. Which items may use 0 is
+  // decided in assertValidStockVariationLeaf, which can read the item's tree; a
+  // trigger cannot. The older trigger refused 0 as well, so it is replaced.
+  await run('DROP TRIGGER IF EXISTS trg_variation_stock_leaf_positive_ins');
   await run(`
-    CREATE TRIGGER IF NOT EXISTS trg_variation_stock_leaf_positive_ins
+    CREATE TRIGGER IF NOT EXISTS trg_variation_stock_leaf_nonneg_ins
     BEFORE INSERT ON variation_stock
-    WHEN NEW.variation_leaf_node_id <= 0
+    WHEN NEW.variation_leaf_node_id < 0
     BEGIN
-      SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must reference a real node (> 0)');
+      SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must not be negative');
     END
   `);
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
@@ -6214,6 +6244,10 @@ async function initDb() {
         END;
       END;
     `);
+    // Replaced, not just created: these two refused leaf 0, which is now the
+    // stock of an item with no variations.
+    await run('DROP TRIGGER IF EXISTS guard_variation_stock_insert');
+    await run('DROP TRIGGER IF EXISTS guard_variation_stock_update');
     await run(`
       CREATE TRIGGER IF NOT EXISTS guard_variation_stock_insert
       AFTER INSERT ON variation_stock
@@ -6221,7 +6255,7 @@ async function initDb() {
       BEGIN
         SELECT CASE
           WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'variation_stock.item_id must be positive')
-          WHEN NEW.variation_leaf_node_id IS NOT NULL AND NEW.variation_leaf_node_id <= 0 THEN RAISE(ABORT, 'variation_stock.variation_leaf_node_id must be positive')
+          WHEN NEW.variation_leaf_node_id IS NOT NULL AND NEW.variation_leaf_node_id < 0 THEN RAISE(ABORT, 'variation_stock.variation_leaf_node_id must not be negative')
         END;
       END;
     `);
@@ -6232,10 +6266,20 @@ async function initDb() {
       BEGIN
         SELECT CASE
           WHEN NEW.item_id IS NOT NULL AND NEW.item_id <= 0 THEN RAISE(ABORT, 'variation_stock.item_id must be positive')
-          WHEN NEW.variation_leaf_node_id IS NOT NULL AND NEW.variation_leaf_node_id <= 0 THEN RAISE(ABORT, 'variation_stock.variation_leaf_node_id must be positive')
+          WHEN NEW.variation_leaf_node_id IS NOT NULL AND NEW.variation_leaf_node_id < 0 THEN RAISE(ABORT, 'variation_stock.variation_leaf_node_id must not be negative')
         END;
       END;
     `);
+    // The leaf is not a foreign key any more (0 names no node), so a deleted
+    // leaf takes its stock rows with it here.
+    await run(`
+      CREATE TRIGGER IF NOT EXISTS trg_variation_stock_leaf_gone
+      AFTER DELETE ON item_variation_nodes
+      BEGIN
+        DELETE FROM variation_stock WHERE variation_leaf_node_id = OLD.id;
+      END
+    `);
+    await backfillWholeItemStock();
   
     
     await run(`
@@ -8102,10 +8146,63 @@ async function resolveLeafSelectionFromDb(leafNodeId) {
   };
 }
 
+/// Whether an item's stock is one figure for the whole item: it has no
+/// variations to keep stock under. Such an item's stock row carries leaf 0.
+async function itemHoldsWholeItemStock(itemId) {
+  const normalizedItemId = Number(itemId || 0);
+  if (!normalizedItemId) return false;
+  const item = await getItemRowById(normalizedItemId);
+  if (!item) return false;
+  const tree = await getItemVariationTree(normalizedItemId);
+  return activeTopLevelVariationProperties(tree).length === 0;
+}
+
+/// Gives an item with no variations the stock figure it could not hold before.
+/// Its materials already carry stock; the item's own row is made equal to what
+/// they hold, per location. Runs at every boot and writes only when the item
+/// has no whole-item row yet, so it does its work once.
+async function backfillWholeItemStock() {
+  const rows = await all(
+    `SELECT m.linked_item_id AS item_id,
+            COALESCE(NULLIF(TRIM(m.location), ''), 'MAIN') AS location_id,
+            SUM(m.on_hand_qty) AS quantity
+       FROM materials m
+      WHERE m.linked_item_id IS NOT NULL
+        AND COALESCE(m.linked_variation_leaf_node_id, 0) = 0
+        AND COALESCE(m.on_hand_qty, 0) > 0
+        AND COALESCE(m.inventory_state, '') != 'cancelled'
+        AND NOT EXISTS (
+          SELECT 1 FROM variation_stock v
+           WHERE v.item_id = m.linked_item_id AND v.variation_leaf_node_id = 0)
+      GROUP BY 1, 2`,
+  );
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    if (!(await itemHoldsWholeItemStock(row.item_id))) continue;
+    await run(
+      `INSERT OR IGNORE INTO variation_stock (
+         item_id, variation_leaf_node_id, quantity, location_id,
+         variation_path_label, variation_path_node_ids_json, custom_variation_values_json, updated_at
+       ) VALUES (?, 0, ?, ?, '', '[]', '{}', ?)`,
+      [row.item_id, Number(row.quantity || 0), row.location_id, now],
+    );
+  }
+  return rows.length;
+}
+
+/// The one rule for where an item's stock may be kept. An item with variations
+/// keeps it under a variation leaf, and must name one. An item with none keeps
+/// one figure for the whole item, under leaf 0.
 async function assertValidStockVariationLeaf(itemId, variationLeafNodeId) {
   const normalizedItemId = Number(itemId || 0);
   const normalizedLeafNodeId = Number(variationLeafNodeId || 0);
-  if (!normalizedItemId || !normalizedLeafNodeId) {
+  if (!normalizedItemId) {
+    const error = new Error('Stock-managed inventory lines must reference an item.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!normalizedLeafNodeId) {
+    if (await itemHoldsWholeItemStock(normalizedItemId)) return;
     const error = new Error('Stock-managed inventory lines must reference an item variation leaf.');
     error.statusCode = 400;
     throw error;
@@ -13370,6 +13467,8 @@ const inventoryService = createInventoryService({
   getItemSelectionSnapshot,
   saveGroup,
   applyVariationStockDelta,
+  // The items port is built at the end of this file, so it is looked up when called.
+  holdsWholeItemStock: (itemId) => itemsPorts.stock.holdsWholeItemStock(itemId),
   normalizeChallanType,
   getMaterialRowByBarcode,
   normalizeGroupPropertyDraft,
@@ -20568,6 +20667,7 @@ const itemsPorts = createItemsPorts({
   // ledger's movement function, which takes a different payload; nothing calls
   // this port yet, so the correction changes no behaviour.
   stockApplyDelta: applyVariationStockDelta,
+  stockHoldsWholeItem: itemHoldsWholeItemStock,
   bomLines: async (itemId) => { return []; },
   lookupByName: async (name) => {
     return await get('SELECT * FROM items WHERE name = ? COLLATE NOCASE', [name]);

@@ -17,6 +17,8 @@
 //   resolveSelection(input)     -> validated {leaf, path label, path ids}
 //   selectionSnapshot(id, leaf) -> line-item snapshot (particulars, labels)
 //   stock.assertLeaf(id, leaf)  -> throws unless leaf is a valid stock leaf
+//   stock.holdsWholeItemStock(itemId) -> whether the item has no variations, so
+//                                  its stock is one figure under leaf 0
 //   stock.applyDelta(input)     -> THE single write path into variation_stock
 //   bom.lines(itemId)           -> bill-of-material rows
 //   lookupByName(name)          -> (SMELL) item id lookup by exact name match
@@ -48,6 +50,7 @@ function createItemsPorts(impl) {
     stock: {
       assertLeaf: counted('stock.assertLeaf', impl.stockAssertLeaf),
       applyDelta: counted('stock.applyDelta', impl.stockApplyDelta),
+      holdsWholeItemStock: counted('stock.holdsWholeItemStock', impl.stockHoldsWholeItem),
     },
     bom: {
       lines: counted('bom.lines', impl.bomLines),

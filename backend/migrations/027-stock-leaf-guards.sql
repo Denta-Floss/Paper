@@ -36,9 +36,15 @@ BEGIN
   SELECT RAISE(ABORT, 'order_items.variation_leaf_node_id must reference a real node (>= 0)');
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_variation_stock_leaf_positive_ins
+-- Leaf 0 is the stock of an item with no variations (one figure for the whole
+-- item), so only a negative leaf is refused. Which items may use 0 is decided
+-- in assertValidStockVariationLeaf. This replaces the older trigger, which
+-- refused 0 as well; initDb drops that one on databases that still have it.
+DROP TRIGGER IF EXISTS trg_variation_stock_leaf_positive_ins;
+
+CREATE TRIGGER IF NOT EXISTS trg_variation_stock_leaf_nonneg_ins
 BEFORE INSERT ON variation_stock
-WHEN NEW.variation_leaf_node_id <= 0
+WHEN NEW.variation_leaf_node_id < 0
 BEGIN
-  SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must reference a real node (> 0)');
+  SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must not be negative');
 END;

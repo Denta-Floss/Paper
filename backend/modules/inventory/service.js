@@ -52,6 +52,7 @@ function createInventoryService({
   getItemSelectionSnapshot,
   saveGroup,
   applyVariationStockDelta,
+  holdsWholeItemStock,
   normalizeChallanType,
   getMaterialRowByBarcode,
   normalizeGroupPropertyDraft,
@@ -2096,11 +2097,19 @@ function createInventoryService({
 
       await recomputeMaterialInventorySummary(material.barcode, now);
 
-      if (linkedStockItemId != null && linkedStockLeafNodeId != null) {
+      // The item's own stock moves with the material. A material that names a
+      // variation moves that variation's stock. One linked to an item with no
+      // variations moves the item's single figure, kept under leaf 0. A material
+      // linked to a variation item without saying which variation moves nothing:
+      // there is no telling whose stock it is.
+      const stockLeafNodeId = linkedStockLeafNodeId != null
+        ? linkedStockLeafNodeId
+        : (linkedStockItemId != null && (await holdsWholeItemStock(linkedStockItemId)) ? 0 : null);
+      if (linkedStockItemId != null && stockLeafNodeId != null) {
         if (movementType === 'receive' || (movementType === 'adjust' && qty > 0)) {
           await applyVariationStockDelta({
             itemId: linkedStockItemId,
-            variationLeafNodeId: linkedStockLeafNodeId,
+            variationLeafNodeId: stockLeafNodeId,
             locationId: toLocationId || 'MAIN',
             delta: qty,
             now,
@@ -2108,7 +2117,7 @@ function createInventoryService({
         } else if (movementType === 'issue' || movementType === 'consume') {
           await applyVariationStockDelta({
             itemId: linkedStockItemId,
-            variationLeafNodeId: linkedStockLeafNodeId,
+            variationLeafNodeId: stockLeafNodeId,
             locationId: toLocationId || 'MAIN',
             delta: -qty,
             now,
@@ -2116,14 +2125,14 @@ function createInventoryService({
         } else if (movementType === 'transfer') {
           await applyVariationStockDelta({
             itemId: linkedStockItemId,
-            variationLeafNodeId: linkedStockLeafNodeId,
+            variationLeafNodeId: stockLeafNodeId,
             locationId: fromLocationId || 'MAIN',
             delta: -qty,
             now,
           });
           await applyVariationStockDelta({
             itemId: linkedStockItemId,
-            variationLeafNodeId: linkedStockLeafNodeId,
+            variationLeafNodeId: stockLeafNodeId,
             locationId: toLocationId || 'MAIN',
             delta: qty,
             now,
