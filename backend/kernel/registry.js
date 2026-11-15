@@ -77,7 +77,7 @@ const MODULES = {
       'report_groups', 'invoice_headers', 'invoice_lines',
       'stage_reconciliations', 'reconciliation_conversion_overrides', 'reconciliation_waste_audit',
     ],
-    evacuated: false,
+    evacuated: true,
   },
   production: {
     label: 'Production',
