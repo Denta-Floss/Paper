@@ -18028,6 +18028,42 @@ app.post('/runs/:id/barcodes', async (req, res) => {
         [Number(sheet.weight || 0), req.params.id],
       );
 
+      // The sheet is part of the material its reception line became, so using
+      // it takes that much off the material's stock. It used to take nothing:
+      // inventory went on showing sheets that were already on the floor, and a
+      // reception could be cancelled out from under a run.
+      //
+      // A weighed material loses the sheet's weight, a counted one loses one
+      // piece. Never more than is on hand: stock that the books do not have
+      // must not stop the floor from working, and the row then records what
+      // was actually taken (0 means nothing was, and the reception's usage
+      // still counts the sheet as claimed).
+      const sheetStock = sheet.challan_item_id
+        ? await inventoryPorts.receipts.materialForChallanLine(sheet.challan_item_id)
+        : null;
+      if (sheetStock) {
+        const wanted = sheetStock.keptByWeight ? Number(sheet.weight || 0) : 1;
+        const taken = Math.min(wanted, Math.max(0, Number(sheetStock.onHand || 0)));
+        if (taken > 0) {
+          await inventoryPorts.movements.apply({
+            barcode: sheetStock.barcode,
+            movementType: 'consume',
+            qty: taken,
+            actor: 'Floor Engineer',
+            referenceType: 'pipeline_run',
+            referenceId: req.params.id,
+            reasonCode: 'PRODUCTION_ASSIGN',
+          });
+          await run(
+            `UPDATE run_barcode_inputs
+                SET consumed_qty = ?,
+                    material_payload_json = json_set(material_payload_json, '$.stockBarcode', ?, '$.stockQty', ?)
+              WHERE id = ?`,
+            [taken, sheetStock.barcode, taken, sheetInputId],
+          );
+        }
+      }
+
       // The richest custody moment in the system, and it recorded nothing.
       //
       // This branch already holds the vendor, the reception challan and the
@@ -18288,6 +18324,21 @@ app.delete(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async 
         barcode: barcode,
         movementType: 'adjust',
         qty: oldQty,
+        actor: 'Floor Engineer',
+        referenceType: 'pipeline_run',
+        referenceId: req.params.id,
+        reasonCode: 'PRODUCTION_ASSIGN_DELETE',
+      });
+    }
+
+    // A sheet took its stock off the material its reception line became, not
+    // off its own code, so taking the sheet back off the run returns it there.
+    const sheetStockQty = Number(materialPayload.stockQty || 0);
+    if (materialPayload.stockBarcode && sheetStockQty > 0) {
+      await inventoryPorts.movements.apply({
+        barcode: materialPayload.stockBarcode,
+        movementType: 'adjust',
+        qty: sheetStockQty,
         actor: 'Floor Engineer',
         referenceType: 'pipeline_run',
         referenceId: req.params.id,

@@ -35,6 +35,7 @@
 //   receipts.mintReconcileLot(args)      the lot an in-use settle receives into
 //   receipts.usageForChallan(id)         what a reception brought in and how much
 //                                        of it the stock tables still hold
+//   receipts.materialForChallanLine(id)  the material a reception line became
 //   receipts.retire(barcode, now)        a cancelled reception's material stops
 //                                        being listed as stock
 //   movements.recordForChallan(args)     the ledger row for an issued line
@@ -73,6 +74,7 @@ function createInventoryPorts({ inventory }) {
       mintFromChallanLine: (args) => inventory.mintReceivedFromChallanLine(args),
       mintReconcileLot: (args) => inventory.mintReconcileLot(args),
       usageForChallan: (challanId) => inventory.receivedUsageForChallan(challanId),
+      materialForChallanLine: (lineId) => inventory.receivedMaterialForChallanLine(lineId),
       retire: (barcode, now) => inventory.retireReceivedMaterial(barcode, now),
     },
     scans: {

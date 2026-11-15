@@ -962,7 +962,7 @@ function createChallanService({
     // A vendor return is an internal challan, but it goes to a vendor, so it
     // keeps the vendor the way a reception does.
     const isVendorReturn = challanType === 'internal' && internalSubtype === 'vendor_return';
-    const sourceReceptionChallanId = isVendorReturn
+    let sourceReceptionChallanId = isVendorReturn
       ? (Number(
         input.sourceReceptionChallanId ??
         input.source_reception_challan_id ??
@@ -970,6 +970,26 @@ function createChallanService({
         0,
       ) || null)
       : null;
+    // A return of scanned vendor sheets does not say which reception it sends
+    // back to, but the sheets do: each was tagged on a reception line. When
+    // they all came in on one reception, the return is tied to it, so issuing
+    // takes the stock off that reception's own material.
+    if (isVendorReturn && !sourceReceptionChallanId) {
+      const codes = parseJsonOrArray(returnedSheetCodesJson, []);
+      if (codes.length > 0) {
+        const marks = codes.map(() => '?').join(',');
+        const receptions = await all(
+          `SELECT DISTINCT ci.challan_id
+             FROM piece_barcodes pb
+             JOIN delivery_challan_items ci ON ci.id = pb.challan_item_id
+            WHERE pb.parent_code IN (${marks}) OR pb.child_code IN (${marks})`,
+          [...codes, ...codes],
+        );
+        if (receptions.length === 1) {
+          sourceReceptionChallanId = Number(receptions[0].challan_id) || null;
+        }
+      }
+    }
     const vendorName = isVendorReturn
       ? String(vendor?.name || input.vendorName || input.vendor_name || existing?.vendor_name || '').trim()
       : challanType === 'reception'
@@ -1830,11 +1850,13 @@ function createChallanService({
   }
 
   /// The draft vendor return for what is still free of a partly used reception.
-  /// Made once: a second cancel attempt gets the same challan back.
+  /// While that draft is open a second cancel attempt gets it back, not a
+  /// second one. A return of scanned sheets is a different thing and is not it.
   async function createReturnForReception(reception, usage, actor) {
     const open = await get(
       `SELECT * FROM delivery_challans
-        WHERE source_reception_challan_id = ? AND status != 'cancelled'
+        WHERE source_reception_challan_id = ? AND status = 'draft'
+          AND COALESCE(returned_sheet_codes_json, '[]') = '[]'
         ORDER BY id DESC LIMIT 1`,
       [reception.id],
     );
@@ -1892,6 +1914,97 @@ function createChallanService({
     return `Part of this reception is already used or reserved, so it was not cancelled. ${made} what is left.`;
   }
 
+  /// Puts back the stock an issued challan moved, one reversal per movement.
+  /// Shared by cancel and delete, which differ only in what they call it.
+  /// The caller holds the transaction. `usage` is the reception's usage (empty
+  /// for any other challan), and must show nothing touched.
+  async function reverseIssuedStock(existing, usage, actor, now, { reasonCode, referenceType }) {
+    const challanType = normalizeChallanType(existing.type);
+    const receivedBarcodes = new Set(usage.map((entry) => entry.barcode));
+    const movementRows = await inventoryPorts.movements.forChallan(
+      existing.id,
+      challanType,
+    );
+    for (const movement of movementRows) {
+      const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
+      const qty = Number(movement.qty || 0);
+
+      if (movement.item_id === 0 || !movement.item_id) {
+        continue; // Skip legacy barcode-based movements or handle gracefully
+      }
+
+      const stockLocation = movement.to_location_id || existing.location || 'MAIN';
+      const barcode = String(movement.material_barcode || '').trim();
+
+      // A movement that names a real material is undone through the
+      // movement engine, so the material's own stock position goes back
+      // with it: a received material is taken out, a returned one is put
+      // back. A movement that names no piece ('-') is undone the way it was
+      // made, a ledger row and the item's stock.
+      const namesMaterial = barcode && barcode !== '-' &&
+        (receivedBarcodes.has(barcode) || !!existing.source_reception_challan_id);
+      if (namesMaterial) {
+        await inventoryPorts.movements.applyCore(
+          {
+            barcode,
+            movementType: reverseType,
+            qty,
+            primaryQty: Number(movement.primary_qty || qty),
+            uom: String(movement.uom || '').trim() || 'units',
+            toLocationId: stockLocation,
+            reasonCode,
+            referenceType,
+            referenceId: String(existing.id),
+            sourceChallanId: existing.id,
+            sourceChallanType: challanType,
+            sourceChallanLineId: movement.source_challan_line_id || null,
+            reversesMovementId: movement.id,
+            actor,
+          },
+          { useTransaction: false },
+        );
+        // The engine moves the item's stock only for a material that names
+        // a variation; a simple item is moved here.
+        if (!(Number(movement.variation_leaf_node_id || 0) > 0)) {
+          await itemStock.applyDelta({
+            itemId: movement.item_id,
+            variationLeafNodeId: movement.variation_leaf_node_id,
+            locationId: stockLocation,
+            delta: reverseType === 'receive' ? qty : -qty,
+            now,
+          });
+        }
+        if (receivedBarcodes.has(barcode)) {
+          await inventoryPorts.receipts.retire(barcode, now);
+        }
+        continue;
+      }
+
+      await itemStock.assertLeaf(movement.item_id, movement.variation_leaf_node_id);
+
+      await inventoryPorts.movements.recordChallanReversal({
+        movement,
+        reasonCode,
+        referenceType,
+        reverseType,
+        stockLocation,
+        challanId: existing.id,
+        challanType,
+        actorName: actor?.name || 'System',
+        now,
+      });
+
+      const delta = reverseType === 'receive' ? qty : -qty;
+      await itemStock.applyDelta({
+        itemId: movement.item_id,
+        variationLeafNodeId: movement.variation_leaf_node_id,
+        locationId: stockLocation,
+        delta,
+        now,
+      });
+    }
+  }
+
   /// Cancels a challan and puts its stock back.
   ///
   /// A reception is cancelled only while everything it brought in is still
@@ -1933,91 +2046,14 @@ function createChallanService({
       row.cancelNotice = partlyUsedNotice(usage, returnChallan);
       return row;
     }
-    const receivedBarcodes = new Set(usage.map((entry) => entry.barcode));
     const now = new Date().toISOString();
     await run('BEGIN TRANSACTION');
     try {
       if (existing.status === 'issued') {
-        const movementRows = await inventoryPorts.movements.forChallan(
-          existing.id,
-          challanType,
-        );
-        for (const movement of movementRows) {
-          const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
-          const qty = Number(movement.qty || 0);
-
-          if (movement.item_id === 0 || !movement.item_id) {
-            continue; // Skip legacy barcode-based movements or handle gracefully
-          }
-
-          const stockLocation = movement.to_location_id || existing.location || 'MAIN';
-          const barcode = String(movement.material_barcode || '').trim();
-
-          // A movement that names a real material is undone through the
-          // movement engine, so the material's own stock position goes back
-          // with it: a received material is taken out, a returned one is put
-          // back. A movement that names no piece ('-') is undone the way it was
-          // made, a ledger row and the item's stock.
-          const namesMaterial = barcode && barcode !== '-' &&
-            (receivedBarcodes.has(barcode) || !!existing.source_reception_challan_id);
-          if (namesMaterial) {
-            await inventoryPorts.movements.applyCore(
-              {
-                barcode,
-                movementType: reverseType,
-                qty,
-                primaryQty: Number(movement.primary_qty || qty),
-                uom: String(movement.uom || '').trim() || 'units',
-                toLocationId: stockLocation,
-                reasonCode: 'challan_cancel_reversal',
-                referenceType: 'challan-cancellation',
-                referenceId: String(existing.id),
-                sourceChallanId: existing.id,
-                sourceChallanType: challanType,
-                sourceChallanLineId: movement.source_challan_line_id || null,
-                reversesMovementId: movement.id,
-                actor,
-              },
-              { useTransaction: false },
-            );
-            // The engine moves the item's stock only for a material that names
-            // a variation; a simple item is moved here.
-            if (!(Number(movement.variation_leaf_node_id || 0) > 0)) {
-              await itemStock.applyDelta({
-                itemId: movement.item_id,
-                variationLeafNodeId: movement.variation_leaf_node_id,
-                locationId: stockLocation,
-                delta: reverseType === 'receive' ? qty : -qty,
-                now,
-              });
-            }
-            if (receivedBarcodes.has(barcode)) {
-              await inventoryPorts.receipts.retire(barcode, now);
-            }
-            continue;
-          }
-
-          await itemStock.assertLeaf(movement.item_id, movement.variation_leaf_node_id);
-
-          await inventoryPorts.movements.recordChallanReversal({
-            movement,
-            reverseType,
-            stockLocation,
-            challanId: existing.id,
-            challanType,
-            actorName: actor?.name || 'System',
-            now,
-          });
-
-          const delta = reverseType === 'receive' ? qty : -qty;
-          await itemStock.applyDelta({
-            itemId: movement.item_id,
-            variationLeafNodeId: movement.variation_leaf_node_id,
-            locationId: stockLocation,
-            delta,
-            now,
-          });
-        }
+        await reverseIssuedStock(existing, usage, actor, now, {
+          reasonCode: 'challan_cancel_reversal',
+          referenceType: 'challan-cancellation',
+        });
       }
       await run(
         "UPDATE delivery_challans SET status = 'cancelled', updated_by = ?, updated_at = ? WHERE id = ?",
@@ -2049,39 +2085,30 @@ function createChallanService({
       error.statusCode = 400;
       throw error;
     }
+    // An issued reception follows the cancel rule: it goes only while all it
+    // brought in is still free. Once any of it is used, the challan is the
+    // record of where that stock came from, so it stays.
+    const isIssuedReception =
+      existing.status === 'issued' && normalizeChallanType(existing.type) === 'reception';
+    const usage = isIssuedReception ? await receptionUsage(existing.id) : [];
+    if (usage.some((entry) => entry.touched)) {
+      const error = new Error(
+        'Part of what this reception brought in is already used, reserved or returned, so it cannot be deleted. Cancel it instead to raise a return for what is left.',
+      );
+      error.statusCode = 409;
+      error.code = 'reception_in_use';
+      throw error;
+    }
+    const now = new Date().toISOString();
     await run('BEGIN TRANSACTION');
     try {
       // Issued challans moved stock (reception = receive, delivery = issue); reverse
       // it before deleting so on_hand_qty stays correct, same as cancellation does.
       if (existing.status === 'issued') {
-        const movementRows = await inventoryPorts.movements.forChallan(
-          existing.id,
-          normalizeChallanType(existing.type),
-        );
-        for (const movement of movementRows) {
-          const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
-          await inventoryPorts.movements.applyCore(
-            {
-              barcode: movement.material_barcode,
-              movementType: reverseType,
-              qty: Number(movement.qty || 0),
-              primaryQty: Number(movement.primary_qty || movement.qty || 0),
-              uom: String(movement.uom || '').trim() || 'units',
-              toLocationId: movement.to_location_id || existing.location || 'MAIN',
-              fromLocationId: movement.from_location_id || null,
-              reasonCode: 'challan_delete_reversal',
-              referenceType: 'challan-deletion',
-              referenceId: String(existing.id),
-              sourceChallanId: existing.id,
-              sourceChallanType: normalizeChallanType(existing.type),
-              sourceChallanLineId: movement.source_challan_line_id || null,
-              reversesMovementId: movement.id,
-              actor,
-              lotCode: movement.lot_code || movement.material_barcode,
-            },
-            { useTransaction: false },
-          );
-        }
+        await reverseIssuedStock(existing, usage, actor, now, {
+          reasonCode: 'challan_delete_reversal',
+          referenceType: 'challan-deletion',
+        });
       }
       await run('UPDATE invoice_lines SET challan_id = NULL, challan_item_id = NULL WHERE challan_id = ?', [id]);
       await run('UPDATE reconciliation_waste_audit SET challan_id = NULL WHERE challan_id = ?', [id]);

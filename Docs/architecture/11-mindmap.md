@@ -31,10 +31,10 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c29["⟳ Change 29: cancelling a reception takes the received stock back"]
-        c29a["untouched: the material and its stock position go to zero and the material is retired"]
-        c29b["partly used or reserved: the reception stays issued and a draft vendor return is made for what is free"]
-        c29c["nothing free: the cancel is refused"]
+      c30["⟳ Change 30: delete, sheet scans and sheet returns follow the received material"]
+        c30a["deleting an issued reception follows the cancel rule; it used to fail every time"]
+        c30b["a vendor sheet scanned onto a run takes its stock off the reception's material"]
+        c30c["a return of scanned sheets is tied to the sheets' reception and leaves that material"]
         c28c["five full suite runs in a row are clean: 348 tests"]
       c27["Change 27: challans asks inventory and items for stock instead of writing their tables"]
       c26["Change 26: the GET test-print address is reachable"]
@@ -385,8 +385,9 @@ mindmap
           ivs9["getStockOverview: merges custom variation values from stock, materials, order lines and challan lines"]
         ivPort["Ports"]
           ivp1["offers: sets.*, materials.delete, governance.get and retireMissingProperties, movements.apply and applyCore, scans.increment, ledger.recomputeSummary"]
-          ivp5["⟳ receipts.usageForChallan, receipts.retire; materialStockTotals shared with recomputeMaterialInventorySummary"]
-          ivp6["⟳ a material in state cancelled is kept for the trail and left out of GET /api/materials"]
+          ivp5["receipts.usageForChallan, receipts.retire; materialStockTotals shared with recomputeMaterialInventorySummary"]
+          ivp7["⟳ receipts.materialForChallanLine: the material a reception line became, its unit and on hand"]
+          ivp6["a material in state cancelled is kept for the trail and left out of GET /api/materials"]
           ivp4["offers to challans: receipts.mintFromChallanLine, receipts.mintReconcileLot, movements.recordForChallan, forChallan, recordChallanReversal, producedLotCodeForRun"]
           ivp2["uses, by name: items port describe, entity links, variation readers, saveGroup, applyVariationStockDelta, recordLedgerEvent"]
           ivp3["uses, read only: items.variationStockRows, orders.customVariationValueRows, challans.customVariationValueRows"]
@@ -411,9 +412,11 @@ mindmap
           chb1["a challan is a draft until issued; issuing freezes its printed snapshot and moves stock"]
           chb2["a reception mints material; a delivery takes stock out; internal use is settled later"]
           chb3["cancelling puts stock back; only a draft is deleted outright"]
-          chb7["⟳ a reception is cancelled only while all it brought in is free: not consumed, not reserved, not claimed by a run"]
-          chb8["⟳ a partly used reception is not cancelled; its free remainder goes back on a draft vendor return linked to it"]
-          chb9["⟳ a vendor return made from a reception leaves the received material itself, and never more than is free"]
+          chb7["a reception is cancelled only while all it brought in is free: not consumed, not reserved, not claimed by a run"]
+          chb8["a partly used reception is not cancelled; its free remainder goes back on a draft vendor return linked to it"]
+          chb10["⟳ an issued reception is deleted only while all it brought in is free; a used one is refused"]
+          chb11["⟳ a return of scanned sheets finds its reception from the sheets, when they all came in on one"]
+          chb9["a vendor return made from a reception leaves the received material itself, and never more than is free"]
           chb4["a challan with invoices is not cancelled until they are dealt with; draft invoices can go with it"]
           chb5["an internal-use challan settles its full weight into scrap, leftover, lost, rejection and finished goods"]
           chb6["an invoice bills challan lines and is recorded in the custody ledger once per challan"]
@@ -425,8 +428,8 @@ mindmap
           cho1["registerChallanRoutes ctx; one handler per action, registered under both spellings"]
           cho2["handleReconcileChallan: the in-use settle, about 230 lines"]
           cho3["notifies other screens through getIo: challan_generated_ok, item_updated"]
-          cho4["⟳ POST cancel answers outcome return_challan_created, message and returnChallan when a return was made"]
-          cho5["⟳ app: ApiChallanRepository carries the message as DeliveryChallan.actionNotice; the challan screen shows it in a dialog"]
+          cho4["POST cancel answers outcome return_challan_created, message and returnChallan when a return was made"]
+          cho5["app: ApiChallanRepository carries the message as DeliveryChallan.actionNotice; the challan screen shows it in a dialog"]
         chC["Core: modules/challans/service.js"]
           chc1["createChallanService"]
           chc2["saveDeliveryChallan, issueDeliveryChallan, cancelDeliveryChallan, deleteDraftDeliveryChallan"]
@@ -434,10 +437,11 @@ mindmap
           chc4["listDeliveryChallans, getDeliveryChallanRowById, rowToDeliveryChallanDto, getDeliveryChallanItems"]
           chc5["report groups: effectiveReportGroupCodesForChallan, replaceChallanReportGroups"]
           chc6["generateChallanNumber, used by production too"]
-          chc8["⟳ receptionUsage: received, on hand, reserved, on runs, free, used per received material"]
-          chc9["⟳ cancelDeliveryChallan: a movement naming a real material is undone through applyCore, a '-' movement the old way"]
-          chc10["⟳ createReturnForReception, issueReturnLine, partlyUsedNotice"]
-          chc11["⟳ data: delivery_challans.source_reception_challan_id; a return line names its material in material_barcode"]
+          chc8["receptionUsage: received, on hand, reserved, on runs, free, used per received material"]
+          chc9["cancelDeliveryChallan: a movement naming a real material is undone through applyCore, a '-' movement the old way"]
+          chc10["createReturnForReception, issueReturnLine, partlyUsedNotice"]
+          chc12["⟳ reverseIssuedStock: one reversal loop shared by cancel and delete, told its reason code"]
+          chc11["data: delivery_challans.source_reception_challan_id; a return line names its material in material_barcode"]
           chc7["stock goes through ports: inventoryPorts receipts and movements, itemsPorts.stock; piece_barcodes still written here"]
         chR["Reports: modules/challans/reports.js and report-routes.js"]
           chr1["buildReconciliationReport, buildClientStatementReport, buildOrderReconciliation"]
@@ -476,7 +480,8 @@ mindmap
           chl5["fixed: invoice edit, in-use settle"]
       Production legacy
         pd1["runs, node-status, scrap; touches everything"]
-        pd2["⟳ production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
+        pd3["⟳ POST runs barcodes, sheet branch: consumes from the line's material, never more than on hand; DELETE gives it back"]
+        pd2["production/ports.js: machineAssignedToActiveRun, dieAssignedToActiveRun, templateRunCount, runInputsForChallanLines, read only"]
       Jobs evacuated
         jBiz["Business rules"]
           jb1["one assembly job per run and node, never duplicated"]
@@ -585,3 +590,4 @@ mindmap
 | 27 | Challans no longer runs SQL on inventory's tables in its write paths. The same statements now live in `modules/inventory/service.js` behind `inventoryPorts.receipts.mintFromChallanLine`, `receipts.mintReconcileLot`, `movements.recordForChallan`, `movements.forChallan`, `movements.recordChallanReversal` and `movements.producedLotCodeForRun`; variation stock goes through `itemsPorts.stock`. Behaviour is unchanged (pinned by `challan-stock-rows.test.js`). Not routed through the general movement engine, which refuses an outgoing line's `-` barcode. The order reconciliation report still reads the movement ledger, as a read model. | Services, Ports |
 | 28 | Fix: material barcode collisions. A child's barcode is `CHD-<parent's last part>-NN`, and that last part was four random digits, so two parents could give their children the same barcodes and the second create failed on the unique index (seen as a random test failure about once in several runs). `createParentWithChildren` now redraws until the parent barcode and its child prefix are free. Test forces the collision. | Services, Business rules, Tests |
 | 29 | Cancelling a reception challan now takes the received stock back. While everything it brought in is free, each receive is undone through the movement engine (`applyCore` issue on the real barcode): position and material go to zero, variation stock goes back once, the material is retired (`inventory_state = cancelled`, left out of `GET /api/materials`). If any of it is consumed, reserved or claimed by a run, the reception stays issued and `createReturnForReception` makes one draft vendor return (internal, `vendor_return`, `source_reception_challan_id`) for the free remainder; its lines name the material in `material_barcode`, issue through the engine and are refused above the free quantity. Nothing free answers 409. New ports: inventory `receipts.usageForChallan`, `receipts.retire`; production `runInputsForChallanLines` (sheet, quantity and unquantified run claims that no movement shows). A vendor return keeps its vendor. Delete of an issued reception is unchanged. App: the cancel answer's message reaches the challan screen as `DeliveryChallan.actionNotice` and is shown in a dialog. | Business rules, API surface, Services, Ports, Data, Tests |
+| 30 | Three faults around received material. (1) `DELETE` of an issued reception always answered 409 (it asked the engine for lot `-`); it now follows the cancel rule through the shared `reverseIssuedStock`: untouched goes with its stock taken back and the material retired, used is refused. (2) A vendor sheet scanned onto a run wrote no stock movement; the sheet branch of `POST /runs/:id/barcodes` now consumes from the material its reception line became (`receipts.materialForChallanLine`): the sheet weight for a weighed material, one piece for a counted one, never more than is on hand, recorded in `consumed_qty`; un-assigning gives it back. `runInputsForChallanLines` skips sheets that already moved stock. (3) A return of scanned sheets (the phone flow) went out on `-`; save now ties it to the sheets' reception when they share one, so issuing leaves that material. A reception cancel reuses only its own open draft return. | Business rules, Orchestration, Services, Ports, Tests |

@@ -43,7 +43,8 @@ function createProductionPorts({ get, all }) {
     /// A template with any cannot be deleted: its history would lose its source.
     /// What runs have claimed from these reception challan lines WITHOUT the
     /// received material's stock position showing it:
-    ///   'sheet'     a scanned vendor sheet (weight, no movement)
+    ///   'sheet'     a vendor sheet scanned before sheets consumed stock, or
+    ///               one whose material had nothing on hand (consumed_qty 0)
     ///   'quantity'  an issue by quantity (no movement)
     ///   'barcode'   the material assigned to a run with no quantity yet, so
     ///               nothing was consumed but the run has claimed it
@@ -59,8 +60,8 @@ function createProductionPorts({ get, all }) {
                 COALESCE(SUM(consumed_weight), 0) AS weight
            FROM run_barcode_inputs
           WHERE challan_item_id IN (${ids.map(() => '?').join(',')})
-            AND (source_kind IN ('sheet', 'quantity')
-                 OR (source_kind = 'barcode' AND COALESCE(consumed_qty, 0) = 0))
+            AND (source_kind = 'quantity'
+                 OR (source_kind IN ('sheet', 'barcode') AND COALESCE(consumed_qty, 0) = 0))
           GROUP BY challan_item_id, source_kind`,
         ids,
       );

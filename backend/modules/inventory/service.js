@@ -2628,6 +2628,33 @@ function createInventoryService({
     return entries;
   }
 
+  /// The material a reception line became, with the unit it was received in
+  /// and what its positions still hold, or null. A cancelled one is not stock.
+  async function receivedMaterialForChallanLine(lineId) {
+    const material = await get(
+      `SELECT barcode, source_challan_id FROM materials
+        WHERE source_challan_item_id = ? AND COALESCE(inventory_state, '') != 'cancelled'
+        ORDER BY id ASC LIMIT 1`,
+      [Number(lineId) || 0],
+    );
+    if (!material) return null;
+    const receipt = await get(
+      `SELECT MAX(uom) AS uom FROM inventory_movements
+        WHERE material_barcode = ? AND source_challan_id = ? AND movement_type = 'receive'`,
+      [material.barcode, material.source_challan_id],
+    );
+    const totals = await materialStockTotals(material.barcode);
+    const uom = String(receipt?.uom || '').trim();
+    return {
+      barcode: material.barcode,
+      uom,
+      // Whether the material is kept by weight or counted. The same list the
+      // challan issue uses to read a line.
+      keptByWeight: ['kg', 'g', 'mg', 'ton', 'tons', 't', 'lbs', 'oz', 'weight'].includes(uom.toLowerCase()),
+      onHand: totals.onHand,
+    };
+  }
+
   /// Takes a received material out of stock for good once its reception is
   /// cancelled. The row is kept, because the movement ledger and the custody
   /// trail point at its barcode, but it is no longer listed as stock.
@@ -2723,6 +2750,8 @@ function createInventoryService({
   /// to the movement it reverses.
   async function recordChallanReversal({
     movement,
+    reasonCode = 'challan_cancel_reversal',
+    referenceType = 'challan-cancellation',
     reverseType,
     stockLocation,
     challanId,
@@ -2748,8 +2777,8 @@ function createInventoryService({
         Number(movement.primary_qty || movement.qty || 0),
         String(movement.uom || '').trim() || 'units',
         stockLocation,
-        'challan_cancel_reversal',
-        'challan-cancellation',
+        reasonCode,
+        referenceType,
         String(challanId),
         challanId,
         challanType,
@@ -2917,6 +2946,7 @@ function createInventoryService({
     movementsForChallan,
     recordChallanReversal,
     receivedUsageForChallan,
+    receivedMaterialForChallanLine,
     retireReceivedMaterial,
     producedLotCodeForRun,
     /// An item is going away: its lines in every set go with it. trashAndDelete
