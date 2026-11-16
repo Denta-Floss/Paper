@@ -3869,14 +3869,30 @@ async function initDb() {
       'id', 'item_id', 'variation_leaf_node_id', 'quantity', 'location_id',
       'variation_path_label', 'variation_path_node_ids_json', 'custom_variation_values_json', 'updated_at',
     ].filter((name) => have.has(name)).join(', ');
-    // Dropped first: a trigger that names the table blocks the rename. It is
-    // created again further down, with the table's other triggers.
+    // Dropped first, and created again further down with the table's other
+    // triggers.
     await run('DROP TRIGGER IF EXISTS trg_variation_stock_leaf_gone');
-    await run('DROP TABLE IF EXISTS variation_stock_rebuilt');
-    await run(`CREATE TABLE variation_stock_rebuilt (${variationStockColumns})`);
-    await run(`INSERT INTO variation_stock_rebuilt (${carried}) SELECT ${carried} FROM variation_stock`);
-    await run('DROP TABLE variation_stock');
-    await run('ALTER TABLE variation_stock_rebuilt RENAME TO variation_stock');
+    // Rows are parked in a plain copy, the table is dropped and made again
+    // under its own name, and the rows are put back. No rename: SQLite checks
+    // every trigger in the schema on a rename, and on a database still being
+    // built (an empty one, part-way through this function) some of them name
+    // tables that do not exist yet.
+    // One transaction: either the table is the new one with every row in it,
+    // or nothing happened. A stop half-way must not leave the rows parked in a
+    // table nothing reads.
+    await run('BEGIN IMMEDIATE');
+    try {
+      await run('DROP TABLE IF EXISTS variation_stock_parked');
+      await run(`CREATE TABLE variation_stock_parked AS SELECT ${carried} FROM variation_stock`);
+      await run('DROP TABLE variation_stock');
+      await run(`CREATE TABLE variation_stock (${variationStockColumns})`);
+      await run(`INSERT INTO variation_stock (${carried}) SELECT ${carried} FROM variation_stock_parked`);
+      await run('DROP TABLE variation_stock_parked');
+      await run('COMMIT');
+    } catch (error) {
+      await run('ROLLBACK').catch(() => {});
+      throw error;
+    }
     console.log('Rebuilt variation_stock: an item with no variations can now hold stock.');
   }
 
