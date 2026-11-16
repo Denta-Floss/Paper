@@ -1,33 +1,38 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const dbPath = path.join(__dirname, '..', 'paper.db');
-const db = new sqlite3.Database(dbPath);
+const assert = require('node:assert/strict');
+const { mkdtempSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
 
-const run = (query, params = []) => new Promise((resolve, reject) => db.run(query, params, function(err) { if (err) reject(err); else resolve(this); }));
-const get = (query, params = []) => new Promise((resolve, reject) => db.get(query, params, (err, row) => { if (err) reject(err); else resolve(row); }));
+// The client portal's tables take a portal user for a client and a cart line
+// for an item.
+//
+// Like payroll-api.test.js, this used to open the developer's own
+// `backend/paper.db`, and failed on a clean checkout where that file does not
+// exist. It now builds its own database.
 
-async function runTests() {
-  console.log('--- Running Portal API Tests ---');
-  try {
-    await run('BEGIN TRANSACTION');
-    
-    const now = new Date().toISOString();
-    const portalUserRes = await run('INSERT INTO portal_users (client_id, email, password_hash) VALUES (1, ?, ?)', 
-      ['portal@example.com', 'hash']);
-    
-    const portalUserId = portalUserRes.lastID;
-    console.log('SUCCESS: Created Portal User');
+test('a portal user for a client, and an item in their cart', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-portal-tables-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  await backend.resetAndSeedDemoData();
 
-    const cartRes = await run('INSERT INTO portal_carts (portal_user_id, item_id, quantity) VALUES (?, 1, 5)', [portalUserId]);
-    console.log('SUCCESS: Added item to Portal Cart');
+  const client = await backend.get('SELECT id FROM clients LIMIT 1');
+  const item = await backend.get('SELECT id FROM items LIMIT 1');
+  assert.ok(client && item, 'the demo seed has a client and an item');
 
-    await run('ROLLBACK');
-    console.log('--- Portal Tests Passed ---\\n');
-  } catch (error) {
-    await run('ROLLBACK').catch(() => {});
-    console.error('PORTAL TESTS FAILED:', error);
-    process.exit(1);
-  }
-}
+  const user = await backend.run(
+    'INSERT INTO portal_users (client_id, email, password_hash) VALUES (?, ?, ?)',
+    [client.id, 'portal@example.com', 'hash'],
+  );
+  assert.ok(user.lastID > 0);
 
-runTests().then(() => db.close());
+  await backend.run(
+    'INSERT INTO portal_carts (portal_user_id, item_id, quantity) VALUES (?, ?, 5)',
+    [user.lastID, item.id],
+  );
+  const cart = await backend.get('SELECT * FROM portal_carts WHERE portal_user_id = ?', [user.lastID]);
+  assert.equal(cart.item_id, item.id);
+  assert.equal(cart.quantity, 5);
+});

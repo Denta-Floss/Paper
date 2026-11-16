@@ -1,37 +1,57 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const dbPath = path.join(__dirname, '..', 'paper.db');
-const db = new sqlite3.Database(dbPath);
+const assert = require('node:assert/strict');
+const { mkdtempSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
 
-const run = (query, params = []) => new Promise((resolve, reject) => db.run(query, params, function(err) { if (err) reject(err); else resolve(this); }));
-const get = (query, params = []) => new Promise((resolve, reject) => db.get(query, params, (err, row) => { if (err) reject(err); else resolve(row); }));
+// The payroll tables take a component, a salary structure for an employee, and
+// a line joining the two.
+//
+// This used to open `backend/paper.db` directly: the developer's own working
+// database. On a machine that has one it wrote into it (inside a transaction it
+// rolled back); on a clean checkout, which is what the deploy runs on, the file
+// did not exist, sqlite made an empty one, and the test failed on "no such
+// table". It now builds its own database like every other test here.
 
-async function runTests() {
-  console.log('--- Running Payroll API Tests ---');
-  try {
-    await run('BEGIN TRANSACTION');
-    
-    const now = new Date().toISOString();
-    const compRes = await run('INSERT INTO payroll_components (name, type, calculation_method, is_statutory) VALUES (?, ?, ?, ?)', 
-      ['Basic Pay', 'earning', 'fixed', 0]);
-    
-    const compId = compRes.lastID;
-    console.log('SUCCESS: Created Payroll Component');
+test('a payroll component, a salary structure and the line that joins them', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-payroll-tables-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  await backend.resetAndSeedDemoData();
 
-    const structRes = await run('INSERT INTO employee_salary_structures (employee_id, effective_from) VALUES (1, ?)', [now]);
-    const structId = structRes.lastID;
-    console.log('SUCCESS: Created Salary Structure');
+  const now = new Date().toISOString();
+  // The demo seed has no employees, so make one, in a department of its own.
+  const department = await backend.run(
+    "INSERT INTO departments (name, created_at, updated_at) VALUES ('Payroll Test Department', ?, ?)",
+    [now, now],
+  );
+  const made = await backend.run(
+    "INSERT INTO employees (department_id, name, created_at, updated_at) VALUES (?, 'Payroll Test Employee', ?, ?)",
+    [department.lastID, now, now],
+  );
+  const employee = { id: made.lastID };
 
-    await run('INSERT INTO employee_salary_structure_lines (structure_id, component_id, amount_or_formula, sequence) VALUES (?, ?, ?, 1)', [structId, compId, '25000']);
-    console.log('SUCCESS: Linked Component to Salary Structure');
-    
-    await run('ROLLBACK');
-    console.log('--- Payroll Tests Passed ---\\n');
-  } catch (error) {
-    await run('ROLLBACK').catch(() => {});
-    console.error('PAYROLL TESTS FAILED:', error);
-    process.exit(1);
-  }
-}
+  const component = await backend.run(
+    'INSERT INTO payroll_components (name, type, calculation_method, is_statutory) VALUES (?, ?, ?, ?)',
+    ['Basic Pay', 'earning', 'fixed', 0],
+  );
+  assert.ok(component.lastID > 0);
 
-runTests().then(() => db.close());
+  const structure = await backend.run(
+    'INSERT INTO employee_salary_structures (employee_id, effective_from) VALUES (?, ?)',
+    [employee.id, now],
+  );
+  assert.ok(structure.lastID > 0);
+
+  await backend.run(
+    'INSERT INTO employee_salary_structure_lines (structure_id, component_id, amount_or_formula, sequence) VALUES (?, ?, ?, 1)',
+    [structure.lastID, component.lastID, '25000'],
+  );
+  const line = await backend.get(
+    'SELECT * FROM employee_salary_structure_lines WHERE structure_id = ?',
+    [structure.lastID],
+  );
+  assert.equal(line.component_id, component.lastID);
+  assert.equal(line.amount_or_formula, '25000');
+});
