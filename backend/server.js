@@ -3858,7 +3858,12 @@ async function initDb() {
   const oldStockTable = await get(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'variation_stock'",
   );
-  if (/variation_leaf_node_id\s*>\s*0/.test(String(oldStockTable?.sql || ''))) {
+  // Two older shapes refuse leaf 0, and a database can have either: a CHECK that
+  // the leaf is above zero, or the leaf as a foreign key into
+  // item_variation_nodes (0 names no node). Some databases have only the second.
+  const oldStockSql = String(oldStockTable?.sql || '');
+  const leafColumn = (oldStockSql.match(/variation_leaf_node_id[^,]*/i) || [''])[0];
+  if (/>\s*0/.test(leafColumn) || /REFERENCES\s+item_variation_nodes/i.test(leafColumn)) {
     const have = new Set((await all('PRAGMA table_info(variation_stock)')).map((c) => c.name));
     const carried = [
       'id', 'item_id', 'variation_leaf_node_id', 'quantity', 'location_id',

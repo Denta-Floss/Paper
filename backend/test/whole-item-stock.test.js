@@ -194,3 +194,44 @@ test('a database made before whole-item stock is rebuilt once and keeps its rows
     assert.equal((await backend.get('SELECT COUNT(*) AS c FROM variation_stock WHERE variation_leaf_node_id = ?', [leaf.id])).c, 0);
   }
 });
+
+test('a database whose stock table only has the leaf as a foreign key is rebuilt too', async (t) => {
+  const { backend, server } = await boot();
+  t.after(() => server.close());
+  const leaf = await backend.get(
+    "SELECT id, item_id FROM item_variation_nodes WHERE kind = 'value' AND is_archived = 0 LIMIT 1");
+  // The shape real databases made before the CHECK was added: no CHECK on the
+  // leaf, but the leaf is a foreign key, which refuses 0 just the same.
+  await backend.run('DROP TRIGGER IF EXISTS trg_variation_stock_leaf_gone');
+  await backend.run('DROP TABLE variation_stock');
+  await backend.run(
+    `CREATE TABLE variation_stock (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+       variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
+       quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+       location_id TEXT DEFAULT 'MAIN',
+       updated_at TEXT DEFAULT (datetime('now')),
+       UNIQUE(item_id, variation_leaf_node_id, location_id))`,
+  );
+  await backend.run(
+    'INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity) VALUES (?, ?, 8)',
+    [leaf.item_id, leaf.id],
+  );
+  await assert.rejects(
+    backend.run('INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity) VALUES (?, 0, 1)', [leaf.item_id]),
+    /FOREIGN KEY/,
+  );
+
+  await backend.initDb();
+
+  const kept = await backend.get(
+    'SELECT quantity FROM variation_stock WHERE item_id = ? AND variation_leaf_node_id = ?', [leaf.item_id, leaf.id]);
+  assert.equal(kept.quantity, 8, 'the old row came across');
+  const table = await backend.get("SELECT sql FROM sqlite_master WHERE name = 'variation_stock'");
+  assert.doesNotMatch(table.sql, /REFERENCES\s+item_variation_nodes/i);
+  // And leaf 0 is now accepted by the table.
+  await backend.run('INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity) VALUES (?, 0, 1)', [leaf.item_id]);
+  await backend.initDb();
+  assert.equal((await backend.get('SELECT COUNT(*) AS c FROM variation_stock')).c, 2, 'a second boot leaves it alone');
+});
