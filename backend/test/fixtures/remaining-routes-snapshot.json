@@ -1,0 +1,2201 @@
+{
+ "anonymous GET /api/action-center/issues": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/appcast/:clientId.xml": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/assets/documents": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/assets/local/*key": {
+  "status": 403,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "This upload link is not valid, or has expired."
+ },
+ "anonymous GET /api/assets/view/*key": {
+  "status": 403,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "This photo link is not valid."
+ },
+ "anonymous GET /api/audit/global": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/auth/events": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/auth/events/export": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/auth/me": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/auth/sessions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/barcode/lookup": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/changes": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/company-profile": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/favorites": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/payroll/components": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/payroll/employees/:id/salary-structure": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/payroll/runs": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/payroll/runs/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/payroll/runs/:id/summary": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/permission-templates": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/permissions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/photo-requests": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/pipelines/:id/master-data": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/reconciliation/conversion-overrides": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/reconciliation/report": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/reconciliation/waste-audit": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/record-options/:entityType": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/sandbox-dashboard/client/:clientId": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "activatedMachines": [],
+   "activationPin": "null",
+   "clientId": "string",
+   "config": "null",
+   "success": "boolean",
+   "syncState": "null",
+   "syncUpdatedAt": "null",
+   "users": []
+  }
+ },
+ "anonymous GET /api/sandbox-dashboard/client/:clientId/replays": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "replays": [],
+   "success": "boolean"
+  }
+ },
+ "anonymous GET /api/sandbox-dashboard/clients": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "clients": [],
+   "success": "boolean"
+  }
+ },
+ "anonymous GET /api/sandbox-dashboard/feature-registry": {
+  "status": 200,
+  "type": "application/json",
+  "shape": [
+   {
+    "category": "string",
+    "description": "string",
+    "displayName": "string",
+    "key": "string"
+   }
+  ]
+ },
+ "anonymous GET /api/sandbox-dashboard/replay/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Replay not found"
+ },
+ "anonymous GET /api/scan/:code": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/search": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/search/history": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/templates/:id/test-print": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/track/:entityType/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/track/actor/:userId": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/track/sitting/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/track/sittings": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/unit-groups": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/units": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/units/families": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/units/gauge-table": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/users": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/users/:id/permission-templates": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/users/:id/permissions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/users/:id/record-permissions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/users/:id/sessions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /dashboard": {
+  "status": 200,
+  "type": "text/html",
+  "shape": null
+ },
+ "anonymous GET /sandbox-config/:clientId": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "catalog": {
+    "purchaseItems": "boolean"
+   },
+   "challans": {
+    "reconciliation": "boolean",
+    "singleTypeView": "boolean"
+   },
+   "enhancements": {
+    "boardingPassCards": "boolean",
+    "catalogInventory": "boolean"
+   },
+   "features": {
+    "disableMachineCustomFields": "boolean"
+   },
+   "masters": {
+    "linkColumns": "boolean"
+   },
+   "modules": {
+    "actionCenter": "boolean",
+    "delivery_challans": "boolean",
+    "inventory": "boolean",
+    "jobs": "boolean",
+    "masters": "boolean",
+    "orders": "boolean",
+    "pm": "boolean",
+    "production": "boolean"
+   },
+   "orders": {
+    "allowCustomActions": "boolean",
+    "allowOrdersCreation": "boolean",
+    "showReport": "boolean",
+    "statusColors": "{…}"
+   },
+   "production": {
+    "materialVariationPaths": "boolean",
+    "multiScrapItems": "boolean"
+   },
+   "purchase": {
+    "flowV2": "boolean"
+   },
+   "routes": {
+    "listLens": "boolean"
+   },
+   "units": {
+    "families": "boolean"
+   },
+   "update": {
+    "channel": "string",
+    "latest_version": "string"
+   }
+  }
+ },
+ "anonymous PUT /api/assets/local/*key": {
+  "status": 403,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "This upload link is not valid, or has expired."
+ },
+ "anonymous PUT /api/company-profile": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PUT /api/payroll/employees/:id/salary-structure": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PUT /api/users/:id/record-permissions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/assets/:id/primary": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/assets/:id/title": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/me/password": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/permission-templates/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/reconciliation/conversion-overrides": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/unit-groups/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/units/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/units/:id/archive": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/users/:id/password": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/users/:id/permission-templates": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/users/:id/permissions": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous PATCH /api/users/:id/status": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/activation/activate": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing required activation parameters"
+ },
+ "anonymous POST /api/admins": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/assets/:id/read-url": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/assets/primary": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/assets/upload-complete": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/assets/upload-intent": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/auth/login": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "token": "null",
+   "user": "null"
+  },
+  "error": "Invalid email or password."
+ },
+ "anonymous POST /api/build/global": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "GITHUB_TOKEN is not set in environment variables."
+ },
+ "anonymous POST /api/favorites": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/mobile/challan-generated": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/mobile/lock-inventory": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/mobile/remove-staged-item": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/mobile/stage-item": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/order-po-documents/:id/read-url": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/order-po-uploads/complete": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/order-po-uploads/intent": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/payroll/components": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/payroll/runs": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/payroll/runs/:id/finalize": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/permission-templates": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/photo-requests": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/photo-requests/:id/complete": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/photo-requests/:id/skip": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/sandbox-dashboard/client/:clientId/config": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing configuration"
+ },
+ "anonymous POST /api/sandbox-dashboard/client/:clientId/users": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing user details"
+ },
+ "anonymous POST /api/sandbox-sync/:clientId": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing sync data"
+ },
+ "anonymous POST /api/search/clicks": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/search/history": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/session-replay/:clientId": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing replay data"
+ },
+ "anonymous POST /api/unit-groups": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/units": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/units/convert-batch": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/upload/generic": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/users": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous POST /api/users/:id/sessions/revoke": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/activate/:clientId/:fingerprint": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/assets/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/auth/sessions/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/favorites/:itemId/:variationLeafNodeId": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/permission-templates/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/photo-requests/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/sandbox-dashboard/client/:clientId/user/:email": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "success": "boolean"
+  }
+ },
+ "anonymous DELETE /api/unit-groups/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/units/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous DELETE /api/users/:id": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "owner GET /api/action-center/issues": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "issues": [],
+   "scanErrors": [],
+   "success": "boolean",
+   "total": "number"
+  }
+ },
+ "owner GET /api/appcast/:clientId.xml": {
+  "status": 200,
+  "type": "application/xml",
+  "shape": null
+ },
+ "owner GET /api/assets/documents": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "documents": [],
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Documents are kept for a client or a contractor."
+ },
+ "owner GET /api/assets/local/*key": {
+  "status": 403,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "This upload link is not valid, or has expired."
+ },
+ "owner GET /api/assets/view/*key": {
+  "status": 403,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "This photo link is not valid."
+ },
+ "owner GET /api/audit/global": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "data": [],
+   "error": "null",
+   "success": "boolean",
+   "total": "number"
+  }
+ },
+ "owner GET /api/auth/events": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "events": [
+    "{…}"
+   ],
+   "pagination": {
+    "hasMore": "boolean",
+    "limit": "number",
+    "offset": "number",
+    "total": "number"
+   },
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/auth/events/export": {
+  "status": 200,
+  "type": "text/csv",
+  "shape": null
+ },
+ "owner GET /api/auth/me": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean",
+   "user": {
+    "activeSession": "null",
+    "clientId": "null",
+    "clientName": "null",
+    "createdAt": "string",
+    "createdByUserId": "null",
+    "email": "string",
+    "failedLoginAttempts": "number",
+    "id": "number",
+    "isActive": "boolean",
+    "lockoutUntil": "null",
+    "mobilePin": "string",
+    "name": "string",
+    "permissions": [
+     "string"
+    ],
+    "role": "string",
+    "updatedAt": "string"
+   }
+  }
+ },
+ "owner GET /api/auth/sessions": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "currentSessionId": "string",
+   "error": "null",
+   "sessions": [
+    "{…}"
+   ],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/barcode/lookup": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Code is required"
+ },
+ "owner GET /api/changes": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "changes": [
+    "{…}"
+   ],
+   "error": "null",
+   "hasMore": "boolean",
+   "head": "number",
+   "oldestAvailable": "number",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/company-profile": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "data": {
+    "address": "string",
+    "business_description": "string",
+    "company_name": "string",
+    "created_at": "string",
+    "gstin": "string",
+    "id": "number",
+    "logo_url": "string",
+    "mobile": "string",
+    "signature_label": "string",
+    "state_code": "string",
+    "updated_at": "string"
+   },
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/favorites": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "favorites": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/payroll/components": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "components": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/payroll/employees/:id/salary-structure": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "lines": [],
+   "structure": "null",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/payroll/runs": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "SQLITE_ERROR: no such column: created_at"
+ },
+ "owner GET /api/payroll/runs/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Not found"
+ },
+ "owner GET /api/payroll/runs/:id/summary": {
+  "status": 404,
+  "type": "text/html",
+  "shape": null
+ },
+ "owner GET /api/permission-templates": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean",
+   "templates": [
+    "{…}"
+   ]
+  }
+ },
+ "owner GET /api/permissions": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "permissions": [
+    "{…}"
+   ],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/photo-requests": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "requests": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/pipelines/:id/master-data": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "blankCount": "number",
+   "count": "number",
+   "entries": [],
+   "inheritedCount": "number",
+   "measuredCount": "number",
+   "pipelineId": "string",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/reconciliation/conversion-overrides": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "data": [],
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/reconciliation/report": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "data": {
+    "clientStatement": [],
+    "conversionOverrides": [],
+    "generatedAt": "string",
+    "internalAuditor": [],
+    "misc": []
+   },
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/reconciliation/waste-audit": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "data": [],
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/record-options/:entityType": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "options": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/sandbox-dashboard/client/:clientId": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "activatedMachines": [],
+   "activationPin": "null",
+   "clientId": "string",
+   "config": "null",
+   "success": "boolean",
+   "syncState": "null",
+   "syncUpdatedAt": "null",
+   "users": []
+  }
+ },
+ "owner GET /api/sandbox-dashboard/client/:clientId/replays": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "replays": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/sandbox-dashboard/clients": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "clients": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/sandbox-dashboard/feature-registry": {
+  "status": 200,
+  "type": "application/json",
+  "shape": [
+   {
+    "category": "string",
+    "description": "string",
+    "displayName": "string",
+    "key": "string"
+   }
+  ]
+ },
+ "owner GET /api/sandbox-dashboard/replay/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Replay not found"
+ },
+ "owner GET /api/scan/:code": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "scan": {
+    "code": "string",
+    "custody": [],
+    "entity": "null",
+    "facts": [],
+    "found": "boolean",
+    "resolution": "{…}"
+   },
+   "success": "boolean"
+  },
+  "error": "Nothing here carries that code."
+ },
+ "owner GET /api/search": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "results": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/search/history": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "history": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/templates/:id/test-print": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "message": "string",
+   "success": "boolean"
+  },
+  "error": "Challan template not found."
+ },
+ "owner GET /api/track/:entityType/:id": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "events": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/track/actor/:userId": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "events": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/track/sitting/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "events": [],
+   "success": "boolean"
+  },
+  "error": "No such sitting."
+ },
+ "owner GET /api/track/sittings": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "sittings": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/unit-groups": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean",
+   "unitGroups": [
+    "{…}"
+   ]
+  }
+ },
+ "owner GET /api/units": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean",
+   "units": [
+    "{…}"
+   ]
+  }
+ },
+ "owner GET /api/units/families": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "families": [
+    "{…}"
+   ],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/units/gauge-table": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "points": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/users": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "pagination": {
+    "hasMore": "boolean",
+    "limit": "number",
+    "offset": "number",
+    "total": "number"
+   },
+   "success": "boolean",
+   "users": [
+    "{…}"
+   ]
+  }
+ },
+ "owner GET /api/users/:id/permission-templates": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "templates": []
+  },
+  "error": "User not found."
+ },
+ "owner GET /api/users/:id/permissions": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "permissions": [],
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner GET /api/users/:id/record-permissions": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "records": [],
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner GET /api/users/:id/sessions": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "sessions": [],
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner GET /dashboard": {
+  "status": 200,
+  "type": "text/html",
+  "shape": null
+ },
+ "owner GET /sandbox-config/:clientId": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "catalog": {
+    "purchaseItems": "boolean"
+   },
+   "challans": {
+    "reconciliation": "boolean",
+    "singleTypeView": "boolean"
+   },
+   "enhancements": {
+    "boardingPassCards": "boolean",
+    "catalogInventory": "boolean"
+   },
+   "features": {
+    "disableMachineCustomFields": "boolean"
+   },
+   "masters": {
+    "linkColumns": "boolean"
+   },
+   "modules": {
+    "actionCenter": "boolean",
+    "delivery_challans": "boolean",
+    "inventory": "boolean",
+    "jobs": "boolean",
+    "masters": "boolean",
+    "orders": "boolean",
+    "pm": "boolean",
+    "production": "boolean"
+   },
+   "orders": {
+    "allowCustomActions": "boolean",
+    "allowOrdersCreation": "boolean",
+    "showReport": "boolean",
+    "statusColors": "{…}"
+   },
+   "production": {
+    "materialVariationPaths": "boolean",
+    "multiScrapItems": "boolean"
+   },
+   "purchase": {
+    "flowV2": "boolean"
+   },
+   "routes": {
+    "listLens": "boolean"
+   },
+   "units": {
+    "families": "boolean"
+   },
+   "update": {
+    "channel": "string",
+    "latest_version": "string"
+   }
+  }
+ },
+ "owner PUT /api/assets/local/*key": {
+  "status": 403,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "This upload link is not valid, or has expired."
+ },
+ "owner PUT /api/company-profile": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "data": "null",
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Company name is required."
+ },
+ "owner PUT /api/payroll/employees/:id/salary-structure": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "SQLITE_CONSTRAINT: NOT NULL constraint failed: employee_salary_structures.effective_from"
+ },
+ "owner PUT /api/users/:id/record-permissions": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner PATCH /api/assets/:id/primary": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "asset": "null",
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Asset not found."
+ },
+ "owner PATCH /api/assets/:id/title": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "document": "null",
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Document not found."
+ },
+ "owner PATCH /api/me/password": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Current password is incorrect."
+ },
+ "owner PATCH /api/permission-templates/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Preset not found."
+ },
+ "owner PATCH /api/reconciliation/conversion-overrides": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "data": "null",
+   "error": "string",
+   "message": "string",
+   "success": "boolean"
+  },
+  "error": "itemId is required for conversion override."
+ },
+ "owner PATCH /api/unit-groups/:id": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "name is required"
+ },
+ "owner PATCH /api/units/:id": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "unit": "null"
+  },
+  "error": "name and symbol are required."
+ },
+ "owner PATCH /api/units/:id/archive": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Not found"
+ },
+ "owner PATCH /api/users/:id/password": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner PATCH /api/users/:id/permission-templates": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner PATCH /api/users/:id/permissions": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "permissions": [],
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner PATCH /api/users/:id/status": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "user": "null"
+  },
+  "error": "User not found."
+ },
+ "owner POST /api/activation/activate": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing required activation parameters"
+ },
+ "owner POST /api/admins": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "user": "null"
+  },
+  "error": "name is required."
+ },
+ "owner POST /api/assets/:id/read-url": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "asset": "null",
+   "error": "string",
+   "readUrl": "null",
+   "success": "boolean"
+  },
+  "error": "Asset not found."
+ },
+ "owner POST /api/assets/primary": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "photos": {},
+   "success": "boolean"
+  },
+  "error": "Entity type not supported."
+ },
+ "owner POST /api/assets/upload-complete": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "asset": "null",
+   "code": "null",
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Upload session not found."
+ },
+ "owner POST /api/assets/upload-intent": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "code": "null",
+   "error": "string",
+   "intent": "null",
+   "success": "boolean"
+  },
+  "error": "Invalid uploadType."
+ },
+ "owner POST /api/auth/login": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "token": "null",
+   "user": "null"
+  },
+  "error": "Invalid email or password."
+ },
+ "owner POST /api/build/global": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "GITHUB_TOKEN is not set in environment variables."
+ },
+ "owner POST /api/favorites": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "itemId is required"
+ },
+ "owner POST /api/mobile/challan-generated": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/mobile/lock-inventory": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/mobile/remove-staged-item": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/mobile/stage-item": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/order-po-documents/:id/read-url": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "document": "null",
+   "error": "string",
+   "readUrl": "null",
+   "success": "boolean"
+  },
+  "error": "PO document not found."
+ },
+ "owner POST /api/order-po-uploads/complete": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "document": "null",
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Upload session not found."
+ },
+ "owner POST /api/order-po-uploads/intent": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "intent": "null",
+   "success": "boolean"
+  },
+  "error": "PO uploads must declare uploadType = ORDER_PO."
+ },
+ "owner POST /api/payroll/components": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing required fields"
+ },
+ "owner POST /api/payroll/runs": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing period start/end"
+ },
+ "owner POST /api/payroll/runs/:id/finalize": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "SQLITE_ERROR: no such column: updated_at"
+ },
+ "owner POST /api/permission-templates": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "A name is required."
+ },
+ "owner POST /api/photo-requests": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "code": "null",
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "A photo is asked for a part, company, person, die or machine by its id."
+ },
+ "owner POST /api/photo-requests/:id/complete": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Photo request not found."
+ },
+ "owner POST /api/photo-requests/:id/skip": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Photo request not found."
+ },
+ "owner POST /api/sandbox-dashboard/client/:clientId/config": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing configuration"
+ },
+ "owner POST /api/sandbox-dashboard/client/:clientId/users": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing user details"
+ },
+ "owner POST /api/sandbox-sync/:clientId": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing sync data"
+ },
+ "owner POST /api/search/clicks": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/search/history": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/session-replay/:clientId": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Missing replay data"
+ },
+ "owner POST /api/unit-groups": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "name is required"
+ },
+ "owner POST /api/units": {
+  "status": 500,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "unit": "null"
+  },
+  "error": "name and symbol are required."
+ },
+ "owner POST /api/units/convert-batch": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "results": [],
+   "success": "boolean"
+  }
+ },
+ "owner POST /api/upload/generic": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "intent": "null",
+   "success": "boolean"
+  },
+  "error": "fileName and contentType are required."
+ },
+ "owner POST /api/users": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean",
+   "user": "null"
+  },
+  "error": "name is required."
+ },
+ "owner POST /api/users/:id/sessions/revoke": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "User not found."
+ },
+ "owner DELETE /api/activate/:clientId/:fingerprint": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "success": "boolean"
+  }
+ },
+ "owner DELETE /api/assets/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Asset not found."
+ },
+ "owner DELETE /api/auth/sessions/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Session not found."
+ },
+ "owner DELETE /api/favorites/:itemId/:variationLeafNodeId": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "success": "boolean"
+  }
+ },
+ "owner DELETE /api/permission-templates/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Preset not found."
+ },
+ "owner DELETE /api/photo-requests/:id": {
+  "status": 404,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Photo request not found."
+ },
+ "owner DELETE /api/sandbox-dashboard/client/:clientId/user/:email": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "success": "boolean"
+  }
+ },
+ "owner DELETE /api/unit-groups/:id": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner DELETE /api/units/:id": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "success": "boolean"
+  }
+ },
+ "owner DELETE /api/users/:id": {
+  "status": 400,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "User deletion requires override flag for compliance reasons."
+ }
+}
