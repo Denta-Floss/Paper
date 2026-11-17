@@ -26,8 +26,8 @@ test('order fulfilment rollup reports ordered, delivered and produced per line',
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'fulfil@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -98,8 +98,8 @@ test('scenario_c seeds every state the insights screen can show', async () => {
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'scenc@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData('scenario_c');
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;

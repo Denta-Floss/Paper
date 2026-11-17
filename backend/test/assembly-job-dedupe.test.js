@@ -75,8 +75,8 @@ test('an Assembly node raises exactly one job however often its status is re-set
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -159,8 +159,8 @@ test('a job already assigned to a freelancer is not rewritten when the node is r
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly2@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -238,8 +238,8 @@ test('a supervisor booking scrap on an assembly stage rejects it on the worker j
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly3@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -314,8 +314,8 @@ test('reconciling an assembly stage mints a temporary set into inventory', async
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly4@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -404,8 +404,8 @@ test('a produced set keeps a ledger: in from production, out when issued to a wo
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly5@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  delete require.cache[require.resolve('/Users/rutuparnpuranik/Paper/backend/server.js')];
-  const backend = require('/Users/rutuparnpuranik/Paper/backend/server.js');
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
   await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;

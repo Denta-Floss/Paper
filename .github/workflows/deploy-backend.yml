@@ -80,7 +80,12 @@ jobs:
         if: failure()
         working-directory: ./backend
         run: |
-          grep -E "^[[:space:]]+(error|expected|actual): |^# .*(Error|SQLITE)[^ ]*:" test-output.log \
+          # A multi-line error is printed as `error: |-` with the text on the
+          # lines after it, so those are joined on first. Lines the server logs
+          # on every healthy boot are left out.
+          awk '/^[[:space:]]+error: \|-$/ { getline next_line; sub(/^[[:space:]]+/, "", next_line); print "  error: " next_line; next } { print }' test-output.log \
+            | grep -E "^[[:space:]]+(error|expected|actual): |^# .*(Error|SQLITE)[^ ]*:" \
+            | grep -v -E 'schema not created yet|column already present' \
             | grep -v 'Database is closed' \
             | sed 's/^[[:space:]]*//' | sort | uniq -c | sort -rn | head -9 \
             | while IFS= read -r line; do echo "::error::$line"; done

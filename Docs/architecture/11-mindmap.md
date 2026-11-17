@@ -31,10 +31,9 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c43["⟳ Change 43: the routes outside the fifteen modules leave server.js"]
-        c43a["104 routes into nine files: accounts, assets, control plane, units master, payroll, settings, search, track, realtime"]
-        c43b["each group fills a router mounted where its routes were: same order, same guards"]
-        c43c["server.js is 16,950 lines and has 3 routes left of its own"]
+      c44["⟳ Change 44: the deploy was blocked by two tests that only ran on one machine"]
+        c44a["assembly-job-dedupe and order-fulfilment loaded the server from an absolute path on the developer's Mac"]
+        c44b["they now load ../server.js; no-machine-paths.test.js refuses such a path in any backend file"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -454,13 +453,13 @@ mindmap
           chl6["fixed: challan photo upload, intent and complete"]
           chl5["fixed: invoice edit, in-use settle"]
       Outside the fifteen modules
-        kr1["⟳ accounts/routes.js: auth, users, me, admins, permissions, permission presets, record options; 29 routes"]
-        kr2["⟳ assets/routes.js: upload intents and completions, signed views, photo gallery, photo requests; 16 routes"]
-        kr3["⟳ control_plane/routes.js: sandbox config and dashboard, activation, build and update feeds, session replay; 17 routes"]
-        kr4["⟳ units/master-routes.js: units and unit groups; 11 routes"]
-        kr5["⟳ payroll/routes.js 9, settings/routes.js 9, search/routes.js 6, track/routes.js 5, realtime/routes.js 2"]
-        kr6["⟳ each group is registered into a router mounted where its routes were, so matching order and guards are unchanged"]
-        kr7["⟳ helpers they call (sessions, permission checks, asset store, change log) are still in server.js, handed in by name"]
+        kr1["accounts/routes.js: auth, users, me, admins, permissions, permission presets, record options; 29 routes"]
+        kr2["assets/routes.js: upload intents and completions, signed views, photo gallery, photo requests; 16 routes"]
+        kr3["control_plane/routes.js: sandbox config and dashboard, activation, build and update feeds, session replay; 17 routes"]
+        kr4["units/master-routes.js: units and unit groups; 11 routes"]
+        kr5["payroll/routes.js 9, settings/routes.js 9, search/routes.js 6, track/routes.js 5, realtime/routes.js 2"]
+        kr6["each group is registered into a router mounted where its routes were, so matching order and guards are unchanged"]
+        kr7["helpers they call (sessions, permission checks, asset store, change log) are still in server.js, handed in by name"]
       Production evacuated
         pd1["runs, node status, stock on a run, stage numbers, scrap, completed output"]
         n40x15685["order status rule lives in orders/service.js ORDER_ROW_SELECT; what the runs say comes from production as orderItemRunStatusSql; a hand-made move is checked against stored_status"]
@@ -604,3 +603,4 @@ mindmap
 | 41 | Found while checking the merge on Node 18 from a clean copy: `test/payroll-api.test.js` and `test/portal-api.test.js` opened `backend/paper.db`, the developer's working database, directly. With that file present they wrote into it inside a rolled-back transaction; on a clean checkout sqlite created an empty file and both failed on a missing table, so `npm test` in the deploy workflow could not pass. Both are rewritten as ordinary tests on a temporary database. | Tests |
 | 42 | Fix found by the pre-merge check on a copy of a real database. The one-time `variation_stock` rebuild only looked for the `CHECK (variation_leaf_node_id > 0)` shape. Real databases made earlier have no such CHECK but have the leaf as a foreign key into `item_variation_nodes`, which refuses leaf 0 just the same, so they were skipped and whole-item stock would have failed on them. `initDb` now rebuilds for either shape, in one transaction and without a table rename (a rename makes SQLite check every trigger, which fails on an empty database still being built); `whole-item-stock.test.js` covers both shapes and `empty-database-boot.test.js` the empty one. Verified on the copy: rebuilt once, rows and totals carried, second boot a no-op, 14 read endpoints answer. | Data, Tests |
 | 43 | The 104 routes that belonged to no business module leave `server.js` for nine files: `modules/accounts/routes.js` (29: auth, users, me, admins, permissions, permission presets, record options), `assets` (16), `control_plane` (17), `units/master-routes.js` (11), `payroll` (9), `settings` (9: favourites, company profile, phone signals), `search` (6), `track` (5), `realtime` (2). Matching order is kept exactly: where each group's routes were, `server.js` mounts an empty router, and the group is registered into it further down where everything it uses exists; groups that sat before the login gate or after the mid-file error handler have their own function (`…RoutesBeforeLogin`, `…RoutesAfterErrorHandler`). Checked three ways: `remaining-routes-snapshot.test.js` (112 routes called anonymously and as owner, status and shape compared with before the move), a route-by-route comparison of the old and new stacks (same middleware ahead of all 371 routes; no two routes that swapped places can match one request), and a parser-based check that no handler uses a name it was not given (it found three the text scan missed). Handlers that read files take `serverDir`; the phone-signal routes take `getIo`. The route listers in `kernel/territory.js` and `route-surface.test.js` now walk mounted routers. Helpers these routes call are still in `server.js`. | API surface (unchanged paths), Orchestration, Tests |
+| 44 | Why the staging deploy failed: seven tests in `assembly-job-dedupe.test.js` and `order-fulfilment.test.js` required the server by an absolute path on the developer's machine (`/Users/…/backend/server.js`). They passed there and failed on GitHub's runner, where the path does not exist, so `npm test` could not pass and nothing deployed. The same path also made a clean copy of the repository test the original instead of itself. Both now require `../server.js`, and `no-machine-paths.test.js` fails if any backend source or test names a home-directory path. The deploy workflow's failure summary now joins multi-line errors and leaves out lines every healthy boot logs. | Tests |
