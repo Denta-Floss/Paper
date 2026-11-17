@@ -58,7 +58,29 @@ jobs:
       # The tests are the first gate. A red suite must never reach a box.
       - name: Run Backend Tests
         working-directory: ./backend
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.log
+
+      # A red suite used to say only "exit code 1": finding out WHICH test
+      # meant opening the log, which needs a login. These two steps put the
+      # failing tests and their first error lines on the run itself.
+      - name: Name the failing tests
+        if: failure()
+        working-directory: ./backend
+        run: |
+          grep -E '^# (tests|pass|fail) ' test-output.log | tr '\n' ' ' | sed 's/^/::error::/' ; echo
+          grep -E '^[[:space:]]*not ok ' test-output.log | head -8 \
+            | while IFS= read -r line; do echo "::error::$line"; done
+
+      - name: Say why they failed
+        if: failure()
+        working-directory: ./backend
+        run: |
+          grep -E "^[[:space:]]+(error|expected|actual): |^# .*(Error|SQLITE)[^ ]*:" test-output.log \
+            | grep -v 'Database is closed' \
+            | sed 's/^[[:space:]]*//' | sort | uniq -c | sort -rn | head -9 \
+            | while IFS= read -r line; do echo "::error::$line"; done
 
       - name: Export Feature Registry
         run: dart bin/generate_registry.dart
