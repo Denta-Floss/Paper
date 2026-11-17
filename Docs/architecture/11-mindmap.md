@@ -31,9 +31,10 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c42["⟳ Change 42: the stock table rebuild recognises the older foreign-key-only shape"]
-        c42a["found by starting the new server on a copy of a real database before merging"]
-        c42b["a table with no CHECK but the leaf as a foreign key was skipped, leaving leaf 0 refused"]
+      c43["⟳ Change 43: the routes outside the fifteen modules leave server.js"]
+        c43a["104 routes into nine files: accounts, assets, control plane, units master, payroll, settings, search, track, realtime"]
+        c43b["each group fills a router mounted where its routes were: same order, same guards"]
+        c43c["server.js is 16,950 lines and has 3 routes left of its own"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels"]
       k2["territory.js: meters routes and tables per module"]
@@ -452,6 +453,14 @@ mindmap
           chl4["fixed: GET challan-templates/test-print is reachable"]
           chl6["fixed: challan photo upload, intent and complete"]
           chl5["fixed: invoice edit, in-use settle"]
+      Outside the fifteen modules
+        kr1["⟳ accounts/routes.js: auth, users, me, admins, permissions, permission presets, record options; 29 routes"]
+        kr2["⟳ assets/routes.js: upload intents and completions, signed views, photo gallery, photo requests; 16 routes"]
+        kr3["⟳ control_plane/routes.js: sandbox config and dashboard, activation, build and update feeds, session replay; 17 routes"]
+        kr4["⟳ units/master-routes.js: units and unit groups; 11 routes"]
+        kr5["⟳ payroll/routes.js 9, settings/routes.js 9, search/routes.js 6, track/routes.js 5, realtime/routes.js 2"]
+        kr6["⟳ each group is registered into a router mounted where its routes were, so matching order and guards are unchanged"]
+        kr7["⟳ helpers they call (sessions, permission checks, asset store, change log) are still in server.js, handed in by name"]
       Production evacuated
         pd1["runs, node status, stock on a run, stage numbers, scrap, completed output"]
         n40x15685["order status rule lives in orders/service.js ORDER_ROW_SELECT; what the runs say comes from production as orderItemRunStatusSql; a hand-made move is checked against stored_status"]
@@ -594,3 +603,4 @@ mindmap
 | 40 | Fix: the order list showed only the stored status. Its query selected `o.*` and the run-derived value both as `status`, and the wrapping `SELECT * FROM (…)` renamed the second one, so the list, its status filter and its search never saw the runs, while the single read did (runs always winning). Now one two-level select, `ORDER_ROW_SELECT` in `modules/orders/service.js`, computes `run_status` once (production's `orderItemRunStatusSql`) and `effective_status` by one rule: completed if the line is marked completed or every run is completed; otherwise delayed if marked delayed; otherwise whichever is further along (draft, notStarted, inProgress). `getOrders`, `countOrders`, `getOrderRowById`, the filter and the search all use it; rows carry `status` (shown), `stored_status` and `run_status` (DTO `runStatus`). `updateOrderLifecycle` checks a hand-made move against the stored status. No new announcing was needed: the `trg_derived_pipeline_runs_order_items_*` and `trg_derived_assignments_order_items_*` triggers (migration 041) already log the order line when a run or its link changes; a test now covers that. | Business rules, Services, Tests |
 | 41 | Found while checking the merge on Node 18 from a clean copy: `test/payroll-api.test.js` and `test/portal-api.test.js` opened `backend/paper.db`, the developer's working database, directly. With that file present they wrote into it inside a rolled-back transaction; on a clean checkout sqlite created an empty file and both failed on a missing table, so `npm test` in the deploy workflow could not pass. Both are rewritten as ordinary tests on a temporary database. | Tests |
 | 42 | Fix found by the pre-merge check on a copy of a real database. The one-time `variation_stock` rebuild only looked for the `CHECK (variation_leaf_node_id > 0)` shape. Real databases made earlier have no such CHECK but have the leaf as a foreign key into `item_variation_nodes`, which refuses leaf 0 just the same, so they were skipped and whole-item stock would have failed on them. `initDb` now rebuilds for either shape, in one transaction and without a table rename (a rename makes SQLite check every trigger, which fails on an empty database still being built); `whole-item-stock.test.js` covers both shapes and `empty-database-boot.test.js` the empty one. Verified on the copy: rebuilt once, rows and totals carried, second boot a no-op, 14 read endpoints answer. | Data, Tests |
+| 43 | The 104 routes that belonged to no business module leave `server.js` for nine files: `modules/accounts/routes.js` (29: auth, users, me, admins, permissions, permission presets, record options), `assets` (16), `control_plane` (17), `units/master-routes.js` (11), `payroll` (9), `settings` (9: favourites, company profile, phone signals), `search` (6), `track` (5), `realtime` (2). Matching order is kept exactly: where each group's routes were, `server.js` mounts an empty router, and the group is registered into it further down where everything it uses exists; groups that sat before the login gate or after the mid-file error handler have their own function (`…RoutesBeforeLogin`, `…RoutesAfterErrorHandler`). Checked three ways: `remaining-routes-snapshot.test.js` (112 routes called anonymously and as owner, status and shape compared with before the move), a route-by-route comparison of the old and new stacks (same middleware ahead of all 371 routes; no two routes that swapped places can match one request), and a parser-based check that no handler uses a name it was not given (it found three the text scan missed). Handlers that read files take `serverDir`; the phone-signal routes take `getIo`. The route listers in `kernel/territory.js` and `route-surface.test.js` now walk mounted routers. Helpers these routes call are still in `server.js`. | API surface (unchanged paths), Orchestration, Tests |

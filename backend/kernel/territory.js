@@ -54,19 +54,27 @@ function collectExpressRoutes(app) {
   if (!Array.isArray(stack)) {
     return routes;
   }
-  for (const layer of stack) {
-    if (layer.route && layer.route.path) {
-      const methods = Object.keys(layer.route.methods || {})
-        .filter((m) => m !== '_all')
-        .map((m) => m.toUpperCase());
-      const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
-      for (const p of paths) {
-        for (const method of methods) {
-          routes.push({ method, path: String(p) });
+  // Routes can sit in a router mounted in the stack as well as directly on
+  // the app: server.js mounts one where each route group used to be, to hold its
+  // place in the matching order. Those are walked too.
+  const walk = (layers) => {
+    for (const layer of layers) {
+      if (layer.route && layer.route.path) {
+        const methods = Object.keys(layer.route.methods || {})
+          .filter((m) => m !== '_all')
+          .map((m) => m.toUpperCase());
+        const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
+        for (const p of paths) {
+          for (const method of methods) {
+            routes.push({ method, path: String(p) });
+          }
         }
+      } else if (layer.handle && Array.isArray(layer.handle.stack)) {
+        walk(layer.handle.stack);
       }
     }
-  }
+  };
+  walk(stack);
   return routes;
 }
 

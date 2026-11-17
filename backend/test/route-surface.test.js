@@ -27,16 +27,24 @@ const FIXTURE = path.join(__dirname, 'fixtures', 'route-surface.json');
 function listRoutes(app) {
   const stack = (app.router && app.router.stack) || app._router.stack;
   const out = [];
-  for (const layer of stack) {
-    if (!layer.route) continue;
-    const route = layer.route;
-    const paths = Array.isArray(route.path) ? route.path : [route.path];
-    for (const p of paths) {
-      for (const method of Object.keys(route.methods || {})) {
-        if (route.methods[method]) out.push(`${method.toUpperCase()} ${String(p)}`);
+  // Into mounted routers as well: server.js mounts one where each route group
+  // used to be.
+  const walk = (layers) => {
+    for (const layer of layers) {
+      if (!layer.route) {
+        if (layer.handle && Array.isArray(layer.handle.stack)) walk(layer.handle.stack);
+        continue;
+      }
+      const route = layer.route;
+      const paths = Array.isArray(route.path) ? route.path : [route.path];
+      for (const p of paths) {
+        for (const method of Object.keys(route.methods || {})) {
+          if (route.methods[method]) out.push(`${method.toUpperCase()} ${String(p)}`);
+        }
       }
     }
-  }
+  };
+  walk(stack);
   return out.sort();
 }
 
