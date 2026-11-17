@@ -18,6 +18,9 @@ on:
       - 'deploy/**'
       - 'packages/core_erp/lib/core/services/feature_flags.dart'
       - 'bin/generate_registry.dart'
+      # A change to this workflow has to be able to run it; without this line a
+      # fix to the deploy itself waited for the next backend change to be tried.
+      - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
     inputs:
       promote:
