@@ -51,6 +51,58 @@ function createOrdersPorts({ get, all, run, saveOrder }) {
       return Number(row?.count || 0);
     },
 
+    /// How many order lines and material requirements name an item.
+    async itemUsage(itemId) {
+      const row = await get(
+        `SELECT (SELECT COUNT(*) FROM order_items WHERE item_id = ?) +
+                (SELECT COUNT(*) FROM order_material_requirements WHERE item_id = ?) AS count`,
+        [itemId, itemId],
+      );
+      return { ok: true, count: Number(row?.count || 0) };
+    },
+
+    /// These order lines as stored, newest first.
+    rowsByIds(ids) {
+      const wanted = (ids || []).map((id) => Number(id)).filter((id) => id > 0);
+      if (wanted.length === 0) return Promise.resolve([]);
+      return all(
+        `SELECT * FROM order_items
+          WHERE id IN (${wanted.map(() => '?').join(', ')})
+          ORDER BY datetime(created_at) DESC, id DESC`,
+        wanted,
+      );
+    },
+
+    /// Every line of an order as stored, in the order they were added.
+    rowsForOrderNo: (orderNo) =>
+      all('SELECT * FROM order_items WHERE order_no = ? ORDER BY id ASC', [orderNo]),
+
+    /// How many order lines name an item and what quantity they add up to.
+    async itemDemand(itemId) {
+      const row = await get(
+        'SELECT COUNT(*) AS lines, COALESCE(SUM(quantity), 0) AS quantity FROM order_items WHERE item_id = ?',
+        [itemId],
+      );
+      return { ok: true, lines: Number(row?.lines || 0), quantity: Number(row?.quantity || 0) };
+    },
+
+    /// How many order lines and material requirements name each unit, as
+    /// `{ ok, counts: { unitId: n } }`; with `unitId`, only that unit.
+    async unitUsageCounts(unitId = null) {
+      const one = unitId != null && unitId !== '';
+      const counts = {};
+      for (const table of ['order_items', 'order_material_requirements']) {
+        const rows = await all(
+          `SELECT unit_id, COUNT(*) AS c FROM ${table}
+            WHERE unit_id IS NOT NULL ${one ? 'AND unit_id = ?' : ''}
+            GROUP BY unit_id`,
+          one ? [unitId] : [],
+        );
+        for (const row of rows) counts[row.unit_id] = (counts[row.unit_id] || 0) + Number(row.c || 0);
+      }
+      return { ok: true, counts };
+    },
+
     /// The custom variation values (JSON text) typed on this item and variation's
     /// order lines, for the stock overview to merge. Empty ones are left out.
     customVariationValueRows(itemId, variationLeafNodeId) {

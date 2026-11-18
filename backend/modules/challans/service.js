@@ -47,19 +47,14 @@ function createChallanService({
   normalizeCustomVariationValues,
   rowToUploadedAssetDto,
   itemStock,
-  getVendorRowById,
-  getOrderRowById,
-  updateOrderLifecycle,
+  desk,
   rowToCompanyProfileDto,
   getActiveCompanyProfile,
   normalizeChallanType,
   buildChallanTemplateSnapshot,
   findActiveChallanTemplateForChallan,
   getItemSelectionSnapshot,
-  getProductionRunRowById,
   inventoryPorts,
-  runInputsForChallanLines,
-  productionRunSource,
   recordLedgerEvent,
 }) {
   const DELIVERY_CHALLAN_STATUSES = new Set(['draft', 'issued', 'cancelled']);
@@ -213,17 +208,8 @@ function createChallanService({
     if (normalizedOrderIds.length === 0) {
       return [];
     }
-    const placeholders = normalizedOrderIds.map(() => '?').join(', ');
-    return all(
-      `
-      SELECT o.*, c.gst_number AS client_gstin
-      FROM order_items o
-      LEFT JOIN clients c ON c.id = o.client_id
-      WHERE o.id IN (${placeholders})
-      ORDER BY datetime(o.created_at) DESC, o.id DESC
-      `,
-      normalizedOrderIds,
-    );
+    const { rows } = await desk.ask('orders.rows.byIds', { ids: normalizedOrderIds });
+    return withClientGstin(rows);
   }
 
   function rowToDeliveryChallanItemDto(row) {
@@ -686,15 +672,34 @@ function createChallanService({
     return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row, { includeItems: false })));
   }
 
+  /// Order lines with their client's GST number on each, as the challan prints
+  /// it. The lines are the orders module's and the client is the clients
+  /// module's; both are asked for, where this used to be one join.
+  async function withClientGstin(rows) {
+    const gstin = new Map();
+    for (const row of rows) {
+      if (row.client_id == null || gstin.has(row.client_id)) continue;
+      const { row: client } = await desk.ask('clients.rows.get', { id: row.client_id });
+      gstin.set(row.client_id, client ? client.gst_number : null);
+    }
+    return rows.map((row) => ({
+      ...row,
+      client_gstin: row.client_id == null ? null : gstin.get(row.client_id) ?? null,
+    }));
+  }
+
+  /// The unit an item is counted in, as `{ symbol }`, or nothing when the item
+  /// or its unit is not there. Asked of items and units.
+  async function unitOfItem(itemId) {
+    const { row: item } = await desk.ask('items.rows.get', { id: itemId });
+    if (!item || !item.unit_id) return null;
+    const { row: unit } = await desk.ask('units.rows.get', { id: item.unit_id });
+    return unit ? { symbol: unit.symbol } : null;
+  }
+
   async function getOrderForDeliveryChallan(orderId) {
-    const order = await get(
-      `
-      SELECT o.*, c.gst_number AS client_gstin
-      FROM order_items o
-      LEFT JOIN clients c ON c.id = o.client_id
-      WHERE o.id = ?
-      `,
-      [Number(orderId)],
+    const [order] = await withClientGstin(
+      (await desk.ask('orders.rows.byIds', { ids: [Number(orderId)] })).rows,
     );
     if (!order) {
       const error = new Error('Order not found.');
@@ -756,7 +761,7 @@ function createChallanService({
   }
 
   async function getVendorForChallan(vendorId) {
-    const vendor = await getVendorRowById(Number(vendorId));
+    const vendor = (await desk.ask('vendors.rows.get', { id: Number(vendorId) })).row;
     if (!vendor || vendor.is_archived) {
       const error = new Error('Select an active vendor before saving reception challan.');
       error.statusCode = 400;
@@ -769,7 +774,7 @@ function createChallanService({
     if (!runId) {
       return null;
     }
-    const run = await getProductionRunRowById(runId);
+    const { row: run } = await desk.ask('production.output.row', { productionRunId: runId });
     if (!run || run.status !== 'completed') {
       const error = new Error('Selected production run is not completed or no longer exists.');
       error.statusCode = 400;
@@ -1434,12 +1439,7 @@ function createChallanService({
         let isWeightUnit = false;
         let unitSymbol = 'pcs';
         if (itemId > 0) {
-          const itemRow = await get(`
-            SELECT u.symbol
-            FROM items i
-            JOIN units u ON i.unit_id = u.id
-            WHERE i.id = ?
-          `, [itemId]);
+          const itemRow = await unitOfItem(itemId);
           if (itemRow) {
             unitSymbol = String(itemRow.symbol || '').trim().toLowerCase();
             isWeightUnit = ['kg', 'g', 'mg', 'ton', 'tons', 't', 'lbs', 'oz', 'weight'].includes(unitSymbol);
@@ -1653,7 +1653,7 @@ function createChallanService({
             if (lineCode) dispatchParents.push(lineCode);
           }
           if (!line.production_run_id) continue;
-          const producedBy = await productionRunSource(line.production_run_id);
+          const { source: producedBy } = await desk.ask('production.output.source', { productionRunId: line.production_run_id });
           const runCode = producedBy && barcodes.encode('MFG', producedBy.run_code);
           if (runCode) dispatchParents.push(runCode);
 
@@ -1770,7 +1770,7 @@ function createChallanService({
   /// with no quantity yet), and production says how much of that there is.
   async function receptionUsage(receptionId) {
     const entries = await inventoryPorts.receipts.usageForChallan(receptionId);
-    const runRows = await runInputsForChallanLines(entries.map((entry) => entry.lineId));
+    const { rows: runRows } = await desk.ask('production.challanLines.runInputs', { lineIds: entries.map((entry) => entry.lineId) });
     return entries.map((entry) => {
       const byWeight = WEIGHT_UOMS.has(String(entry.uom || '').toLowerCase());
       const available = Math.max(0, entry.onHand - entry.reserved);
@@ -2174,12 +2174,12 @@ function createChallanService({
   // notStarted line up through inProgress so it can reach the terminal completed.
   async function completeOrderItemBestEffort(orderItemId, actor) {
     try {
-      const order = await getOrderRowById(orderItemId);
+      const { row: order } = await desk.ask('orders.rows.get', { id: orderItemId });
       if (!order || order.status === 'completed') return false;
       if (order.status === 'draft' || order.status === 'notStarted') {
-        await updateOrderLifecycle({ id: orderItemId, status: 'inProgress', actor });
+        await desk.ask('orders.lifecycle.move', { id: orderItemId, status: 'inProgress', actor });
       }
-      await updateOrderLifecycle({ id: orderItemId, status: 'completed', actor });
+      await desk.ask('orders.lifecycle.move', { id: orderItemId, status: 'completed', actor });
       return true;
     } catch (error) {
       console.error(`[reconcile] order ${orderItemId} completion skipped: ${error.message}`);

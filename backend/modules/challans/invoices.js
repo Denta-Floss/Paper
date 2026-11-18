@@ -18,7 +18,7 @@ function createInvoiceService({
   get,
   all,
   run,
-  getClientRowById,
+  desk,
   rowToCompanyProfileDto,
   getActiveCompanyProfile,
   rowToDeliveryChallanDto,
@@ -313,7 +313,7 @@ function createInvoiceService({
 
     let clientAddress = '';
     if (invoice.clientId) {
-      const client = await getClientRowById(invoice.clientId);
+      const client = (await desk.ask('clients.rows.get', { id: invoice.clientId })).row;
       if (client) {
         clientAddress = client.address || '';
       }

@@ -19,7 +19,7 @@ const {
 // is not one, a machine number somebody already holds.
 // ---------------------------------------------------------------------------
 
-function createMachineService({ get, all, run, parseJson }) {
+function createMachineService({ get, all, run, parseJson, desk }) {
   function rowToMachineDto(r) {
     return {
       id: String(r.id),
@@ -55,6 +55,16 @@ function createMachineService({ get, all, run, parseJson }) {
       updatedAt: new Date(r.updated_at).toISOString(),
     };
   }
+
+  /// The row as stored, or undefined.
+  const getMachineRow = (id) => get('SELECT * FROM machines WHERE id = ?', [id]);
+
+  /// The machine a pipeline node names: nodes carry a machine number or a name.
+  const getMachineRowByAssetOrName = (key) =>
+    get('SELECT * FROM machines WHERE asset_id = ? OR name = ?', [key, key]);
+
+  /// Deletes the row and nothing else: an approved delete request.
+  const removeMachineRow = (id) => run('DELETE FROM machines WHERE id = ?', [id]);
 
   async function listMachines() {
     const rows = await all('SELECT * FROM machines ORDER BY created_at DESC');
@@ -144,7 +154,7 @@ function createMachineService({ get, all, run, parseJson }) {
     // fallback stays for a machine created with no type.
     let finalAssetId = String(assetId || '').trim();
     if (!finalAssetId && !isUpdate && normalizedGroupId) {
-      const group = await get('SELECT name FROM groups WHERE id = ?', [Number(normalizedGroupId)]);
+      const group = await desk.ask('items.groups.name', { id: Number(normalizedGroupId) });
       finalAssetId = buildMachineNo({
         groupName: group?.name || '',
         nextNumber: await nextMachineNo({ groupId: normalizedGroupId }, { get }),
@@ -267,7 +277,7 @@ function createMachineService({ get, all, run, parseJson }) {
     return before;
   }
 
-  return { rowToMachineDto, listMachines, getMachine, saveMachine, deleteMachine };
+  return { rowToMachineDto, getMachineRow, getMachineRowByAssetOrName, removeMachineRow, listMachines, getMachine, saveMachine, deleteMachine };
 }
 
 module.exports = { createMachineService };

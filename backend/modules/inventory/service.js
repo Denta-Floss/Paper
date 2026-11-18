@@ -47,7 +47,6 @@ function createInventoryService({
   // Still defined in server.js; passed by name (all are function declarations).
   parseJson,
   resolveUnitPayload,
-  getUnitRowById,
   getGroupRowById,
   getItemSelectionSnapshot,
   saveGroup,
@@ -63,9 +62,8 @@ function createInventoryService({
   // For the stock overview, which reads across four modules' tables.
   resolveLeafSelectionFromDb,
   variationStockRows,
-  orders,
+  desk,
   challans,
-  production,
 }) {
   const {
     getItemVariationTree,
@@ -323,14 +321,7 @@ function createInventoryService({
         position: Number(line.position || 0),
       };
     }
-    const leafNode = await get(
-      `
-      SELECT id, item_id, kind, is_archived
-      FROM item_variation_nodes
-      WHERE id = ?
-      `,
-      [variationLeafNodeId],
-    );
+    const { node: leafNode } = await desk.ask('items.variations.node', { id: variationLeafNodeId });
     if (
       !leafNode ||
       Number(leafNode.item_id) !== itemId ||
@@ -390,7 +381,7 @@ function createInventoryService({
         : Number(payload.groupId);
     if (groupSpecified && groupId !== null) {
       // Same check, and the same sentence, as saveItem and PATCH /api/items/:id/group.
-      const groupRow = await get('SELECT * FROM groups WHERE id = ?', [groupId]);
+      const { row: groupRow } = await desk.ask('items.groups.row', { id: groupId });
       if (!groupRow || groupRow.is_archived) {
         const error = new Error('Selected group does not exist or is archived.');
         error.statusCode = 400;
@@ -870,12 +861,11 @@ function createInventoryService({
     if (!customVariationValues || Object.keys(customVariationValues).length === 0) return null;
     const codes = [];
     for (const [propName, valName] of Object.entries(customVariationValues)) {
-      const row = await get(`
-        SELECT v.code, p.position
-        FROM item_variation_nodes v
-        JOIN item_variation_nodes p ON v.parent_node_id = p.id
-        WHERE v.item_id = ? AND p.name = ? AND (v.name = ? OR v.display_name = ?)
-      `, [itemId, propName, valName, valName]);
+      const { row } = await desk.ask('items.variations.codeForValue', {
+        itemId,
+        propertyName: propName,
+        valueName: valName,
+      });
       if (row && row.code) {
         codes.push({ code: row.code, position: row.position });
       }
@@ -897,7 +887,9 @@ function createInventoryService({
       return existing;
     }
     const snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
-    const unit = snapshot.item.unit_id ? await getUnitRowById(snapshot.item.unit_id) : null;
+    const unit = snapshot.item.unit_id
+      ? (await desk.ask('units.rows.get', { id: snapshot.item.unit_id })).row
+      : null;
     const now = new Date().toISOString();
   
     // Generate barcode from variation codes if possible
@@ -989,18 +981,7 @@ function createInventoryService({
     if (!groupId) {
       return inUse;
     }
-    const rows = await all(
-      `
-      SELECT DISTINCT item_variation_nodes.name AS name
-      FROM item_variation_nodes
-      INNER JOIN items ON items.id = item_variation_nodes.item_id
-      WHERE items.group_id = ?
-        AND items.is_archived = 0
-        AND item_variation_nodes.kind = 'property'
-        AND item_variation_nodes.is_archived = 0
-      `,
-      [Number(groupId)],
-    );
+    const { rows } = await desk.ask('items.groups.propertyNamesInUse', { groupId: Number(groupId) });
     for (const row of rows) {
       const key = normalizePropertyKey(row.name);
       if (key) {
@@ -1526,14 +1507,11 @@ function createInventoryService({
     const linkedOrderCount = material.linked_item_id
       ? Number(
           (
-            await get(
-              'SELECT COUNT(*) AS count FROM order_items WHERE item_id = ?',
-              [material.linked_item_id],
-            )
-          )?.count || 0,
+            await desk.ask('orders.items.demand', { itemId: material.linked_item_id })
+          ).lines || 0,
         )
       : 0;
-    const linkedPipelineCount = await production.runs.inputCountForBarcode(material.barcode);
+    const { count: linkedPipelineCount } = await desk.ask('production.runs.inputCountForBarcode', { barcode: material.barcode });
     const pendingAlertCount = openAlerts.length;
     const materialClass = normalizeMaterialClassFromType(material.type);
     // A material whose reception was cancelled stays cancelled: it is kept for
@@ -1641,15 +1619,7 @@ function createInventoryService({
     ];
     const challanById = new Map();
     if (challanIds.length > 0) {
-      const placeholders = challanIds.map(() => '?').join(', ');
-      const challanRows = await all(
-        `
-        SELECT id, challan_no, type
-        FROM delivery_challans
-        WHERE id IN (${placeholders})
-        `,
-        challanIds,
-      );
+      const { rows: challanRows } = await desk.ask('challans.rows.brief', { ids: challanIds });
       for (const row of challanRows) {
         challanById.set(Number(row.id), row);
       }
@@ -1675,42 +1645,40 @@ function createInventoryService({
     const linkedOrderDemand = refreshed.linked_item_id
       ? Number(
           (
-            await get('SELECT COALESCE(SUM(quantity), 0) AS qty FROM order_items WHERE item_id = ?', [
-              refreshed.linked_item_id,
-            ])
-          )?.qty || 0,
+            await desk.ask('orders.items.demand', { itemId: refreshed.linked_item_id })
+          ).quantity || 0,
         )
       : 0;
-    const linkedPipelineDemand = await production.runs.inputCountForBarcode(material.barcode);
+    const { count: linkedPipelineDemand } = await desk.ask('production.runs.inputCountForBarcode', { barcode: material.barcode });
 
-    const activePipelineInput = await production.runs.latestInputForBarcode(material.barcode);
+    const { input: activePipelineInput } = await desk.ask('production.runs.latestInputForBarcode', { barcode: material.barcode });
   
     let activePipelineRun = null;
     if (activePipelineInput) {
       const runId = activePipelineInput.run_id;
-      const runRow = await production.runs.rowById(runId);
+      const { row: runRow } = await desk.ask('production.runs.row', { runId });
       if (runRow) {
-         const orderRows = await production.runs.orderItemIdsForRun(runId);
+         const { rows: orderRows } = await desk.ask('production.runs.orderItemIds', { runId });
          const orderIds = orderRows.map(r => r.order_item_id);
        
-         const template = await get('SELECT nodes_json, stage_labels_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+         const { row: template } = await desk.ask('pipelines.templates.row', { id: runRow.template_id });
          const nodes = template ? parseJson(template.nodes_json, []) : [];
          const stageLabels = template ? parseJson(template.stage_labels_json, []) : [];
          const node = nodes.find(n => n.id === activePipelineInput.node_id);
        
          let machine = null;
          if (node?.machineId) {
-            const m = await get('SELECT name, primary_photo_url FROM machines WHERE asset_id = ? OR name = ?', [node.machineId, node.machineId]);
+            const { row: m } = await desk.ask('machines.rows.byAssetOrName', { key: node.machineId });
             if (m) machine = { name: m.name, photoUrls: m.primary_photo_url ? [m.primary_photo_url] : [] };
          }
        
          let die = null;
          if (node?.dieId) {
-            const d = await get('SELECT tool_code, photo_urls FROM dies WHERE tool_code = ?', [node.dieId]);
+            const { row: d } = await desk.ask('dies.rows.byToolCode', { toolCode: node.dieId });
             if (d) die = { toolCode: d.tool_code, photoUrls: parseJson(d.photo_urls, []) };
          }
        
-         const stages = await production.runs.stagesForRun(runId);
+         const { stages } = await desk.ask('production.runs.stages', { runId });
        
          activePipelineRun = {
            id: runRow.id,
@@ -2519,10 +2487,7 @@ function createInventoryService({
     );
     if (existingRow) return existingRow.barcode;
 
-    const itemRow = await get(
-      'SELECT id, name, display_name, unit_id FROM items WHERE id = ?',
-      [itemId],
-    );
+    const { row: itemRow } = await desk.ask('items.rows.get', { id: itemId });
     const slug = String(challan.challan_no || challan.id || 'REC')
       .toUpperCase()
       .replace(/[^A-Z0-9]+/g, '-')
@@ -3062,7 +3027,10 @@ function createInventoryService({
           `,
           [row.item_id, row.variation_leaf_node_id],
         )),
-        ...(await orders.customVariationValueRows(row.item_id, row.variation_leaf_node_id)),
+        ...(await desk.ask('orders.lines.customVariationValues', {
+          itemId: row.item_id,
+          variationLeafNodeId: row.variation_leaf_node_id,
+        })).rows,
         ...(await challans.customVariationValueRows(row.item_id, row.variation_leaf_node_id)),
       ];
       stock.push({

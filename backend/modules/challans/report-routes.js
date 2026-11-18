@@ -16,89 +16,33 @@
 // order-path route is gated as orders, by its first path segment. Handlers are
 // the ones that lived in server.js, moved whole.
 // ---------------------------------------------------------------------------
+//
+// Every route here asks the module's operations (./operations.js) at the kernel
+// desk; the work is in ./report-work.js. A handler names the operation,
+// picks its input out of the request, and sends the result back as the answer
+// the app has always had.
+
+const { deskRoutes } = require('../../kernel/desk-kit');
 
 module.exports = function registerChallanReportRoutes(ctx) {
-  const {
-    reportService,
-    app,
-    requirePermission,
-  } = ctx;
+  const { app, desk, requirePermission } = ctx;
+  const send = deskRoutes(desk);
 
-  app.get('/api/reconciliation/report', requirePermission('config.read'), async (req, res) => {
-    try {
-      res.json({ success: true, data: await reportService.buildReconciliationReport(), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        data: null,
-        message: error.message,
-        error: error.message,
-      });
-    }
-  });
+  app.get('/api/reconciliation/report', requirePermission('config.read'),
+    send('challans.reports.reconciliation', (req) => ({ query: req.query, data: req.body })));
 
-  app.get('/api/reconciliation/conversion-overrides', requirePermission('config.read'), async (req, res) => {
-    try {
-      res.json({ success: true, data: await reportService.listConversionOverrides(), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        data: [],
-        message: error.message,
-        error: error.message,
-      });
-    }
-  });
+  app.get('/api/reconciliation/conversion-overrides', requirePermission('config.read'),
+    send('challans.reports.conversionOverrides', (req) => ({ query: req.query, data: req.body })));
 
-  app.patch('/api/reconciliation/conversion-overrides', requirePermission('config.write'), async (req, res) => {
-    try {
-      res.json({ success: true, data: await reportService.saveConversionOverride(req.body || {}), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        data: null,
-        message: error.message,
-        error: error.message,
-      });
-    }
-  });
+  app.patch('/api/reconciliation/conversion-overrides', requirePermission('config.write'),
+    send('challans.reports.setConversionOverrides', (req) => ({ query: req.query, data: req.body })));
 
-  app.get('/api/reconciliation/waste-audit', requirePermission('config.read'), async (req, res) => {
-    try {
-      res.json({ success: true, data: await reportService.listWasteAuditRows(), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        data: [],
-        message: error.message,
-        error: error.message,
-      });
-    }
-  });
+  app.get('/api/reconciliation/waste-audit', requirePermission('config.read'),
+    send('challans.reports.wasteAudit', (req) => ({ query: req.query, data: req.body })));
 
-  app.get('/api/orders/:orderNo/reconciliation', requirePermission('config.read'), async (req, res) => {
-    try {
-      const data = await reportService.buildOrderReconciliation({ orderNo: req.params.orderNo });
-      res.json({ success: true, data, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        data: null,
-        error: error.message,
-      });
-    }
-  });
+  app.get('/api/orders/:orderNo/reconciliation', requirePermission('config.read'),
+    send('challans.reports.orderReconciliation', (req) => ({ orderNo: req.params.orderNo, query: req.query, data: req.body })));
 
-  app.post('/api/reports/client-statement', requirePermission('config.read'), async (req, res) => {
-    try {
-      res.json({ success: true, data: await reportService.buildClientStatementReport(req.body || {}), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        data: null,
-        message: error.message,
-        error: error.message,
-      });
-    }
-  });
+  app.post('/api/reports/client-statement', requirePermission('config.read'),
+    send('challans.reports.clientStatement', (req) => ({ query: req.query, data: req.body })));
 };

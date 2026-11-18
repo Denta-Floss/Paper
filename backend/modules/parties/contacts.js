@@ -195,12 +195,15 @@ async function attachClientContacts({ all }, rows) {
   return rows;
 }
 
-function registerPartyContactRoutes(ctx) {
-  const { app, get, all, run, requirePermission, trackCreate, trackUpdate, emit } = ctx;
+/// A company's people, as functions that know nothing of HTTP. Each answers
+/// what the route used to send, or throws a badRequest (an Error carrying
+/// statusCode), which the operation turns into a refusal. Published at the
+/// kernel desk as clients.contacts.* (modules/clients/operations.js).
+function createClientContactService({ get, all, run }) {
   const db = { get, all, run };
 
-  const loadClient = async (req) => {
-    const clientId = Number(req.params.clientId);
+  const loadClient = async (rawClientId) => {
+    const clientId = Number(rawClientId);
     const client = Number.isInteger(clientId) && clientId > 0
       ? await get('SELECT id FROM clients WHERE id = ?', [clientId])
       : null;
@@ -217,80 +220,66 @@ function registerPartyContactRoutes(ctx) {
     return row;
   };
 
-  const fail = (res, error) =>
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  async function list(rawClientId) {
+    const clientId = await loadClient(rawClientId);
+    const rows = await all(
+      `SELECT * FROM party_contacts
+       WHERE party_type = 'client' AND party_id = ?
+       ORDER BY is_archived ASC, is_primary DESC, name COLLATE NOCASE ASC`,
+      [clientId],
+    );
+    return { ok: true, contacts: rows.map(rowToContactDto) };
+  }
 
-  app.get('/api/clients/:clientId/contacts', requirePermission('config.read'), async (req, res) => {
+  async function create(rawClientId, body = {}) {
+    const clientId = await loadClient(rawClientId);
+    const name = String(body.name || '').trim();
+    if (!name) throw badRequest('A person needs a name.');
+
+    const others = await get(
+      `SELECT COUNT(*) AS count FROM party_contacts
+       WHERE party_type = 'client' AND party_id = ? AND is_archived = 0`,
+      [clientId],
+    );
+    // The first person at a company is the one to ring first until someone
+    // says otherwise.
+    const primary = body.isPrimary === true || Number(others?.count || 0) === 0;
+
+    const now = new Date().toISOString();
+    await run('BEGIN TRANSACTION');
+    let id;
     try {
-      const clientId = await loadClient(req);
-      const rows = await all(
-        `SELECT * FROM party_contacts
-         WHERE party_type = 'client' AND party_id = ?
-         ORDER BY is_archived ASC, is_primary DESC, name COLLATE NOCASE ASC`,
-        [clientId],
+      const result = await run(
+        `INSERT INTO party_contacts
+           (party_type, party_id, name, designation, phone, email, notes, is_primary, created_at, updated_at)
+         VALUES ('client', ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        [
+          clientId,
+          name,
+          String(body.designation || '').trim(),
+          String(body.phone || '').trim(),
+          String(body.email || '').trim(),
+          String(body.notes || '').trim(),
+          now,
+          now,
+        ],
       );
-      res.json({ success: true, contacts: rows.map(rowToContactDto) });
+      id = result.lastID;
+      if (primary) await makePrimary(db, 'client', clientId, id);
+      await mirrorPrimary(db, 'client', clientId);
+      await run('COMMIT');
     } catch (error) {
-      fail(res, error);
+      await run('ROLLBACK');
+      throw error;
     }
-  });
 
-  app.post('/api/clients/:clientId/contacts', requirePermission('config.write'), async (req, res) => {
-    try {
-      const clientId = await loadClient(req);
-      const body = req.body || {};
-      const name = String(body.name || '').trim();
-      if (!name) throw badRequest('A person needs a name.');
+    const row = await get('SELECT * FROM party_contacts WHERE id = ?', [id]);
+    return { ok: true, contact: rowToContactDto(row), clientId, id, row };
+  }
 
-      const others = await get(
-        `SELECT COUNT(*) AS count FROM party_contacts
-         WHERE party_type = 'client' AND party_id = ? AND is_archived = 0`,
-        [clientId],
-      );
-      // The first person at a company is the one to ring first until someone
-      // says otherwise.
-      const primary = body.isPrimary === true || Number(others?.count || 0) === 0;
-
-      const now = new Date().toISOString();
-      await run('BEGIN TRANSACTION');
-      let id;
-      try {
-        const result = await run(
-          `INSERT INTO party_contacts
-             (party_type, party_id, name, designation, phone, email, notes, is_primary, created_at, updated_at)
-           VALUES ('client', ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-          [
-            clientId,
-            name,
-            String(body.designation || '').trim(),
-            String(body.phone || '').trim(),
-            String(body.email || '').trim(),
-            String(body.notes || '').trim(),
-            now,
-            now,
-          ],
-        );
-        id = result.lastID;
-        if (primary) await makePrimary(db, 'client', clientId, id);
-        await mirrorPrimary(db, 'client', clientId);
-        await run('COMMIT');
-      } catch (error) {
-        await run('ROLLBACK');
-        throw error;
-      }
-
-      const row = await get('SELECT * FROM party_contacts WHERE id = ?', [id]);
-      if (trackCreate) trackCreate('party_contacts', id, row, req);
-      if (emit) emit(clientId);
-      res.status(201).json({ success: true, contact: rowToContactDto(row) });
-    } catch (error) {
-      fail(res, error);
-    }
-  });
-
-  const update = async (req, res, body) => {
-    const clientId = await loadClient(req);
-    const before = await loadContact(clientId, req.params.id);
+  async function update(rawClientId, contactId, body = {}) {
+    const clientId = await loadClient(rawClientId);
+    const before = await loadContact(clientId, contactId);
 
     const sets = [];
     const params = [];
@@ -348,9 +337,58 @@ function registerPartyContactRoutes(ctx) {
     }
 
     const after = await get('SELECT * FROM party_contacts WHERE id = ?', [before.id]);
-    if (trackUpdate) trackUpdate('party_contacts', before.id, before, after, req);
-    if (emit) emit(clientId);
-    res.json({ success: true, contact: rowToContactDto(after) });
+    return { ok: true, contact: rowToContactDto(after), clientId, id: before.id, before, after };
+  }
+
+  return { list, create, update };
+}
+
+/// The routes. Each asks the clients module's operations at the kernel desk,
+/// writes the Track entry (which needs the request) and tells other sessions.
+function registerPartyContactRoutes(ctx) {
+  const { app, desk, requirePermission, trackCreate, trackUpdate, emit } = ctx;
+  const ask = (req, name, input) => desk.call(name, input, { actor: desk.actorFromRequest(req) });
+
+  const fail = (res, error) =>
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  const refuse = (res, result) =>
+    res.status(result.status || 400).json({ success: false, error: result.error });
+
+  app.get('/api/clients/:clientId/contacts', requirePermission('config.read'), async (req, res) => {
+    try {
+      const result = await ask(req, 'clients.contacts.list', { clientId: req.params.clientId });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, contacts: result.contacts });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  app.post('/api/clients/:clientId/contacts', requirePermission('config.write'), async (req, res) => {
+    try {
+      const result = await ask(req, 'clients.contacts.create', {
+        clientId: req.params.clientId,
+        data: req.body || {},
+      });
+      if (!result.ok) return refuse(res, result);
+      if (trackCreate) trackCreate('party_contacts', result.id, result.row, req);
+      if (emit) emit(result.clientId);
+      res.status(201).json({ success: true, contact: result.contact });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  const update = async (req, res, data) => {
+    const result = await ask(req, 'clients.contacts.update', {
+      clientId: req.params.clientId,
+      id: req.params.id,
+      data,
+    });
+    if (!result.ok) return refuse(res, result);
+    if (trackUpdate) trackUpdate('party_contacts', result.id, result.before, result.after, req);
+    if (emit) emit(result.clientId);
+    res.json({ success: true, contact: result.contact });
   };
 
   app.patch('/api/clients/:clientId/contacts/:id/archive', requirePermission('config.write'), async (req, res) => {
@@ -372,6 +410,7 @@ function registerPartyContactRoutes(ctx) {
 }
 
 module.exports = registerPartyContactRoutes;
+module.exports.createClientContactService = createClientContactService;
 module.exports.rowToContactDto = rowToContactDto;
 module.exports.attachClientContacts = attachClientContacts;
 module.exports.syncPrimaryFromFlat = syncPrimaryFromFlat;

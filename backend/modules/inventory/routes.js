@@ -29,438 +29,86 @@
 //   GET    /api/inventory/stock                 stock by item and variation
 //
 // `inventory` and `materials` are first path segments, so the central CRUD gate
-// maps these to the inventory module. Handlers are the ones that lived in
-// server.js, moved whole.
+// maps these to the inventory module.
+//
+// Every route asks the module's operations (./operations.js) at the kernel
+// desk. The work is in ./work.js. A handler here names the operation, picks its
+// input out of the request, writes the Track entries the work noted, and sends
+// the result back as the answer the app has always had.
 //
 // NOT here: the universal barcode resolver and /api/scan, the search routes. See
 // modules/inventory/service.js.
 // ---------------------------------------------------------------------------
 
+const { deskRoutes } = require('../../kernel/desk-kit');
+
 module.exports = function registerInventoryRoutes(ctx) {
-  const {
-    app,
-    get,
-    run,
-    requirePermission,
-    cacheMasterData,
-    trackCreate,
-    trackUpdate,
-    trackDelete,
-    currentActor,
-    inventory,
-    // Still defined in server.js: the barcode lookup items and inventory share.
-    getMaterialRowByBarcode,
-    all,
-  } = ctx;
+  const { app, desk, requirePermission, cacheMasterData, trackCreate, trackUpdate, trackDelete } = ctx;
+  const send = deskRoutes(desk, { create: trackCreate, update: trackUpdate, delete: trackDelete });
 
-  app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req, res) => {
-    try {
-      const sets = await inventory.getInventorySets();
-      res.json({ success: true, sets, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        sets: [],
-        error: error.message,
-        code: error.code ?? null,
-      });
-    }
-  });
+  app.get('/api/inventory/sets', requirePermission('inventory.read'),
+    send('inventory.sets.list', (req) => ({ query: req.query })));
 
-  app.post('/api/inventory/sets', requirePermission('inventory.create'), async (req, res) => {
-    try {
-      const set = await inventory.saveInventorySet(req.body || {});
-      trackCreate('inventory_sets', set.id, set, req);
-      res.status(201).json({ success: true, set, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        set: null,
-        error: error.message,
-        // Machine-readable, so a caller can tell "this set moved on" from any
-        // other refusal without matching on prose.
-        code: error.code ?? null,
-      });
-    }
-  });
+  app.post('/api/inventory/sets', requirePermission('inventory.create'),
+    send('inventory.sets.create', (req) => ({ data: req.body })));
 
-  app.patch('/api/inventory/sets/:id', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      // saveInventorySet answers with the DTO, not the row it replaced, so the
-      // before state has to be read here or the diff would be empty and
-      // trackUpdate would log nothing at all.
-      const before = await get('SELECT * FROM inventory_sets WHERE id = ?', [id]);
-      const set = await inventory.saveInventorySet({
-        ...(req.body || {}),
-        id,
-      });
-      const after = await get('SELECT * FROM inventory_sets WHERE id = ?', [id]);
-      trackUpdate('inventory_sets', id, before, after, req);
-      res.json({ success: true, set, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        set: null,
-        error: error.message,
-        // Machine-readable, so a caller can tell "this set moved on" from any
-        // other refusal without matching on prose.
-        code: error.code ?? null,
-      });
-    }
-  });
+  app.patch('/api/inventory/sets/:id', requirePermission('inventory.update'),
+    send('inventory.sets.update', (req) => ({ id: req.params.id, data: req.body })));
 
-  app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      // Deleting a set is permanent — it purges links and drops the row with no
-      // trashAndDelete — so this log line is the only surviving record of it.
-      const before = await get('SELECT * FROM inventory_sets WHERE id = ?', [id]);
-      await inventory.deleteInventorySet(id);
-      trackDelete('inventory_sets', id, before, req);
-      res.json({ success: true, set: null, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        set: null,
-        error: error.message,
-        // Machine-readable, so a caller can tell "this set moved on" from any
-        // other refusal without matching on prose.
-        code: error.code ?? null,
-      });
-    }
-  });
+  app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'),
+    send('inventory.sets.delete', (req) => ({ id: req.params.id, data: req.body })));
 
-  app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req, res) => {
-    try {
-      res.json({ success: true, stock: await inventory.getStockOverview() });
-    } catch (error) {
-      res.status(500).json({ success: false, stock: [], error: error.message });
-    }
-  });
+  app.get('/api/inventory/stock', requirePermission('inventory.read'),
+    send('inventory.stock.list', (req) => ({ query: req.query })));
 
-  // The barcodes a quantity of one item and variation can come from, by name,
-  // with what each has free and a proposal (oldest first) for `quantity`.
-  app.get('/api/inventory/stock-sources', requirePermission('inventory.read'), async (req, res) => {
-    try {
-      const itemId = Number(req.query.itemId || 0);
-      if (!(itemId > 0)) {
-        res.status(400).json({ success: false, sources: [], error: 'itemId is required.' });
-        return;
-      }
-      const sources = await inventory.stockSourcesForItem(itemId, Number(req.query.variationLeafNodeId || 0));
-      const quantity = Number(req.query.quantity || 0);
-      res.json({
-        success: true,
-        sources,
-        totalFree: sources.reduce((sum, source) => sum + source.free, 0),
-        proposal: quantity > 0 ? inventory.proposeStockAllocation(sources, quantity) : [],
-        error: null,
-      });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, sources: [], error: error.message });
-    }
-  });
+  app.get('/api/inventory/stock-sources', requirePermission('inventory.read'),
+    send('inventory.stock.sources', (req) => ({ query: req.query })));
 
-  app.get('/api/materials', requirePermission('inventory.read'), cacheMasterData, async (req, res) => {
-    try {
-      const rows = await all(
-        // A material whose reception was cancelled is kept for the trail only.
-        "SELECT * FROM materials WHERE COALESCE(inventory_state, '') != 'cancelled' ORDER BY kind ASC, created_at DESC, barcode ASC",
-      );
-      res.json({ success: true, materials: rows.map(inventory.rowToMaterialDto) });
-    } catch (error) {
-      res.status(500).json({ success: false, materials: [], error: error.message });
-    }
-  });
+  app.get('/api/materials', requirePermission('inventory.read'), cacheMasterData,
+    send('inventory.materials.list', (req) => ({ query: req.query })));
 
-  app.get('/api/inventory/health', requirePermission('inventory.read'), async (_req, res) => {
-    try {
-      const health = await inventory.getInventoryHealthSummary();
-      res.json({ success: true, health, error: null });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        health: null,
-        error: error.message,
-      });
-    }
-  });
+  app.get('/api/inventory/health', requirePermission('inventory.read'),
+    send('inventory.health', (req) => ({ query: req.query })));
 
-  app.get('/api/materials/:barcode', requirePermission('inventory.read'), async (req, res) => {
-    try {
-      const row = await getMaterialRowByBarcode(req.params.barcode);
-      if (!row) {
-        res.status(404).json({
-          success: false,
-          material: null,
-          error: `No material found for barcode ${req.params.barcode}.`,
-        });
-        return;
-      }
-      const groupConfiguration = await inventory.getMaterialGroupGovernance(row.id);
-      res.json({
-        success: true,
-        material: inventory.rowToMaterialDto(row),
-        groupConfiguration,
-        error: null,
-      });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.get('/api/materials/:barcode', requirePermission('inventory.read'),
+    send('inventory.materials.get', (req) => ({ barcode: req.params.barcode, query: req.query })));
 
-  app.get('/api/materials/:barcode/detail', requirePermission('inventory.read'), async (req, res) => {
-    try {
-      const detail = await inventory.getMaterialControlTowerDetail(req.params.barcode);
-      if (!detail) {
-        res.status(404).json({
-          success: false,
-          material: null,
-          error: `No material found for barcode ${req.params.barcode}.`,
-        });
-        return;
-      }
-      const row = await getMaterialRowByBarcode(req.params.barcode);
-      const groupConfiguration = row
-        ? await inventory.getMaterialGroupGovernance(row.id)
-        : { selectedItemIds: [], selectedItems: [], propertyDrafts: [] };
-      res.json({
-        success: true,
-        ...detail,
-        groupConfiguration,
-        error: null,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        material: null,
-        error: error.message,
-      });
-    }
-  });
+  app.get('/api/materials/:barcode/detail', requirePermission('inventory.read'),
+    send('inventory.materials.detail', (req) => ({ barcode: req.params.barcode, query: req.query })));
 
-  app.post('/api/materials/parent', requirePermission('inventory.create'), async (req, res) => {
-    try {
-      const payload = { ...(req.body || {}), actor: currentActor(req) };
-      if (!payload.name || !payload.type || payload.numberOfChildren == null) {
-        res.status(400).json({
-          success: false,
-          material: null,
-          error: 'name, type, and numberOfChildren are required.',
-        });
-        return;
-      }
+  app.post('/api/materials/parent', requirePermission('inventory.create'),
+    send('inventory.materials.createParent', (req) => ({ data: req.body })));
 
-      const material = await inventory.createParentWithChildren(payload);
-      const createdRow = await getMaterialRowByBarcode(material.barcode);
-      const groupConfiguration = createdRow
-        ? await inventory.getMaterialGroupGovernance(createdRow.id)
-        : { selectedItemIds: [], selectedItems: [], propertyDrafts: [] };
-      // Materials also keep their own `material_activity` feed, read by
-      // GET /api/materials/:barcode/activity. That one is per-barcode stock
-      // movement; this is who-changed-what, which is the axis a sitting groups
-      // by — so both are wanted, and neither replaces the other.
-      if (createdRow) trackCreate('materials', createdRow.id, createdRow, req);
-      res.status(201).json({ success: true, material, groupConfiguration, error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.post('/api/materials/:barcode/child', requirePermission('inventory.create'),
+    send('inventory.materials.createChild', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.post('/api/materials/:barcode/child', requirePermission('inventory.create'), async (req, res) => {
-    try {
-      const payload = { ...(req.body || {}), actor: currentActor(req) };
-      if (!String(payload.name || '').trim()) {
-        res.status(400).json({
-          success: false,
-          material: null,
-          error: 'name is required.',
-        });
-        return;
-      }
-      const material = await inventory.createChildMaterial(req.params.barcode, payload);
-      trackCreate('materials', material.id, material, req);
-      res.status(201).json({ success: true, material: inventory.rowToMaterialDto(material), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode', requirePermission('inventory.update'),
+    send('inventory.materials.update', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const payload = { ...(req.body || {}), actor: currentActor(req) };
-      if (!payload.name || !payload.type) {
-        res.status(400).json({
-          success: false,
-          material: null,
-          error: 'name and type are required.',
-        });
-        return;
-      }
-      const before = await getMaterialRowByBarcode(req.params.barcode);
-      const material = await inventory.updateMaterialRecord(req.params.barcode, payload);
-      const groupConfiguration = await inventory.getMaterialGroupGovernance(material.id);
-      trackUpdate('materials', material.id, before, material, req);
-      res.json({
-        success: true,
-        material: inventory.rowToMaterialDto(material),
-        groupConfiguration,
-        error: null,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode/group-config', requirePermission('inventory.update'),
+    send('inventory.materials.setGroupConfig', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode/group-config', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const payload = req.body || {};
-      const material = await inventory.updateMaterialGroupConfiguration(req.params.barcode, payload);
-      const groupConfiguration = await inventory.getMaterialGroupGovernance(material.id);
-      res.json({
-        success: true,
-        material: inventory.rowToMaterialDto(material),
-        groupConfiguration,
-        error: null,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.delete('/api/materials/:barcode', requirePermission('inventory.delete'),
+    send('inventory.materials.delete', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.delete('/api/materials/:barcode', requirePermission('inventory.delete'), async (req, res) => {
-    try {
-      // The barcode is the handle here, not the id, so the row has to be read
-      // before it goes to have anything to log against.
-      const before = await getMaterialRowByBarcode(req.params.barcode);
-      await inventory.deleteMaterialRecord(req.params.barcode);
-      if (before) trackDelete('materials', before.id, before, req);
-      res.json({ success: true, material: null, error: null });
-    } catch (error) {
-      res.status(500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode/link-group', requirePermission('inventory.update'),
+    send('inventory.materials.linkGroup', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode/link-group', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const material = await inventory.linkMaterialRecordToGroup(
-        req.params.barcode,
-        req.body?.groupId,
-      );
-      res.json({ success: true, material: inventory.rowToMaterialDto(material), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode/link-item', requirePermission('inventory.update'),
+    send('inventory.materials.linkItem', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode/link-item', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const material = await inventory.linkMaterialRecordToItem(
-        req.params.barcode,
-        req.body?.itemId,
-        req.body?.variationLeafNodeId,
-      );
-      res.json({ success: true, material: inventory.rowToMaterialDto(material), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode/unlink', requirePermission('inventory.update'),
+    send('inventory.materials.unlink', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode/unlink', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const material = await inventory.unlinkMaterialRecord(req.params.barcode);
-      res.json({ success: true, material: inventory.rowToMaterialDto(material), error: null });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode/scan', requirePermission('inventory.update'),
+    send('inventory.materials.scan', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode/scan', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const materialRow = await inventory.incrementMaterialScanCount(req.params.barcode);
-      if (!materialRow) {
-        res.status(404).json({
-          success: false,
-          material: null,
-          error: `No material found for barcode ${req.params.barcode}.`,
-        });
-        return;
-      }
-      res.json({
-        success: true,
-        material: inventory.rowToMaterialDto(materialRow),
-        error: null,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.patch('/api/materials/:barcode/scan/reset', requirePermission('inventory.update'),
+    send('inventory.materials.resetScan', (req) => ({ barcode: req.params.barcode, data: req.body })));
 
-  app.patch('/api/materials/:barcode/scan/reset', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const row = await getMaterialRowByBarcode(req.params.barcode);
-      if (!row) {
-        res.status(404).json({
-          success: false,
-          material: null,
-          error: `No material found for barcode ${req.params.barcode}.`,
-        });
-        return;
-      }
-      await run(
-        'UPDATE materials SET scan_count = 0, updated_at = ?, last_scanned_at = NULL WHERE id = ?',
-        [new Date().toISOString(), row.id],
-      );
-      await run('DELETE FROM scan_history WHERE barcode = ?', [row.barcode]);
-      await inventory.logMaterialActivity({
-        barcode: row.barcode,
-        type: 'scanReset',
-        label: 'Trace reset',
-        description: 'Scan history was cleared for this material.',
-        actor: row.created_by || 'Demo Admin',
-      });
-      const updatedRow = await get('SELECT * FROM materials WHERE id = ?', [row.id]);
-      res.json({
-        success: true,
-        material: inventory.rowToMaterialDto(updatedRow),
-        error: null,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, material: null, error: error.message });
-    }
-  });
+  app.post('/api/inventory/movements', requirePermission('inventory.update'),
+    send('inventory.movements.record', (req) => ({ data: req.body })));
 
-  app.post('/api/inventory/movements', requirePermission('inventory.update'), async (req, res) => {
-    try {
-      const detail = await inventory.applyInventoryMovement({
-        ...(req.body || {}),
-        actor: currentActor(req),
-      });
-      res.status(201).json({
-        success: true,
-        ...detail,
-        error: null,
-      });
-    } catch (error) {
-      res.status(error.statusCode || 500).json({
-        success: false,
-        material: null,
-        error: error.message,
-      });
-    }
-  });
-
-  app.get('/api/materials/:barcode/activity', requirePermission('inventory.read'), async (req, res) => {
-    try {
-      const events = await inventory.getMaterialActivity(req.params.barcode);
-      res.json({
-        success: true,
-        events: events.map(inventory.rowToMaterialActivityDto),
-        error: null,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, events: [], error: error.message });
-    }
-  });
+  app.get('/api/materials/:barcode/activity', requirePermission('inventory.read'),
+    send('inventory.materials.activity', (req) => ({ barcode: req.params.barcode, query: req.query })));
 };

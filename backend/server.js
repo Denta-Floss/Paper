@@ -126,6 +126,275 @@ try {
 }
 
 const app = express();
+// The kernel desk: every module's operations, asked for by name from a
+// terminal, an HTTP route or another module (kernel/desk.js). A signed-in
+// caller is checked with the same hasPermission the HTTP border uses.
+//
+// A request the central /api gate already let through for exactly this key is
+// not asked again: the gate also honours per-record grants (this one order,
+// for a user with no orders.read), and a second, narrower answer here would
+// take that away. One question, one border.
+//
+// CONTRACTS ARE ENFORCED. Every operation's input is held to its contract (a
+// breach is refused with 400 input_invalid) and its result to its output
+// contract (a breach is the module's bug, and throws). That was switched on
+// 2026-11-19 on this evidence: the whole test suite and the journey ran in
+// report mode and recorded nine violations, every one a test sending a missing
+// or empty name on purpose, and none on any result. PAPER_CONTRACTS_MODE=report
+// turns enforcement off for a running installation without a code change;
+// violations are then recorded at /api/kernel/guard-alerts as before.
+const desk = require('./kernel/desk').createDesk({
+  defaultMode: 'enforce',
+  forceMode: process.env.PAPER_CONTRACTS_MODE === 'report' ? 'report' : null,
+  userMay: (actor, key) =>
+    actor.cleared === key ||
+    hasPermission({ user: actor.user, userPermissions: actor.permissions }, key),
+  // A broken contract is recorded where contract problems already go, and read
+  // at GET /api/kernel/guard-alerts. Bounded: it is a window, not a log.
+  onViolation: ({ operation, side, mode, problems }) => {
+    guardAlerts.push({
+      route: `operation ${operation} (${side}, ${mode})`,
+      details: { problems },
+    });
+    if (guardAlerts.length > 500) guardAlerts.splice(0, guardAlerts.length - 500);
+    // For gathering evidence across a whole test run (each test file boots its
+    // own server, so the window above is lost with it): one JSON line per
+    // violation, appended to the file named here. Unset in normal running.
+    if (process.env.PAPER_CONTRACT_VIOLATIONS_FILE) {
+      try {
+        fs.appendFileSync(
+          process.env.PAPER_CONTRACT_VIOLATIONS_FILE,
+          `${JSON.stringify({ operation, side, mode, problems: problems.slice(0, 3) })}\n`,
+        );
+      } catch (_) {
+        // Evidence gathering must never be why a request fails.
+      }
+    }
+  },
+});
+
+// Who may ask what of whom. A module that is not listed against an operation is
+// refused it, so this block is the map of what crosses a border through the
+// desk. (Borders still crossed through hand-wired ports are not here yet.)
+const ORDER_LINE_COUNT = 'orders.clients.lineCount';
+desk.register('clients', {
+  uses: [
+    ORDER_LINE_COUNT,
+    'orders.clients.lineCounts',
+    'orders.clients.lockedLineCount',
+    // The B2B portal lives in the clients module and places orders.
+    'orders.portal.insertHeader',
+    'orders.portal.saveLine',
+    // …and shows a client the items in its catalogue.
+    'items.rows.forCatalogue',
+  ],
+});
+// The delete-blocker check shared by the client and vendor masters.
+desk.register('parties', {
+  uses: [ORDER_LINE_COUNT, 'challans.vendorUsageCount', 'items.developedForCount'],
+});
+// A vendor is counted, and its deliveries listed, from the challans that name it.
+desk.register('vendors', {
+  uses: [
+    'challans.vendorUsageCount',
+    'challans.vendorUsageCounts',
+    'challans.vendorPurchaseRows',
+    'items.describe',
+  ],
+});
+// Search names the item a hit is about; the action centre removes an item or
+// group with what hangs off it.
+desk.register('search', { uses: ['items.describe'] });
+// An item names its default pipeline, who it was developed for and the people
+// of that deal; how much it is used is the sum of what its neighbours say.
+desk.register('items', {
+  uses: [
+    'pipelines.templates.row',
+    'units.rows.get',
+    'clients.rows.get',
+    'clients.subContractors.row',
+    'clients.contacts.byIds',
+    'orders.items.usage',
+    'challans.items.lineCount',
+    'inventory.items.usage',
+    'inventory.groups.materialCount',
+    'inventory.sets.name',
+  ],
+});
+desk.register('action_center', {
+  uses: [
+    // An approved delete request is carried out by the module that owns the
+    // record.
+    'items.deleteWithCascade',
+    'inventory.materials.deleteRecord',
+    'inventory.sets.deleteById',
+    'vendors.rows.remove',
+    'machines.rows.remove',
+    'dies.rows.remove',
+    'challans.templates.remove',
+  ],
+});
+desk.register('production', {
+  uses: [
+    'orders.lines.get',
+    'orders.lines.summary',
+    'orders.lines.idsForOrderNo',
+    'orders.lines.idsForItem',
+    // The template a run was started from, the machine a queue is for, the
+    // item a history or a scrap lot is about, and that item's unit.
+    'pipelines.templates.row',
+    'machines.rows.get',
+    'items.rows.get',
+    'units.rows.get',
+    // Stock put on a run, taken back, and the lots and sets a run makes.
+    'inventory.movements.apply',
+    'inventory.movements.applyCore',
+    'inventory.receipts.mintLot',
+    'inventory.receipts.materialForChallanLine',
+    'inventory.sets.recordProduced',
+    'inventory.sources.forItem',
+    'inventory.sources.propose',
+    'inventory.scans.increment',
+    'inventory.ledger.recomputeSummary',
+    'inventory.materials.rowByBarcode',
+    // A stage's leftover and scrap notes, and the sheet a scanned tag is.
+    'challans.stageNotes.find',
+    'challans.stageNotes.create',
+    'challans.stageNotes.setQuantity',
+    'challans.stageNotes.remove',
+    'challans.sheets.findByCode',
+    // What an item is, by name; and its stock, taken and returned.
+    'items.lookupByName',
+    'items.selectionSnapshot',
+    'items.stock.applyDelta',
+    // An Assembly stage has a job in the freelancer pool.
+    'jobs.syncAssemblyJob',
+    'jobs.propagateAssemblyRejection',
+  ],
+});
+desk.register('inventory', {
+  uses: [
+    'orders.lines.customVariationValues',
+    'units.rows.get',
+    // A material's life story: which runs took it, and for which order lines.
+    'production.runs.inputCountForBarcode',
+    'production.runs.latestInputForBarcode',
+    'production.runs.row',
+    'production.runs.orderItemIds',
+    'production.runs.stages',
+    // …and what it was made on, received by, and wanted for.
+    'pipelines.templates.row',
+    'machines.rows.byAssetOrName',
+    'dies.rows.byToolCode',
+    'challans.rows.brief',
+    'challans.numbersByIds',
+    'challans.customVariationValueRows',
+    'orders.items.demand',
+    // A set's lines name variations; a material inherits from a group or item.
+    'items.rows.get',
+    'items.groups.row',
+    'items.groups.propertyNamesInUse',
+    'items.variations.node',
+    'items.variations.codeForValue',
+    // An item's identity and stock, and the group a material inherits from.
+    'items.describe',
+    'items.selectionSnapshot',
+    'items.stock.applyDelta',
+    'items.stock.holdsWholeItemStock',
+    'items.variationStockRows',
+    'items.groups.rowById',
+    'items.groups.save',
+  ],
+});
+// How much a unit is used is the sum of what its neighbours say.
+desk.register('units', {
+  uses: ['inventory.units.usageCounts', 'items.units.usageCounts', 'orders.units.usageCounts'],
+});
+// Reconciling a challan weighs what came back, in kilograms.
+// …and names the vendor a reception came from.
+desk.register('challans', {
+  uses: [
+    'units.ensureKilogram',
+    'vendors.rows.get',
+    'clients.rows.get',
+    // Where a delivered lot came from, what runs have claimed from a
+    // reception, and the runs behind the reconciliation report.
+    'production.output.source',
+    'production.challanLines.runInputs',
+    'production.runs.summariesForOrderItems',
+    'production.runs.inputsForRuns',
+    'production.runs.stageTotals',
+    // Issuing, cancelling and settling a challan move stock in the challan's
+    // own transaction.
+    'inventory.movements.applyCore',
+    'inventory.movements.recordForChallan',
+    'inventory.movements.forChallan',
+    'inventory.movements.recordChallanReversal',
+    'inventory.movements.producedLotCodeForRun',
+    'inventory.receipts.mintFromChallanLine',
+    'inventory.receipts.mintReconcileLot',
+    'inventory.receipts.usageForChallan',
+    'inventory.receipts.retire',
+    // The order lines a delivery is against, and completing them when an
+    // in-use challan is settled.
+    'orders.rows.get',
+    'orders.rows.byIds',
+    'orders.rows.forOrderNo',
+    'orders.lines.idsForOrderNo',
+    'orders.lifecycle.move',
+    // The finished output a line delivers from, and what a line's item is
+    // counted in.
+    'production.output.row',
+    'items.rows.get',
+    'units.rows.get',
+    // A line's item and variation, its stock, and where settled stock is filed.
+    'items.selectionSnapshot',
+    'items.stock.assertLeaf',
+    'items.stock.applyDelta',
+    'items.groups.ensureReconcilePrimary',
+    'items.groups.ensureReconcileSub',
+    'items.ensureForReconcile',
+  ],
+});
+// An order line is for a client.
+desk.register('orders', {
+  uses: [
+    'clients.rows.get',
+    // Deleting an order line dissolves its runs, inside one transaction.
+    'production.runs.linksForOrderItem',
+    'production.runs.dissolve',
+    'production.runs.unlinkOrderItem',
+    // The order's reports read its runs.
+    'production.runs.forOrderItems',
+    'production.runs.allWithOrderItem',
+    'production.runs.inputs',
+    // …and puts back the stock those runs consumed.
+    'inventory.movements.applyCore',
+    // Which variation of an item a line is for.
+    'items.resolveSelection',
+  ],
+});
+// A die may belong to a client; a machine is numbered after its type.
+// …and neither is deleted while a live run holds it.
+desk.register('dies', { uses: ['clients.exists', 'production.dies.assignedToActiveRun'] });
+desk.register('machines', {
+  uses: ['items.groups.name', 'production.machines.assignedToActiveRun'],
+});
+// A template runs were started from is kept.
+desk.register('pipelines', { uses: ['production.templates.runCount'] });
+// A freelancer job is handed to the person whose badge was scanned.
+// …and handing it over moves the set out of stock.
+desk.register('jobs', {
+  uses: [
+    'people.employees.idByBarcode',
+    'inventory.materials.rowByBarcode',
+    'inventory.movements.applyCore',
+    'inventory.movements.issuedToWorkerQty',
+    'inventory.materials.linkOf',
+    // A job's tasks come from its item's bill of materials.
+    'items.bom.lines',
+  ],
+});
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
 const FULL_DEMO_SEED_PATH = path.join(__dirname, 'demo_seed_full.json');
@@ -2198,7 +2467,7 @@ function moduleOpForRequest(req) {
     module = 'clients';
   } else if (seg === 'vendors') {
     module = 'vendors';
-  } else if (seg === 'units') {
+  } else if (seg === 'units' || seg === 'unit-groups') {
     module = 'units';
   } else if (seg === 'machines') {
     module = 'machines';
@@ -2227,6 +2496,8 @@ function moduleOpForRequest(req) {
   // Signing a download link for a file that already exists is a read, even
   // though the route is a POST (the id goes in the path, not a query string).
   if (op === 'create' && /\/read-url$/.test(path)) op = 'read';
+  // Converting a value changes nothing; it is a POST only to carry a batch.
+  if (op === 'create' && /^\/units\/convert-batch\/?$/.test(path)) op = 'read';
   // Adding a person to a client changes THAT client — its primary contact
   // and the phone and email it shows — so it is an update to the record, and
   // a per-record update grant covers it. As a create it let someone with only
@@ -2282,6 +2553,9 @@ async function requireApiModulePermission(req, res, next) {
       return;
     }
     req._moduleGated = true;
+    // What this request was let through for; the kernel desk reads it so an
+    // operation needing the same key does not ask a second time.
+    req.gateClearedKey = mo.key;
     if (hasPermission(req, mo.key)) {
       next();
       return;
@@ -2516,57 +2790,15 @@ function oneDayAgo(daysAgo = 0) {
   return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function normalizeUnitValue(value = '') {
-  return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function rowToUnitDto(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    name: row.name || '',
-    symbol: row.symbol || '',
-    notes: row.notes || '',
-    unitGroupId: row.unit_group_id || null,
-    unitGroupName: row.unit_group_name || null,
-    unitGroupDimension: row.unit_group_dimension || null,
-    unitGroupBaseUnitId: row.unit_group_base_unit_id || null,
-    factorToBase: Number(row.factor_to_base || 1),
-    isBase: Boolean(row.is_base),
-    onLadder: row.on_ladder == null ? true : Boolean(row.on_ladder),
-    uqc: row.uqc || null,
-    unitGroupCode: row.unit_group_code || null,
-    unitGroupIntegralOnly: Boolean(row.unit_group_integral_only),
-    conversionFactor: Number(row.conversion_factor || 1),
-    conversionBaseUnitId: row.conversion_base_unit_id || null,
-    conversionBaseUnitName: row.conversion_base_unit_name || null,
-    conversionType: row.conversion_type || 'linear',
-    precision: row.precision != null ? Number(row.precision) : null,
-    isArchived: Boolean(row.is_archived),
-    usageCount: row.usage_count || 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function rowToUnitGroupDto(row) {
-  if (!row) {
-    return null;
-  }
-  return {
-    id: row.id,
-    name: row.name || '',
-    code: row.code || null,
-    dimension: row.dimension || null,
-    integralOnly: Boolean(row.integral_only),
-    baseUnitId: row.base_unit_id || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
+// The units master (rows, DTOs, families, the conversion graph) lives in
+// modules/units/master.js. Its functions keep their old names in this file,
+// further down, because seeds, item code and the tests still call them.
+const {
+  createUnitsMaster,
+  rowToUnitDto,
+  rowToUnitGroupDto,
+  normalizeUnitValue,
+} = require('./modules/units/master');
 
 // The trash (trashAndDelete, trashAndDeleteMany, list and restore) lives in
 // modules/action_center. Every module that deletes a recoverable row calls the
@@ -3052,39 +3284,62 @@ const pipelinesService = createPipelineService({ get, all, run, parseJson });
 const { rowToTemplate } = pipelinesService;
 
 // The freelancer job pool left for modules/jobs. Handing a job to a worker
-// moves a set out of stock, so the two inventory functions it needs are handed
-// in by name; the employee lookup for a worker's card goes through the people
-// port. Production calls syncAssemblyJob and propagateAssemblyRejection.
+// moves a set out of stock, which it asks inventory for; the employee lookup
+// for a worker's card is asked of the people module. Production calls syncAssemblyJob and propagateAssemblyRejection.
 const peoplePorts = createPeoplePorts({ get });
 const jobsService = createJobsService({
   get,
   all,
   run,
-  // Built before the inventory service exists, so these look it up when called.
+  desk: desk.as('jobs'),
+  // Inventory is asked at the kernel desk (see inventoryClient just below),
+  // under the two names the jobs service has always used.
   inventory: {
-    getMaterialRowByBarcode,
-    applyInventoryMovementCore: (...args) => inventoryService.applyInventoryMovementCore(...args),
+    getMaterialRowByBarcode: (barcode) => inventoryForJobs.materials.rowByBarcode(barcode),
+    applyInventoryMovementCore: (payload, options) =>
+      inventoryForJobs.movements.applyCore(payload, options),
   },
 });
+
+// What each module is handed in place of inventory's ports: an object of the
+// same shape that asks the kernel desk (modules/inventory/client.js). Being
+// asked by name at call time, it needs no late binding, although inventory is
+// built further down this file than its callers.
+const { inventoryClient } = require('./modules/inventory/client');
+const inventoryForProduction = inventoryClient(desk.as('production'));
+const inventoryForChallans = inventoryClient(desk.as('challans'));
+const inventoryForOrders = inventoryClient(desk.as('orders'));
+const inventoryForJobs = inventoryClient(desk.as('jobs'));
+const inventoryForActionCenter = inventoryClient(desk.as('action_center'));
+// The same for challans (modules/challans/client.js) and items.
+const { challansClient } = require('./modules/challans/client');
+const { itemsClient } = require('./modules/items/client');
+const { jobsClient } = require('./modules/jobs/client');
+const itemsForProduction = itemsClient(desk.as('production'));
+const itemsForChallans = itemsClient(desk.as('challans'));
+const itemsForInventory = itemsClient(desk.as('inventory'));
+const itemsForOrders = itemsClient(desk.as('orders'));
+const itemsForActionCenter = itemsClient(desk.as('action_center'));
 
 // Production left for modules/production. Its helpers keep their old names
 // here because seeds, scenarios and the modules built further down still call
 // them. Inventory is created later in this file, so it is looked up when used.
 const lateBound = (resolve) => new Proxy({}, { get: (_target, key) => resolve()[key] });
 const productionService = createProductionService({
-  ordersPorts: lateBound(() => ordersPorts),
+  desk: desk.as('production'),
   all,
   get,
-  getMaterialRowByBarcode,
-  inventoryPorts: lateBound(() => inventoryPorts),
-  jobsService,
+  // Inventory is asked at the kernel desk, for what production has declared.
+  getMaterialRowByBarcode: (barcode) => inventoryForProduction.materials.rowByBarcode(barcode),
+  inventoryPorts: inventoryForProduction,
+  jobsService: jobsClient(desk.as('production')),
   parseJson,
   recordLedgerEvent,
   rowToMaterialDto: (...args) => rowToMaterialDto(...args),
   rowToTemplate,
   run,
-  getItemSelectionSnapshot,
-  itemsPorts: lateBound(() => itemsPorts),
+  getItemSelectionSnapshot: (itemId, leaf) => itemsForProduction.selectionSnapshot(itemId, leaf),
+  itemsPorts: itemsForProduction,
 });
 const {
   upsertStageReconciliation,
@@ -7652,33 +7907,6 @@ async function resolveUnitPayload(payload) {
   };
 }
 
-async function getUnitRowById(id) {
-  return get(
-    `
-    SELECT
-      units.*,
-      unit_groups.name AS unit_group_name,
-      unit_groups.dimension AS unit_group_dimension,
-      unit_groups.base_unit_id AS unit_group_base_unit_id,
-      base_unit.name AS conversion_base_unit_name,
-      (
-        (SELECT COUNT(*) FROM materials WHERE materials.unit_id = units.id) +
-        (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
-        (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
-        (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
-        (SELECT COUNT(*) FROM order_items WHERE order_items.unit_id = units.id) +
-        (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
-        (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
-      ) AS usage_count
-    FROM units
-    LEFT JOIN unit_groups ON unit_groups.id = units.unit_group_id
-    LEFT JOIN units AS base_unit ON base_unit.id = units.conversion_base_unit_id
-    WHERE units.id = ?
-    `,
-    [id],
-  );
-}
-
 async function getGroupRowById(id) {
   return get(
     `
@@ -8581,7 +8809,13 @@ const challansPorts = createChallansPorts({
   // The challans service is built further down, so it is looked up when used.
   service: lateBound(() => challansService),
 });
-const vendorsService = createVendorService({ get, all, run, logChange, challans: challansPorts });
+const vendorsService = createVendorService({
+  get,
+  all,
+  run,
+  logChange,
+  challans: challansClient(desk.as('vendors')),
+});
 const {
   getVendorRowById,
   getVendorsWithUsage,
@@ -8602,8 +8836,8 @@ const ordersService = createOrdersService({
   all,
   run,
   parseJson,
-  resolveOrderVariationSelection,
-  getClientRowById: (id) => getClientRowById(id),
+  resolveOrderVariationSelection: (selection) => itemsForOrders.resolveSelection(selection),
+  desk: desk.as('orders'),
   normalizeUploadType,
   buildS3ObjectKey,
   presignS3Url,
@@ -8629,7 +8863,7 @@ const {
   getOrderStatusHistory,
 } = ordersService;
 const ordersPorts = createOrdersPorts({ get, all, run, saveOrder });
-const clientsService = createClientService({ get, all, run, logChange, orders: ordersPorts });
+const clientsService = createClientService({ get, all, run, logChange, desk: desk.as('clients') });
 const {
   rowToClientDto,
   getClientRowById,
@@ -8638,13 +8872,12 @@ const {
   saveClient,
 } = clientsService;
 // What names a party on delete: challans for a vendor; order lines and parts for
-// a client. `itemsPorts` is built at the end of this file, so it is reached
-// through a function that looks it up when called.
+// a client. Each is asked at the kernel desk.
 const partyDeleteBlockers = createPartyDeleteBlockers({
   get,
-  challans: challansPorts,
-  orders: ordersPorts,
-  items: { developedForCount: (id) => itemsPorts.developedForCount(id) },
+  challans: challansClient(desk.as('parties')),
+  desk: desk.as('parties'),
+  items: itemsClient(desk.as('parties')),
 });
 
 const DEFAULT_COMPANY_PROFILE = Object.freeze({
@@ -8801,6 +9034,7 @@ function normalizeChallanType(value, fallback = 'delivery') {
 // modules/challans/templates.js. The challan readers they print from are still
 // defined in this file and are handed in by name.
 const challanTemplateService = createChallanTemplateService({
+  desk: desk.as('challans'),
   get,
   all,
   run,
@@ -8903,7 +9137,7 @@ const invoiceService = createInvoiceService({
   get,
   all,
   run,
-  getClientRowById,
+  desk: desk.as('challans'),
   rowToCompanyProfileDto,
   getActiveCompanyProfile,
   rowToDeliveryChallanDto: (...args) => rowToDeliveryChallanDto(...args),
@@ -8928,8 +9162,7 @@ const challanReportService = createChallanReportService({
   effectiveReportGroupCodesForChallan: (...args) => effectiveReportGroupCodesForChallan(...args),
   listInvoices,
   normalizePositiveNumber,
-  // Built further down, so it is looked up when used.
-  productionPorts: lateBound(() => productionPorts),
+  desk: desk.as('challans'),
 });
 const {
   listConversionOverrides,
@@ -12342,346 +12575,14 @@ async function ensureDemoOrdersPresent() {
   }
 }
 
-async function getUnitsWithUsage() {
-  return all(`
-    SELECT
-      units.*,
-      unit_groups.name AS unit_group_name,
-      unit_groups.dimension AS unit_group_dimension,
-      unit_groups.base_unit_id AS unit_group_base_unit_id,
-      base_unit.name AS conversion_base_unit_name,
-      (
-        (SELECT COUNT(*) FROM materials WHERE materials.unit_id = units.id) +
-        (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
-        (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
-        (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
-        (SELECT COUNT(*) FROM order_items WHERE order_items.unit_id = units.id) +
-        (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
-        (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
-      ) AS usage_count
-    FROM units
-    LEFT JOIN unit_groups ON unit_groups.id = units.unit_group_id
-    LEFT JOIN units AS base_unit ON base_unit.id = units.conversion_base_unit_id
-    ORDER BY units.is_archived ASC, LOWER(COALESCE(unit_groups.name, '')) ASC, LOWER(units.name) ASC, LOWER(units.symbol) ASC
-  `);
-}
-
-async function findUnitDuplicate({ name, symbol, excludeId = null }) {
-  const rows = await all('SELECT id, name, symbol FROM units');
-  const normalizedName = normalizeUnitValue(name);
-  const normalizedSymbol = normalizeUnitValue(symbol);
-  return rows.find((row) => {
-    if (excludeId != null && row.id === excludeId) {
-      return false;
-    }
-    return (
-      normalizeUnitValue(row.name) === normalizedName &&
-      normalizeUnitValue(row.symbol) === normalizedSymbol
-    );
-  }) || null;
-}
-
-async function saveUnit({
-  name,
-  symbol,
-  notes = '',
-  unitGroupName = '',
-  conversionFactor = 1,
-  conversionType = 'linear',
-  precision = null,
-  id = null,
-}) {
-  const trimmedName = String(name || '').trim();
-  const trimmedSymbol = String(symbol || '').trim();
-  const trimmedNotes = String(notes || '').trim();
-  const resolvedUnitGroupId = await resolveUnitGroupId(unitGroupName);
-  const resolvedConversion = await resolveUnitConversion({
-    unitGroupId: resolvedUnitGroupId,
-    conversionFactor,
-    excludeId: id,
-  });
-  if (!trimmedName || !trimmedSymbol) {
-    throw new Error('name and symbol are required.');
-  }
-
-  const duplicate = await findUnitDuplicate({
-    name: trimmedName,
-    symbol: trimmedSymbol,
-    excludeId: id,
-  });
-  if (duplicate) {
-    const error = new Error('A unit with the same name and symbol already exists.');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  if (id == null) {
-    const result = await run(
-      `
-      INSERT INTO units (name, symbol, unit_group_id, conversion_factor, conversion_base_unit_id, conversion_type, precision, notes, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-      `,
-      [
-        trimmedName,
-        trimmedSymbol,
-        resolvedUnitGroupId,
-        resolvedConversion.conversionFactor,
-        resolvedConversion.conversionBaseUnitId,
-        conversionType,
-        precision,
-        trimmedNotes,
-        now,
-        now,
-      ],
-    );
-    if (typeof buildUnitGraph === 'function') buildUnitGraph(); // Invalidates cache
-    return getUnitRowById(result.lastID);
-  }
-
-  const existing = await getUnitRowById(id);
-  if (!existing) {
-    const error = new Error('Unit not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-  if ((existing.usage_count || 0) > 0) {
-    const detailsChanged =
-      normalizeUnitValue(existing.name) !== normalizeUnitValue(trimmedName) ||
-      normalizeUnitValue(existing.symbol) !== normalizeUnitValue(trimmedSymbol) ||
-      (existing.unit_group_id || null) !== (resolvedUnitGroupId || null) ||
-      Number(existing.conversion_factor || 1) !== Number(resolvedConversion.conversionFactor || 1) ||
-      (existing.conversion_base_unit_id || null) !== (resolvedConversion.conversionBaseUnitId || null) ||
-      (existing.conversion_type || 'linear') !== conversionType;
-    if (detailsChanged) {
-      const error = new Error('Used units cannot change identity or conversion details.');
-      error.statusCode = 409;
-      throw error;
-    }
-  }
-
-  await run(
-    'UPDATE units SET name = ?, symbol = ?, unit_group_id = ?, conversion_factor = ?, conversion_base_unit_id = ?, conversion_type = ?, precision = ?, notes = ?, updated_at = ? WHERE id = ?',
-    [
-      trimmedName,
-      trimmedSymbol,
-      resolvedUnitGroupId,
-      resolvedConversion.conversionFactor,
-      resolvedConversion.conversionBaseUnitId,
-      conversionType,
-      precision,
-      trimmedNotes,
-      now,
-      id,
-    ],
-  );
-  if (typeof buildUnitGraph === 'function') buildUnitGraph(); // Invalidates cache
-  return getUnitRowById(id);
-}
-
-async function getUnitGroupRowByName(name) {
-  const normalized = normalizeUnitValue(name);
-  if (!normalized) {
-    return null;
-  }
-  const rows = await all('SELECT * FROM unit_groups');
-  return rows.find((row) => normalizeUnitValue(row.name) === normalized) || null;
-}
-
-async function saveUnitGroup({ name, dimension = null, baseUnitId = null, id = null }) {
-  const trimmedName = String(name || '').trim();
-  if (!trimmedName) throw new Error('name is required');
-
-  const existing = await getUnitGroupRowByName(trimmedName);
-  if (existing && existing.id !== id) {
-    const error = new Error('A unit family with this name already exists.');
-    error.statusCode = 409;
-    throw error;
-  }
-  
-  const now = new Date().toISOString();
-  if (id == null) {
-    const result = await run(
-      'INSERT INTO unit_groups (name, dimension, base_unit_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [trimmedName, dimension, baseUnitId, now, now]
-    );
-    if (typeof buildUnitGraph === 'function') buildUnitGraph();
-    const rows = await all('SELECT * FROM unit_groups WHERE id = ?', [result.lastID]);
-    return rows[0];
-  } else {
-    await run(
-      'UPDATE unit_groups SET name = ?, dimension = ?, base_unit_id = ?, updated_at = ? WHERE id = ?',
-      [trimmedName, dimension, baseUnitId, now, id]
-    );
-    if (typeof buildUnitGraph === 'function') buildUnitGraph();
-    const rows = await all('SELECT * FROM unit_groups WHERE id = ?', [id]);
-    return rows[0];
-  }
-}
-
-async function resolveUnitGroupId(unitGroupName) {
-  const trimmed = String(unitGroupName || '').trim();
-  if (!trimmed) {
-    return null;
-  }
-  const existing = await getUnitGroupRowByName(trimmed);
-  if (existing) {
-    return existing.id;
-  }
-  const group = await saveUnitGroup({ name: trimmed });
-  return group.id;
-}
-
-let unitGraphCache = {
-  unitsBySymbol: {},
-  unitsById: {},
-  families: {},
-  gaugePoints: {},
-};
-
-async function buildUnitGraph() {
-  const units = await all('SELECT * FROM units');
-  const unitGroups = await all('SELECT * FROM unit_groups');
-  const points = await all('SELECT * FROM unit_conversion_points');
-  
-  const cache = {
-    unitsBySymbol: {},
-    unitsById: {},
-    families: {},
-    gaugePoints: {}
-  };
-  
-  for (const group of unitGroups) {
-    if (group.base_unit_id) {
-      cache.families[group.base_unit_id] = { id: group.id, name: group.name, dimension: group.dimension, baseUnitId: group.base_unit_id, members: [] };
-    }
-  }
-  
-  for (const u of units) {
-    const dto = rowToUnitDto(u);
-    cache.unitsById[u.id] = dto;
-    if (u.symbol) cache.unitsBySymbol[u.symbol.toLowerCase()] = dto;
-    if (u.conversion_base_unit_id && cache.families[u.conversion_base_unit_id]) {
-      cache.families[u.conversion_base_unit_id].members.push(dto);
-    }
-  }
-  
-  for (const pt of points) {
-    if (!cache.gaugePoints[pt.unit_id]) cache.gaugePoints[pt.unit_id] = [];
-    cache.gaugePoints[pt.unit_id].push({ key: pt.point_key, baseValue: pt.base_value });
-  }
-  
-  unitGraphCache = cache;
-}
-
-function parseQualifiedValue(valueStr, unitGraph = unitGraphCache) {
-  if (!Number.isNaN(Number(valueStr))) {
-    return { value: Number(valueStr), unit: null, isGauge: false };
-  }
-  const str = String(valueStr).trim();
-  const match = str.match(/^([0-9/.]+)([a-zA-Z]+)$/);
-  if (match) {
-    const rawVal = match[1];
-    const symbol = match[2].toLowerCase();
-    const unit = unitGraph.unitsBySymbol[symbol];
-    if (unit) {
-      if (unit.conversionType === 'table') {
-        return { value: rawVal, unit, isGauge: true };
-      }
-      return { value: Number(rawVal), unit, isGauge: false };
-    }
-  }
-  return { value: valueStr, unit: null, isGauge: false };
-}
-
-function convertValue(value, fromUnitId, toUnitId, unitGraph = unitGraphCache) {
-  if (fromUnitId === toUnitId) return value;
-  
-  const from = unitGraph.unitsById[fromUnitId];
-  const to = unitGraph.unitsById[toUnitId];
-  
-  if (!from || !to) throw new Error(`Unit not found: ${fromUnitId} -> ${toUnitId}`);
-  
-  const base1 = from.conversionBaseUnitId || from.id;
-  const base2 = to.conversionBaseUnitId || to.id;
-  
-  if (base1 !== base2) {
-    const err = new Error(`Cannot convert across different unit families (${from.symbol} and ${to.symbol})`);
-    err.statusCode = 400;
-    throw err;
-  }
-  
-  let baseValue;
-  if (from.conversionType === 'table') {
-    const points = unitGraph.gaugePoints[from.id] || [];
-    const pt = points.find(p => String(p.key).toLowerCase() === String(value).toLowerCase());
-    if (!pt) {
-      const err = new Error(`Unknown table value ${value} for unit ${from.symbol}`);
-      err.statusCode = 400;
-      throw err;
-    }
-    baseValue = pt.baseValue;
-  } else {
-    baseValue = Number(value) * from.conversionFactor;
-  }
-  
-  let result;
-  if (to.conversionType === 'table') {
-    const points = unitGraph.gaugePoints[to.id] || [];
-    let closest = null;
-    let minDiff = Infinity;
-    for (const p of points) {
-      const diff = Math.abs(p.baseValue - baseValue);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = p;
-      }
-    }
-    if (!closest || minDiff > 0.0001) {
-      const err = new Error(`Cannot convert precisely to table unit ${to.symbol} from ${baseValue}`);
-      err.statusCode = 400;
-      throw err;
-    }
-    result = closest.key;
-  } else {
-    result = baseValue / to.conversionFactor;
-  }
-  
-  return result;
-}
-
-async function resolveUnitConversion({
-  unitGroupId,
-  conversionFactor,
-  excludeId = null,
-}) {
-  if (!unitGroupId) {
-    return { conversionFactor: 1, conversionBaseUnitId: null };
-  }
-  const rows = await all(
-    `
-    SELECT * FROM units
-    WHERE unit_group_id = ?
-    ${excludeId != null ? 'AND id != ?' : ''}
-    ORDER BY conversion_base_unit_id ASC, id ASC
-    `,
-    excludeId != null ? [unitGroupId, excludeId] : [unitGroupId],
-  );
-  const baseUnit = rows.find((row) => row.conversion_base_unit_id == null) || null;
-  if (!baseUnit) {
-    return { conversionFactor: 1, conversionBaseUnitId: null };
-  }
-  const normalizedFactor = Number(conversionFactor);
-  if (!normalizedFactor || normalizedFactor <= 0) {
-    const error = new Error('conversionFactor must be greater than 0 for grouped units.');
-    error.statusCode = 400;
-    throw error;
-  }
-  return {
-    conversionFactor: normalizedFactor,
-    conversionBaseUnitId: baseUnit.id,
-  };
-}
+// Units left for modules/units/master.js. How much a unit is used is no longer
+// a subquery over other modules' tables: the master asks inventory, items and
+// orders at the kernel desk and adds its own count. These are declarations, so
+// they can be called from anywhere in this file regardless of where they sit.
+const unitsMaster = createUnitsMaster({ get, all, run, desk: desk.as('units') });
+function getUnitRowById(id) { return unitsMaster.getUnitRowById(id); }
+function getUnitsWithUsage() { return unitsMaster.getUnitsWithUsage(); }
+function saveUnit(input) { return unitsMaster.saveUnit(input); }
 
 function areUnitsCompatible(groupUnitRow, itemUnitRow) {
   if (!groupUnitRow || !itemUnitRow) {
@@ -13124,7 +13025,7 @@ const inventoryService = createInventoryService({
   get,
   all,
   run,
-  describeItem: (id) => itemsPorts.describe(id),
+  describeItem: (id) => itemsForInventory.describe(id),
   resolveLinks: (...args) => requireLinkResolver()(...args),
   writeLink: (...args) => requireLinkWriter()(...args),
   getPurgeEntityLinks: () => purgeEntityLinks,
@@ -13141,13 +13042,13 @@ const inventoryService = createInventoryService({
   rowToUploadedAssetDto,
   parseJson,
   resolveUnitPayload,
-  getUnitRowById,
-  getGroupRowById,
-  getItemSelectionSnapshot,
-  saveGroup,
-  applyVariationStockDelta,
-  // The items port is built at the end of this file, so it is looked up when called.
-  holdsWholeItemStock: (itemId) => itemsPorts.stock.holdsWholeItemStock(itemId),
+  // Asked of items at the kernel desk, under the names inventory has always
+  // used for them.
+  getGroupRowById: (id) => itemsForInventory.groups.rowById(id),
+  getItemSelectionSnapshot: (itemId, leaf) => itemsForInventory.selectionSnapshot(itemId, leaf),
+  saveGroup: (group) => itemsForInventory.groups.save(group),
+  applyVariationStockDelta: (delta) => itemsForInventory.stock.applyDelta(delta),
+  holdsWholeItemStock: (itemId) => itemsForInventory.stock.holdsWholeItemStock(itemId),
   normalizeChallanType,
   getMaterialRowByBarcode,
   normalizeGroupPropertyDraft,
@@ -13155,16 +13056,13 @@ const inventoryService = createInventoryService({
   normalizePropertyKey,
   recordLedgerEvent,
   resolveLeafSelectionFromDb,
-  // The stock overview reads four modules' tables; three of them through ports.
-  // The items port is built at the end of this file, hence the wrapper.
-  variationStockRows: () => itemsPorts.variationStockRows(),
-  orders: ordersPorts,
-  challans: challansPorts,
-  // The production port is built further down, so it is looked up when used.
-  production: lateBound(() => productionPorts),
+  // The stock overview reads four modules' data; each is asked for it.
+  variationStockRows: () => itemsForInventory.variationStockRows(),
+  desk: desk.as('inventory'),
+  challans: challansClient(desk.as('inventory')),
 });
 // What other modules may ask of inventory.
-const inventoryPorts = createInventoryPorts({ inventory: inventoryService });
+const inventoryPorts = createInventoryPorts({ inventory: inventoryService, getMaterialRowByBarcode });
 // The materials, governance and ledger functions moved with the service. Seeds,
 // the production and challans code that still lives here, the items module's
 // schema reads and the tests call them under the names they always had.
@@ -13199,26 +13097,16 @@ const challansService = createChallanService({
   parseJsonObject,
   normalizeCustomVariationValues,
   rowToUploadedAssetDto,
-  // The item's variation stock, through the items port. The port is built at
-  // the end of this file, so it is looked up when called.
-  itemStock: {
-    assertLeaf: (...args) => itemsPorts.stock.assertLeaf(...args),
-    applyDelta: (...args) => itemsPorts.stock.applyDelta(...args),
-  },
-  getVendorRowById,
-  getOrderRowById,
-  updateOrderLifecycle,
+  // The item's variation stock, asked of items at the kernel desk.
+  itemStock: itemsForChallans.stock,
+  desk: desk.as('challans'),
   rowToCompanyProfileDto,
   getActiveCompanyProfile,
   normalizeChallanType,
   buildChallanTemplateSnapshot,
   findActiveChallanTemplateForChallan,
-  getItemSelectionSnapshot,
-  getProductionRunRowById,
-  inventoryPorts,
-  // Declared further down this file, so it is looked up when called.
-  runInputsForChallanLines: (lineIds) => productionPorts.runInputsForChallanLines(lineIds),
-  productionRunSource: (id) => productionPorts.output.sourceById(id),
+  getItemSelectionSnapshot: (itemId, leaf) => itemsForChallans.selectionSnapshot(itemId, leaf),
+  inventoryPorts: inventoryForChallans,
   recordLedgerEvent,
 });
 const {
@@ -13867,7 +13755,7 @@ function firstUngrantableKey(req, keys) {
 // by the production report and trace (they shape machines they have already
 // read), so it comes out of the service under the name they know. Whether a
 // live run holds a machine is asked of the production port.
-const machinesService = createMachineService({ get, all, run, parseJson });
+const machinesService = createMachineService({ get, all, run, parseJson, desk: desk.as('machines') });
 const { rowToMachineDto: machineRowToDto } = machinesService;
 const productionPorts = createProductionPorts({ get, all, run });
 
@@ -13881,6 +13769,7 @@ const diesService = createDieService({
   all,
   run,
   parseJson,
+  desk: desk.as('dies'),
   resolveLinks: (...args) => requireLinkResolver()(...args),
   writeLink: (...args) => requireLinkWriter()(...args),
 });
@@ -14065,20 +13954,6 @@ async function ensureReconcileItem(name, groupId, unitId, options = {}) {
 
 // Reconciliation settles the consumed WEIGHT (kg), so the reverted lots/items
 // are measured in kilograms. Reuse an existing kg unit or create one.
-async function ensureKgUnit() {
-  const existing = await get(
-    `SELECT id FROM units WHERE lower(symbol) = 'kg' OR lower(name) IN ('kg', 'kilogram', 'kilograms') ORDER BY id LIMIT 1`,
-  );
-  if (existing) return existing.id;
-  const now = nowIso();
-  const res = await run(
-    `INSERT INTO units (name, symbol, notes, is_archived, created_at, updated_at)
-     VALUES ('Kilogram', 'kg', 'Reconciliation weight unit', 0, ?, ?)`,
-    [now, now],
-  );
-  return res.lastID;
-}
-
 // registerAssetsRoutes: its routes are in modules/assets/routes.js and are registered into this
 // router further down, where everything they use exists. The router holds
 // their place in the matching order here.
@@ -15711,7 +15586,9 @@ const itemsPorts = createItemsPorts({
   // this port yet, so the correction changes no behaviour.
   stockApplyDelta: applyVariationStockDelta,
   stockHoldsWholeItem: itemHoldsWholeItemStock,
-  bomLines: async (itemId) => { return []; },
+  // It used to answer an empty list whatever the item, and jobs read the table
+  // itself instead.
+  bomLines: (itemId) => all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]),
   lookupByName: async (name) => {
     return await get('SELECT * FROM items WHERE name = ? COLLATE NOCASE', [name]);
   },
@@ -15723,6 +15600,8 @@ const itemsPorts = createItemsPorts({
     }
     return await trashAndDelete(type + 's', id, req);
   },
+  groupRowById: getGroupRowById,
+  saveGroup,
   ensureReconcilePrimary: ensureReconcilePrimaryGroup,
   ensureReconcileSub: ensureReconcileSubGroup,
   ensureForReconcile: ensureReconcileItem,
@@ -15750,40 +15629,64 @@ const itemsPorts = createItemsPorts({
 });
 
 const registerItemsModuleRoutes = require('./modules/items/routes');
+// Items at function level. The work behind its four route sets is built here
+// and published at the kernel desk; the routes ask the desk. What that work
+// calls (saveItem, saveGroup, the variation tree, the usage reads) is still
+// defined in this file and handed in by name.
+desk.register('items', {
+  operations: require('./modules/items/operations')({
+    all,
+    get,
+    ports: itemsPorts,
+    core: require('./modules/items/work').createItemsWork({
+      desk: desk.as('items'),
+      get,
+      all,
+      run,
+      logChange,
+      saveItem,
+      saveGroup,
+      rowToItemDto,
+      rowToGroupDto,
+      getItemsWithUsage,
+      getGroupsWithUsage,
+      getItemUsageDetails,
+      getItemSetMembership: (...args) => inventoryPorts.sets.membershipForItem(...args),
+      getItemRowById,
+      getGroupRowById,
+      getEffectiveSchema,
+      getItemVariationTree,
+      normalizePropertyKey,
+      createAssetUploadIntent,
+      completeAssetUpload,
+      listAssetsForEntity,
+      listEntityPhotos,
+      arrangeEntityPhotos,
+      MAX_PART_PHOTOS,
+      itemsPorts,
+      getIo: () => io,
+    }),
+    masterData: require('./modules/items/master-data').createMasterDataWork({
+      get,
+      all,
+      run,
+      logChange,
+      desk: desk.as('items'),
+    }),
+    materialTypes: require('./modules/items/material-types').createMaterialTypeWork({ get, all, run, logChange }),
+    sheetProperties: require('./modules/items/sheet-properties').createSheetPropertyWork({ get, all, run }),
+  }),
+});
 registerItemsModuleRoutes({
   app,
+  desk,
   requirePermission,
   requireAssetEntityPermission,
   cacheMasterData,
   guardContract,
-  get,
-  all,
-  run,
-  logChange,
-  saveItem,
-  saveGroup,
-  rowToItemDto,
-  rowToGroupDto,
-  getItemsWithUsage,
-  getGroupsWithUsage,
-  getItemUsageDetails,
-  getItemSetMembership: (...args) => inventoryPorts.sets.membershipForItem(...args),
-  getItemRowById,
-  getGroupRowById,
-  getEffectiveSchema,
-  getItemVariationTree,
-  normalizePropertyKey,
   trackCreate,
   trackUpdate,
   trackDelete,
-  createAssetUploadIntent,
-  completeAssetUpload,
-  listAssetsForEntity,
-  listEntityPhotos,
-  arrangeEntityPhotos,
-  MAX_PART_PHOTOS,
-  itemsPorts,
-  getIo: () => io,
 });
 
 // The link graph between masters: item <-> die <-> machine and any other pair
@@ -15828,12 +15731,18 @@ purgeEntityVariations = variationsModule.purgeVariationsFor;
 // item routes because it nests under /api/items/:id, and separate from
 // pipeline_templates on purpose: a route is a flat ordered list belonging to a
 // part, a pipeline is a node graph for a production run.
-const registerProcessRoutesModule = require('./modules/process_routes/routes');
-const processRoutesModule = registerProcessRoutesModule({
+//
+// The first module at function level: its work is published at the kernel desk
+// (modules/process_routes/operations.js) and its routes only ask the desk, so
+// they are handed neither the database nor the service.
+desk.register('process_routes', {
+  operations: require('./modules/process_routes/operations')({
+    service: require('./modules/process_routes/service')({ get, all, run }),
+  }),
+});
+require('./modules/process_routes/routes')({
   app,
-  get,
-  all,
-  run,
+  desk,
   requirePermission,
   trackCreate,
   trackUpdate,
@@ -15842,134 +15751,183 @@ const processRoutesModule = registerProcessRoutesModule({
 // The vendor master. After the central /api gate like every module, so its
 // routes are gated as the legacy ones were. `io` is declared further down this
 // file, hence the getter.
+desk.register('vendors', {
+  operations: require('./modules/vendors/operations')({
+    service: vendorsService,
+    get,
+    run,
+    challans: challansClient(desk.as('vendors')),
+    itemsPorts: itemsClient(desk.as('vendors')),
+    partyDeleteBlockers,
+    trashAndDelete,
+  }),
+});
 registerVendorRoutes({
   app,
-  get,
+  desk,
   requirePermission,
   trackCreate,
   trackUpdate,
   trackDelete,
-  trashAndDelete,
-  partyDeleteBlockers,
   getIo: () => io,
-  vendors: vendorsService,
-  challans: challansPorts,
-  itemsPorts,
 });
 
 // The freelancer job pool. `run` is passed for the delete route's rollback.
-registerJobsRoutes({
-  app,
-  requirePermission,
-  run,
-  jobs: jobsService,
-  people: peoplePorts,
+desk.register('jobs', {
+  operations: require('./modules/jobs/operations')({
+    service: jobsService,
+    work: require('./modules/jobs/work').createJobsWork({
+      run,
+      jobs: jobsService,
+      desk: desk.as('jobs'),
+    }),
+  }),
 });
+registerJobsRoutes({ app, desk, requirePermission });
 
 // The machine master. purgeEntityLinks/Variations are late-bound (links and
 // variations mount after this), hence the getters.
+desk.register('machines', {
+  operations: require('./modules/machines/operations')({
+    service: machinesService,
+    desk: desk.as('machines'),
+    getPurgeEntityLinks: () => purgeEntityLinks,
+    getPurgeEntityVariations: () => purgeEntityVariations,
+  }),
+});
 registerMachineRoutes({
   app,
+  desk,
   requirePermission,
   cacheMasterData,
   trackCreate,
   trackUpdate,
   trackDelete,
-  machines: machinesService,
-  production: productionPorts,
   listAssetsForEntity,
   createAssetUploadIntent,
   completeAssetUpload,
-  getPurgeEntityLinks: () => purgeEntityLinks,
-  getPurgeEntityVariations: () => purgeEntityVariations,
 });
 
 // The die master. Same late-bound purges as machines.
+desk.register('dies', {
+  operations: require('./modules/dies/operations')({
+    service: diesService,
+    makers: require('./modules/dies/die-makers').createDieMakerService({ get, all, run }),
+    desk: desk.as('dies'),
+    getPurgeEntityLinks: () => purgeEntityLinks,
+    getPurgeEntityVariations: () => purgeEntityVariations,
+  }),
+});
 registerDieRoutes({
   app,
+  desk,
   requirePermission,
   cacheMasterData,
   trackCreate,
   trackUpdate,
   trackDelete,
-  dies: diesService,
-  production: productionPorts,
   listAssetsForEntity,
   createAssetUploadIntent,
   completeAssetUpload,
-  getPurgeEntityLinks: () => purgeEntityLinks,
-  getPurgeEntityVariations: () => purgeEntityVariations,
 });
 
 // The client master and its sub-contractors, then the portal. `io` is declared
 // further down this file, hence the getter.
+desk.register('clients', {
+  operations: require('./modules/clients/operations')({
+    service: clientsService,
+    contacts: partyContacts.createClientContactService({ get, all, run }),
+    portal: require('./modules/clients/portal').createPortalService({
+      get,
+      all,
+      run,
+      desk: desk.as('clients'),
+    }),
+    get,
+    all,
+    partyContacts,
+    partyDeleteBlockers,
+    trashAndDelete,
+  }),
+});
 registerClientRoutes({
   app,
-  all,
-  get,
+  desk,
   requirePermission,
   trackCreate,
   trackUpdate,
   trackDelete,
-  trashAndDelete,
-  partyDeleteBlockers,
-  partyContacts,
   getIo: () => io,
-  clients: clientsService,
 });
-registerClientPortalRoutes({ app, get, all, run, orders: ordersPorts });
+registerClientPortalRoutes({ app, desk });
 
 // Departments, employees and the login links. The auth kernel is still defined
 // in this file, so the pieces the login routes need are handed in by name.
+desk.register('people', {
+  operations: require('./modules/people/operations')({
+    service: peopleService,
+    ports: peoplePorts,
+    trashAndDelete,
+    trashAndDeleteMany,
+    get,
+    run,
+    // The auth kernel, still defined in this file: making an account, its staff
+    // login code, and the audit entry.
+    auth: { createUserAccount, deriveDobPin, nextFreeMobilePin, logAuthEvent },
+  }),
+});
 registerPeopleRoutes({
   app,
-  run,
-  get,
+  desk,
   requirePermission,
   requireRoles,
   trackCreate,
   trackUpdate,
   trackDelete,
-  trashAndDelete,
-  trashAndDeleteMany,
-  people: peopleService,
-  auth: {
-    createUserAccount,
-    deriveDobPin,
-    nextFreeMobilePin,
-    logAuthEvent,
-    getRequestIp,
-    getRequestUserAgent,
-  },
+  auth: { getRequestIp, getRequestUserAgent },
 });
 
 // Pipeline templates. The root /templates set is outside /api: its own auth and
 // write guards are the app.use('/templates', ...) lines earlier in this file,
 // which still run before these routes, exactly as before.
+desk.register('pipelines', {
+  operations: require('./modules/pipelines/operations')({
+    service: pipelinesService,
+    desk: desk.as('pipelines'),
+  }),
+});
 registerPipelineRoutes({
   app,
+  desk,
   requirePermission,
   trackCreate,
   trackUpdate,
   trackDelete,
-  pipelines: pipelinesService,
-  production: productionPorts,
 });
 
 // Inventory (sets so far). After the central /api gate, like every module.
+desk.register('inventory', {
+  operations: require('./modules/inventory/operations')({
+    all,
+    ports: inventoryPorts,
+    work: require('./modules/inventory/work').createInventoryWork({
+      get,
+      run,
+      all,
+      currentActor,
+      inventory: inventoryService,
+      getMaterialRowByBarcode,
+    }),
+  }),
+});
 registerInventoryRoutes({
   app,
-  get,
-  all,
-  run,
+  desk,
   requirePermission,
   cacheMasterData,
   trackCreate,
   trackUpdate,
   trackDelete,
-  currentActor,
-  getMaterialRowByBarcode,
-  inventory: inventoryService,
 });
 
 // The action center: trash, delete requests and the integrity scan. After the
@@ -15984,38 +15942,57 @@ const deleteRequestService = createDeleteRequestService({
   run,
   parsePagination,
   deleters: {
-    material: (id) => inventoryPorts.materials.delete(id),
-    item: (id, req) => itemsPorts.delete('item', id, req),
+    material: (id) => inventoryForActionCenter.materials.delete(id),
+    item: (id, req) => itemsForActionCenter.delete('item', id, { user: req?.user || null }),
     asset: (id) => deleteAsset(id),
-    group: (id, req) => itemsPorts.delete('group', id, req),
-    vendor: (id) => run('DELETE FROM vendors WHERE id = ?', [id]),
-    inventory_set: (id) => inventoryPorts.sets.deleteById(id),
-    challan_template: (id) => deleteChallanTemplate(id),
-    machine: (id) => run('DELETE FROM machines WHERE id = ?', [id]),
-    die: (id) => run('DELETE FROM dies WHERE id = ?', [id]),
+    group: (id, req) => itemsForActionCenter.delete('group', id, { user: req?.user || null }),
+    vendor: (id) => desk.as('action_center').ask('vendors.rows.remove', { id }),
+    inventory_set: (id) => inventoryForActionCenter.sets.deleteById(id),
+    challan_template: (id) => desk.as('action_center').ask('challans.templates.remove', { id }),
+    machine: (id) => desk.as('action_center').ask('machines.rows.remove', { id }),
+    die: (id) => desk.as('action_center').ask('dies.rows.remove', { id }),
+    // Accounts are the kernel's.
     user: (id) => run('DELETE FROM users WHERE id = ?', [id]),
   },
 });
-registerActionCenterRoutes({
-  app,
-  requireAuth,
-  requirePermission,
-  trash: trashService,
-  deleteRequests: deleteRequestService,
+desk.register('action_center', {
+  operations: require('./modules/action_center/operations')({
+    work: require('./modules/action_center/work').createActionCenterWork({
+      trash: trashService,
+      deleteRequests: deleteRequestService,
+    }),
+  }),
 });
+registerActionCenterRoutes({ app, desk, requireAuth, requirePermission });
 
 // The order lines' own routes. `io` is declared further down, hence the getter.
+//
+// Orders at function level: what the module offers is published at the kernel
+// desk and its routes ask the desk. Registered here, not where the service is
+// built, because deleting a line reaches production and inventory, which are
+// built further down than orders is; nothing asks before the file has loaded.
+desk.register('orders', {
+  operations: require('./modules/orders/operations')({
+    service: ordersService,
+    ports: ordersPorts,
+    lineWrites: require('./modules/orders/line-writes').createOrderLineWrites({
+      get,
+      all,
+      run,
+      orders: ordersService,
+      inventoryPorts: inventoryForOrders,
+      desk: desk.as('orders'),
+    }),
+  }),
+});
 registerOrderRoutes({
   app,
-  get,
   all,
-  run,
+  desk,
   requirePermission,
   cacheMasterData,
   getIo: () => io,
   orders: ordersService,
-  inventoryPorts,
-  productionPorts,
 });
 
 // What has happened to an order: fulfilment, runs, production report, returns,
@@ -16034,111 +16011,125 @@ registerOrderReportRoutes({
   dieRowToDto: (...args) => dieRowToDto(...args),
   actorFromRequest,
   recordLedgerEvent,
-  productionPorts,
+  desk: desk.as('orders'),
+});
+
+// Challans at function level. The work behind its four route files is built
+// here and published at the kernel desk; the routes ask the desk. `io` is
+// created later, hence the getter. The scrap and leftover group and item
+// helpers stay in this file: the items port points at them.
+desk.register('challans', {
+  operations: require('./modules/challans/operations')({
+    all,
+    ports: challansPorts,
+    removeTemplate: (id) => deleteChallanTemplate(id),
+    core: require('./modules/challans/work').createChallanWork({
+      challanService: challansService,
+      get,
+      all,
+      run,
+      getIo: () => io,
+      nowIso,
+      rowToUploadedAssetDto,
+      normalizeChallanType,
+      createAssetUploadIntent,
+      completeAssetUpload,
+      inventoryPorts: inventoryForChallans,
+      actorFromRequest,
+      // Settled stock is filed under groups and items the items module makes.
+      ensureReconcilePrimaryGroup: () => itemsForChallans.groups.ensureReconcilePrimary(),
+      ensureReconcileSubGroup: (name, parentGroupId, unitId) =>
+        itemsForChallans.groups.ensureReconcileSub(name, parentGroupId, unitId),
+      ensureReconcileItem: (name, groupId, unitId, options) =>
+        itemsForChallans.ensureForReconcile(name, groupId, unitId, options),
+      desk: desk.as('challans'),
+    }),
+    template: require('./modules/challans/template-work').createChallanTemplateWork({
+      templateService: challanTemplateService,
+      parseBooleanEnv,
+      parseJsonObject,
+      getDeliveryChallanRowById,
+    }),
+    invoice: require('./modules/challans/invoice-work').createInvoiceWork({
+      invoiceService,
+      get,
+      all,
+      run,
+      actorFromRequest,
+      recordLedgerEvent,
+    }),
+    report: require('./modules/challans/report-work').createChallanReportWork({
+      reportService: challanReportService,
+    }),
+  }),
 });
 
 // Challan templates. /scans and POST /test-print must stay ahead of /:id inside
 // the module; see its header.
-registerChallanTemplateRoutes({
-  app,
-  requirePermission,
-  parseBooleanEnv,
-  parseJsonObject,
-  getDeliveryChallanRowById,
-  templateService: challanTemplateService,
-});
+registerChallanTemplateRoutes({ app, desk, requirePermission });
 
 // Invoices.
-registerInvoiceRoutes({
-  app,
-  get,
-  all,
-  run,
-  requirePermission,
-  actorFromRequest,
-  recordLedgerEvent,
-  invoiceService,
-});
+registerInvoiceRoutes({ app, desk, requirePermission });
 
 // Challan reports.
-registerChallanReportRoutes({
-  app,
-  requirePermission,
-  reportService: challanReportService,
-});
+registerChallanReportRoutes({ app, desk, requirePermission });
 
-// The challan routes themselves. `io` is created later, hence the getter. The
-// scrap/leftover group and item helpers stay in this file: the items port
-// points at them.
-registerChallanRoutes({
-  challanService: challansService,
-  app,
-  get,
-  all,
-  run,
-  requirePermission,
-  cacheMasterData,
-  getIo: () => io,
-  nowIso,
-  rowToUploadedAssetDto,
-  normalizeChallanType,
-  createAssetUploadIntent,
-  completeAssetUpload,
-  inventoryPorts,
-  actorFromRequest,
-  ensureReconcilePrimaryGroup,
-  ensureReconcileSubGroup,
-  ensureReconcileItem,
-  ensureKgUnit,
-});
+// The challan routes themselves.
+registerChallanRoutes({ app, desk, requirePermission, cacheMasterData });
 
 // Material types carry the one number that turns a sheet's volume into its
 // weight. Named apart from `materials`, which is barcoded physical stock.
 const {
   registerMaterialTypeRoutes,
 } = require('./modules/items/material-types');
-registerMaterialTypeRoutes({ app, requirePermission, get, all, run, logChange });
+registerMaterialTypeRoutes({ app, desk, requirePermission });
 
 // Master Data lives on the (variant, pipeline) pair — see modules/items/
 // master-data.js for the resolution rule.
 const { registerMasterDataRoutes } = require('./modules/items/master-data');
-const itemMasterData = registerMasterDataRoutes({
-  app,
-  requirePermission,
-  get,
-  all,
-  run,
-  logChange,
-});
+registerMasterDataRoutes({ app, desk, requirePermission });
 
-registerUnitRoutes(app, { run, get, all, requirePermission, trackCreate });
+// Units at function level. It asks inventory, items and orders how much a unit
+// is used; inventory's operations are registered with its routes, above.
+desk.register('units', {
+  operations: require('./modules/units/operations')({
+    master: unitsMaster,
+    db: { run, get, all },
+    trashAndDelete,
+  }),
+});
+registerUnitRoutes(app, { desk, requirePermission, trackCreate });
 
 // Production: runs, node status, stock on a run, scrap, completed output, a
 // machine's queue and an item's pipeline history. See modules/production/routes.js.
-registerProductionRoutes(app, {
-  actorFromRequest,
-  all,
-  challansPorts,
-  get,
-  getMaterialRowByBarcode,
-  inventoryPorts,
-  itemsPorts,
-  ordersPorts,
-  parseJson,
-  recordLedgerEvent,
-  requirePermission,
-  rowToTemplate,
-  run,
-  production: productionService,
+desk.register('production', {
+  operations: require('./modules/production/operations')({
+    ports: productionPorts,
+    outputRow: (id) => productionService.getProductionRunRowById(id),
+    work: require('./modules/production/work').createProductionWork({
+      actorFromRequest,
+      all,
+      challansPorts: challansClient(desk.as('production')),
+      get,
+      getMaterialRowByBarcode: (barcode) => inventoryForProduction.materials.rowByBarcode(barcode),
+      inventoryPorts: inventoryForProduction,
+      itemsPorts: itemsForProduction,
+      desk: desk.as('production'),
+      parseJson,
+      recordLedgerEvent,
+      rowToTemplate,
+      run,
+      production: productionService,
+    }),
+  }),
 });
+registerProductionRoutes(app, { desk, requirePermission });
 
 // The people at a client, nested under /api/clients so the clients module's
 // gate and grants apply. See modules/parties/contacts.js.
 partyContacts({
   app,
-  get,
-  all,
-  run,
+  desk,
   requirePermission,
   trackCreate,
   trackUpdate,
@@ -16156,9 +16147,7 @@ partyContacts({
 const registerDieMakerRoutes = require('./modules/dies/die-makers');
 registerDieMakerRoutes({
   app,
-  get,
-  all,
-  run,
+  desk,
   requirePermission,
   trackCreate,
   trackUpdate,
@@ -16167,16 +16156,7 @@ registerDieMakerRoutes({
 
 // The item sheet's property columns (061) — gated as `items`.
 const registerItemSheetPropertyRoutes = require('./modules/items/sheet-properties');
-registerItemSheetPropertyRoutes({
-  app,
-  get,
-  all,
-  run,
-  requirePermission,
-  trackCreate,
-  trackUpdate,
-  trackDelete,
-});
+registerItemSheetPropertyRoutes({ app, desk, requirePermission, trackCreate, trackUpdate, trackDelete });
 
 // --- the routes outside the fifteen business modules ----------------------
 //
@@ -16337,29 +16317,18 @@ registerTrackRoutes(trackRouter, {
 registerSearchRoutes(searchRouter, {
   all,
   get,
-  itemsPorts,
+  itemsPorts: itemsClient(desk.as('search')),
   requirePermission,
   resolveBarcode,
   run,
 });
 registerUnitMasterRoutes(unitMasterRouter, {
-  all,
-  buildUnitGraph,
   cacheMasterData,
-  convertValue,
-  get,
-  getUnitsWithUsage,
-  parseQualifiedValue,
+  desk,
   requirePermission,
-  rowToUnitDto,
-  rowToUnitGroupDto,
-  run,
-  saveUnit,
-  saveUnitGroup,
   trackCreate,
   trackDelete,
   trackUpdate,
-  trashAndDelete,
 });
 registerSettingsRoutes(settingsRouter, {
   all,
@@ -16395,8 +16364,13 @@ app.get("/api/kernel/territory", async (req, res) => {
       app,
       allRows: all,
       runtime: {
+        // Calls served at the kernel desk, per operation.
+        ...Object.fromEntries(
+          Object.entries(desk.stats()).map(([name, operationCalls]) => [name, { operationCalls }]),
+        ),
         items: {
-          portCalls: itemsPorts.stats()
+          portCalls: itemsPorts.stats(),
+          ...(desk.stats().items ? { operationCalls: desk.stats().items } : {}),
         }
       }
     });
@@ -16819,6 +16793,7 @@ app.use((error, req, res, _next) => {
 });
 
 module.exports = {
+  desk,
   resyncChangelogCursor,
   drainChangelog,
   pruneChangelog,

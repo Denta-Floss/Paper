@@ -1,29 +1,20 @@
-const { seedStandardUnitFamilies, STANDARD_FAMILIES } = require('./service');
+'use strict';
 
-function registerUnitRoutes(app, { run, get, all, requirePermission, trackCreate }) {
+// Units over HTTP: the families with their ladders, and seeding the standard
+// ones. Both ask the module's operations at the kernel desk (./operations.js).
+
+function registerUnitRoutes(app, { desk, requirePermission, trackCreate }) {
+  const ask = (req, name, input) => desk.call(name, input, { actor: desk.actorFromRequest(req) });
+
   // Lists unit families and their ladders
   app.get('/api/units/families', requirePermission('config.read'), async (req, res) => {
     try {
-      const groups = await all(
-        'SELECT * FROM unit_groups ORDER BY id ASC',
-      );
-      const units = await all(
-        'SELECT * FROM units WHERE is_archived = 0 ORDER BY unit_group_id ASC, factor_to_base ASC',
-      );
-
-      const byGroup = {};
-      for (const u of units) {
-        if (!u.unit_group_id) continue;
-        if (!byGroup[u.unit_group_id]) byGroup[u.unit_group_id] = [];
-        byGroup[u.unit_group_id].push(u);
+      const result = await ask(req, 'units.families.withUnits');
+      if (!result.ok) {
+        res.status(result.status || 400).json({ success: false, error: result.error });
+        return;
       }
-
-      const result = groups.map((g) => ({
-        ...g,
-        units: byGroup[g.id] || [],
-      }));
-
-      res.json({ success: true, families: result, error: null });
+      res.json({ success: true, families: result.families, error: null });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -35,14 +26,16 @@ function registerUnitRoutes(app, { run, get, all, requirePermission, trackCreate
     requirePermission('units.create'),
     async (req, res) => {
       try {
-        await seedStandardUnitFamilies({ run, get, all });
+        const result = await ask(req, 'units.seedStandard');
+        if (!result.ok) {
+          res.status(result.status || 400).json({ success: false, error: result.error });
+          return;
+        }
+        // trackCreate is fire-and-forget and returns nothing. This used to be
+        // `await trackCreate(…).catch(…)`, which threw on the undefined and
+        // answered 500 after the seed had succeeded.
         if (typeof trackCreate === 'function') {
-          await trackCreate(
-            'units',
-            'standard-seed',
-            { seededFamilies: STANDARD_FAMILIES.map((f) => f.code) },
-            req,
-          ).catch(() => {});
+          trackCreate('units', 'standard-seed', { seededFamilies: result.seededFamilies }, req);
         }
         res.json({ success: true, message: 'Standard units seeded successfully.' });
       } catch (err) {

@@ -28,14 +28,18 @@ function createProductionService({
   getMaterialRowByBarcode,
   inventoryPorts,
   itemsPorts,
+  desk,
   jobsService,
-  ordersPorts,
   parseJson,
   recordLedgerEvent,
   rowToMaterialDto,
   rowToTemplate,
   run,
 }) {
+  /// A pipeline template's row. Templates are the pipelines module's; a run
+  /// only remembers which one it was started from.
+  const templateRowById = async (id) => (await desk.ask('pipelines.templates.row', { id })).row;
+
   // Metric key (API/blob) → stage_reconciliations column. One row per run+node;
   // the API keeps exposing these as `nodeMetrics` so the app needs no changes.
   const STAGE_RECON_COLUMNS = {
@@ -95,7 +99,7 @@ function createProductionService({
   async function ensureTemporarySetFromAssembly(runId, nodeId, producedQty) {
     const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
     if (!runRow) return null;
-    const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+    const templateRow = await templateRowById(runRow.template_id);
     if (!templateRow) return null;
     const tpl = rowToTemplate(templateRow);
     const node = (tpl.nodes || []).find((n) => n.id === nodeId);
@@ -184,7 +188,7 @@ function createProductionService({
   // --- a run and the order line it was started for -------------------------
   //
   // The link (order_pipeline_assignments) is production's. What the linked line
-  // IS belongs to orders, and is asked for through its port. A run can be linked
+  // IS belongs to orders, and is asked for at the kernel desk. A run can be linked
   // to several lines; like the joins these replace, the first link whose line
   // still exists is the one that answers.
 
@@ -203,12 +207,14 @@ function createProductionService({
   /// The order line a run makes: `{ item_id, variation_leaf_node_id,
   /// variation_path_label, … }`, or undefined when the run is not order-linked.
   function orderLineForRun(runId) {
-    return firstLinkedLine(runId, (orderItemId) => ordersPorts.lines.row(orderItemId));
+    return firstLinkedLine(runId, async (orderItemId) =>
+      (await desk.ask('orders.lines.get', { orderItemId })).line);
   }
 
   /// The order a run belongs to: `{ order_item_id, order_no, client_name }`.
   function orderForRun(runId) {
-    return firstLinkedLine(runId, (orderItemId) => ordersPorts.lines.summary(orderItemId));
+    return firstLinkedLine(runId, async (orderItemId) =>
+      (await desk.ask('orders.lines.summary', { orderItemId })).summary);
   }
 
   async function rowToRun(row) {
@@ -348,10 +354,7 @@ function createProductionService({
     // variation or decline to mint anything.
     { outputVariationLeafNodeId = 0, outputVariationPathLabel = '' } = {},
   ) {
-    const templateRow = await get(
-      'SELECT * FROM pipeline_templates WHERE id = ?',
-      [templateId],
-    );
+    const templateRow = await templateRowById(templateId);
     if (!templateRow) {
       return null;
     }
@@ -395,7 +398,7 @@ function createProductionService({
         [orderItemId, runId]
       );
     } else if (orderNo) {
-      for (const lineId of await ordersPorts.lines.idsForOrderNo(orderNo)) {
+      for (const lineId of (await desk.ask('orders.lines.idsForOrderNo', { orderNo })).ids) {
         await run(
           'INSERT INTO order_pipeline_assignments (order_item_id, pipeline_run_id) VALUES (?, ?)',
           [lineId, runId]
@@ -419,9 +422,7 @@ function createProductionService({
     overrides,
     barcodeAssignments = [],
   }) {
-    const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
-      templateId,
-    ]);
+    const templateRow = await templateRowById(templateId);
     if (!templateRow) {
       return null;
     }
@@ -722,7 +723,7 @@ function createProductionService({
     );
 
     // Push to freelancer pool if Assembly node is reached
-    const templateRowNode = await get('SELECT * FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+    const templateRowNode = await templateRowById(runRow.template_id);
     if (templateRowNode && (payload.status === 'ready' || payload.status === 'active' || payload.status === 'queued')) {
       const tpl = rowToTemplate(templateRowNode);
       const targetNode = tpl.nodes.find(n => n.id === nodeId);
@@ -783,9 +784,7 @@ function createProductionService({
     }
 
     // Check if the overall pipeline run is completed
-    const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
-      runRow.template_id,
-    ]);
+    const templateRow = await templateRowById(runRow.template_id);
     if (templateRow) {
       const template = rowToTemplate(templateRow);
       const allDone = template.nodes.every((node) => {

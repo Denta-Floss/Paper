@@ -23,6 +23,8 @@
 //   bom.lines(itemId)           -> bill-of-material rows
 //   lookupByName(name)          -> (SMELL) item id lookup by exact name match
 //   delete(type, id, req)       -> orchestrates item/group cascade deletion
+//   groups.rowById(id)          -> a group with its unit and usage
+//   groups.save(group)          -> create or change a group
 //   groups.ensureReconcilePrimary() -> creates/returns the primary reconcile group
 //   groups.ensureReconcileSub() -> creates/returns a subgroup for reconciliation
 //   ensureForReconcile()        -> creates/returns an item under a reconcile group
@@ -58,6 +60,8 @@ function createItemsPorts(impl) {
     lookupByName: counted('lookupByName', impl.lookupByName),
     delete: counted('delete', impl.deleteEntity),
     groups: {
+      rowById: counted('groups.rowById', impl.groupRowById),
+      save: counted('groups.save', impl.saveGroup),
       ensureReconcilePrimary: counted('groups.ensureReconcilePrimary', impl.ensureReconcilePrimary),
       ensureReconcileSub: counted('groups.ensureReconcileSub', impl.ensureReconcileSub),
     },

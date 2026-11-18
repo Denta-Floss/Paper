@@ -16,6 +16,11 @@
 // path segment maps to no module, which skips the per-module CRUD check
 // entirely rather than failing closed.
 //
+// THE WORK is createDieMakerService below: each function answers a result
+// ({ ok, … } or { ok: false, status, error, … }) and knows nothing of HTTP. It
+// is published at the kernel desk as dies.makers.* (./operations.js), and the
+// routes at the foot of this file ask the desk.
+//
 // SHAPE. Column for column this is `clients` — the shop asked for the client
 // form's fields, and an outside toolroom is a company you invoice. Only `name`
 // is required; a die made by a fitter on the floor has no GST number, and
@@ -85,18 +90,7 @@ function gstComplaint(value) {
   return null;
 }
 
-module.exports = function registerDieMakerRoutes(ctx) {
-  const {
-    app,
-    get,
-    all,
-    run,
-    requirePermission,
-    trackCreate,
-    trackUpdate,
-    trackDelete,
-  } = ctx;
-
+function createDieMakerService({ get, all, run }) {
   /// Every maker, with how many dies name it.
   ///
   /// The count is what makes a delete safe to offer: a maker nothing points at
@@ -107,43 +101,40 @@ module.exports = function registerDieMakerRoutes(ctx) {
     ) AS usage_count
     FROM die_makers m
   `;
-
-  app.get('/api/die-makers', requirePermission('dies.read'), async (req, res) => {
-    try {
-      const includeArchived = String(req.query.includeArchived || '') === 'true';
-      const rows = await all(
-        `${LIST_SQL}
-         ${includeArchived ? '' : 'WHERE m.is_archived = 0'}
-         ORDER BY m.is_archived ASC, m.name COLLATE NOCASE ASC`,
-      );
-      res.json({ success: true, dieMakers: rows.map(rowToDto) });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
+  const NOT_FOUND = { ok: false, status: 404, error: 'No such die maker.' };
+  const duplicate = (error, detail = {}) => ({
+    ok: false,
+    status: 409,
+    error,
+    code: 'die_maker_duplicate',
+    ...detail,
   });
+  const isUniqueClash = (error) => String(error?.message || '').includes('UNIQUE constraint failed');
 
-  app.get('/api/die-makers/:id', requirePermission('dies.read'), async (req, res) => {
-    try {
-      const row = await get(`${LIST_SQL} WHERE m.id = ?`, [Number(req.params.id)]);
-      if (!row) {
-        return res.status(404).json({ success: false, error: 'No such die maker.' });
-      }
-      res.json({ success: true, dieMaker: rowToDto(row) });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
+  async function list({ includeArchived = false } = {}) {
+    const rows = await all(
+      `${LIST_SQL}
+       ${includeArchived ? '' : 'WHERE m.is_archived = 0'}
+       ORDER BY m.is_archived ASC, m.name COLLATE NOCASE ASC`,
+    );
+    return { ok: true, dieMakers: rows.map(rowToDto) };
+  }
 
-  app.post('/api/die-makers', requirePermission('dies.create'), async (req, res) => {
+  async function getOne(id) {
+    const row = await get(`${LIST_SQL} WHERE m.id = ?`, [Number(id)]);
+    if (!row) return NOT_FOUND;
+    return { ok: true, dieMaker: rowToDto(row) };
+  }
+
+  async function create(body = {}) {
     try {
-      const body = req.body || {};
       const name = String(body.name || '').trim();
       if (!name) {
-        return res.status(400).json({ success: false, error: 'A die maker needs a name.' });
+        return { ok: false, status: 400, error: 'A die maker needs a name.' };
       }
 
       const gstError = gstComplaint(body.gstNumber);
-      if (gstError) return res.status(400).json({ success: false, error: gstError });
+      if (gstError) return { ok: false, status: 400, error: gstError };
 
       // Checked before the insert so the answer names the maker rather than an
       // index. The unique index is still the guard that actually holds.
@@ -152,12 +143,7 @@ module.exports = function registerDieMakerRoutes(ctx) {
         [name],
       );
       if (clash) {
-        return res.status(409).json({
-          success: false,
-          error: `"${clash.name}" is already a die maker.`,
-          code: 'die_maker_duplicate',
-          dieMakerId: clash.id,
-        });
+        return duplicate(`"${clash.name}" is already a die maker.`, { dieMakerId: clash.id });
       }
 
       const now = new Date().toISOString();
@@ -171,32 +157,21 @@ module.exports = function registerDieMakerRoutes(ctx) {
       );
 
       const row = await get(`${LIST_SQL} WHERE m.id = ?`, [result.lastID]);
-      // The ROW, not the name: trackLabelFor reads the row to title the entry.
-      if (trackCreate) trackCreate('die_makers', result.lastID, row, req);
-      res.json({ success: true, dieMaker: rowToDto(row) });
+      // The ROW travels too: Track reads it to title the entry.
+      return { ok: true, dieMaker: rowToDto(row), id: result.lastID, row };
     } catch (error) {
-      if (String(error.message || '').includes('UNIQUE constraint failed')) {
-        return res.status(409).json({
-          success: false,
-          error: 'That die maker already exists.',
-          code: 'die_maker_duplicate',
-        });
-      }
-      res.status(500).json({ success: false, error: error.message });
+      if (isUniqueClash(error)) return duplicate('That die maker already exists.');
+      throw error;
     }
-  });
+  }
 
-  app.patch('/api/die-makers/:id', requirePermission('dies.update'), async (req, res) => {
+  async function update(id, body = {}) {
     try {
-      const id = Number(req.params.id);
       const existing = await get('SELECT * FROM die_makers WHERE id = ?', [id]);
-      if (!existing) {
-        return res.status(404).json({ success: false, error: 'No such die maker.' });
-      }
+      if (!existing) return NOT_FOUND;
 
-      const body = req.body || {};
       const gstError = gstComplaint(body.gstNumber);
-      if (gstError) return res.status(400).json({ success: false, error: gstError });
+      if (gstError) return { ok: false, status: 400, error: gstError };
 
       // Absent means leave alone; present-and-empty means clear. The
       // difference matters because this editor is also opened pre-filled from
@@ -208,7 +183,7 @@ module.exports = function registerDieMakerRoutes(ctx) {
         if (!(field in body)) continue;
         const value = String(body[field] || '').trim();
         if (column === 'name' && !value) {
-          return res.status(400).json({ success: false, error: 'A die maker needs a name.' });
+          return { ok: false, status: 400, error: 'A die maker needs a name.' };
         }
         sets.push(`${column} = ?`);
         params.push(value);
@@ -226,56 +201,116 @@ module.exports = function registerDieMakerRoutes(ctx) {
       }
 
       const row = await get(`${LIST_SQL} WHERE m.id = ?`, [id]);
-      // Before AND after: trackUpdate diffs them and logs nothing when the
-      // save changed nothing a person would recognise. Both read the same
-      // way — the list query adds usage_count, which the before-row lacks,
-      // so every save logged a "Usage count '' → '0'" nobody made.
+      // Before AND after for Track, both read the same way — the list query
+      // adds usage_count, which the before-row lacks, so every save logged a
+      // "Usage count '' → '0'" nobody made.
       const after = await get('SELECT * FROM die_makers WHERE id = ?', [id]);
-      if (trackUpdate) trackUpdate('die_makers', id, existing, after, req);
-      res.json({ success: true, dieMaker: rowToDto(row) });
+      return { ok: true, dieMaker: rowToDto(row), before: existing, after };
     } catch (error) {
-      if (String(error.message || '').includes('UNIQUE constraint failed')) {
-        return res.status(409).json({
-          success: false,
-          error: 'Another die maker already has that name.',
-          code: 'die_maker_duplicate',
-        });
-      }
+      if (isUniqueClash(error)) return duplicate('Another die maker already has that name.');
+      throw error;
+    }
+  }
+
+  /// Archive, or really delete when no die names it.
+  ///
+  /// A maker on a die is never removed outright: the die would be left pointing
+  /// at nothing while still showing a name it no longer owns. Archiving keeps
+  /// the row resolvable and takes it out of the picker, which is the whole of
+  /// what "delete" means to the person asking.
+  async function remove(id) {
+    const row = await get(`${LIST_SQL} WHERE m.id = ?`, [id]);
+    if (!row) return NOT_FOUND;
+
+    if (Number(row.usage_count || 0) > 0) {
+      await run(
+        'UPDATE die_makers SET is_archived = 1, updated_at = ? WHERE id = ?',
+        [new Date().toISOString(), id],
+      );
+      const archived = await get(`${LIST_SQL} WHERE m.id = ?`, [id]);
+      return {
+        ok: true,
+        archived: true,
+        dieMaker: rowToDto(archived),
+        message: `${row.name} is on ${row.usage_count} die(s), so it was archived rather than deleted.`,
+        before: row,
+        after: archived,
+      };
+    }
+
+    await run('DELETE FROM die_makers WHERE id = ?', [id]);
+    return { ok: true, archived: false, before: row };
+  }
+
+  return { list, getOne, create, update, remove };
+}
+
+const { httpKit } = require('../../kernel/desk-kit');
+
+module.exports = function registerDieMakerRoutes(ctx) {
+  const { app, desk, requirePermission, trackCreate, trackUpdate, trackDelete } = ctx;
+  const { ask, refuse } = httpKit(desk);
+
+  app.get('/api/die-makers', requirePermission('dies.read'), async (req, res) => {
+    try {
+      const result = await ask(req, 'dies.makers.list', {
+        includeArchived: String(req.query.includeArchived || '') === 'true',
+      });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, dieMakers: result.dieMakers });
+    } catch (error) {
       res.status(500).json({ success: false, error: error.message });
     }
   });
 
-  // Archive, or really delete when no die names it.
-  //
-  // A maker on a die is never removed outright: the die would be left pointing
-  // at nothing while still showing a name it no longer owns. Archiving keeps
-  // the row resolvable and takes it out of the picker, which is the whole of
-  // what "delete" means to the person asking.
+  app.get('/api/die-makers/:id', requirePermission('dies.read'), async (req, res) => {
+    try {
+      const result = await ask(req, 'dies.makers.get', { id: Number(req.params.id) });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, dieMaker: result.dieMaker });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post('/api/die-makers', requirePermission('dies.create'), async (req, res) => {
+    try {
+      const result = await ask(req, 'dies.makers.create', { ...(req.body || {}) });
+      if (!result.ok) return refuse(res, result);
+      if (trackCreate) trackCreate('die_makers', result.id, result.row, req);
+      res.json({ success: true, dieMaker: result.dieMaker });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.patch('/api/die-makers/:id', requirePermission('dies.update'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const result = await ask(req, 'dies.makers.update', { id, data: req.body || {} });
+      if (!result.ok) return refuse(res, result);
+      if (trackUpdate) trackUpdate('die_makers', id, result.before, result.after, req);
+      res.json({ success: true, dieMaker: result.dieMaker });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.delete('/api/die-makers/:id', requirePermission('dies.delete'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const row = await get(`${LIST_SQL} WHERE m.id = ?`, [id]);
-      if (!row) {
-        return res.status(404).json({ success: false, error: 'No such die maker.' });
-      }
-
-      if (Number(row.usage_count || 0) > 0) {
-        await run(
-          'UPDATE die_makers SET is_archived = 1, updated_at = ? WHERE id = ?',
-          [new Date().toISOString(), id],
-        );
-        const archived = await get(`${LIST_SQL} WHERE m.id = ?`, [id]);
-        if (trackUpdate) trackUpdate('die_makers', id, row, archived, req);
+      const result = await ask(req, 'dies.makers.delete', { id });
+      if (!result.ok) return refuse(res, result);
+      if (result.archived) {
+        if (trackUpdate) trackUpdate('die_makers', id, result.before, result.after, req);
         return res.json({
           success: true,
           archived: true,
-          dieMaker: rowToDto(archived),
-          message: `${row.name} is on ${row.usage_count} die(s), so it was archived rather than deleted.`,
+          dieMaker: result.dieMaker,
+          message: result.message,
         });
       }
-
-      await run('DELETE FROM die_makers WHERE id = ?', [id]);
-      if (trackDelete) trackDelete('die_makers', id, row, req);
+      if (trackDelete) trackDelete('die_makers', id, result.before, req);
       res.json({ success: true, archived: false });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -283,5 +318,6 @@ module.exports = function registerDieMakerRoutes(ctx) {
   });
 };
 
+module.exports.createDieMakerService = createDieMakerService;
 module.exports.rowToDto = rowToDto;
 module.exports.gstComplaint = gstComplaint;

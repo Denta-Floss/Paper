@@ -18,7 +18,7 @@ const { normalizePartyValue, normalizeGstNumber } = require('../parties/party-ki
 // 409 with its `code` for a client that something still names.
 // ---------------------------------------------------------------------------
 
-function createClientService({ get, all, run, logChange, orders }) {
+function createClientService({ get, all, run, logChange, desk }) {
   function rowToClientDto(row) {
     if (!row) {
       return null;
@@ -56,7 +56,8 @@ function createClientService({ get, all, run, logChange, orders }) {
     if (!row) {
       return row;
     }
-    return { ...row, usage_count: await orders.clientLineCount(row.id) };
+    const { count } = await desk.ask('orders.clients.lineCount', { clientId: row.id });
+    return { ...row, usage_count: count };
   }
 
   async function getClientsWithUsage() {
@@ -64,8 +65,8 @@ function createClientService({ get, all, run, logChange, orders }) {
       SELECT * FROM clients
       ORDER BY is_archived ASC, LOWER(name) ASC
     `);
-    const usage = await orders.clientLineCounts();
-    return rows.map((row) => ({ ...row, usage_count: usage.get(row.id) || 0 }));
+    const { counts } = await desk.ask('orders.clients.lineCounts');
+    return rows.map((row) => ({ ...row, usage_count: counts[row.id] || 0 }));
   }
 
   async function findClientDuplicate({ name, gstNumber = '', excludeId = null }) {
@@ -219,7 +220,7 @@ function createClientService({ get, all, run, logChange, orders }) {
     }
 
     if ((existing.usage_count || 0) > 0) {
-      const lockedOrderUsage = await orders.clientLockedLineCount(id);
+      const { count: lockedOrderUsage } = await desk.ask('orders.clients.lockedLineCount', { clientId: id });
       // Name and GST only. A contact person, their designation, phone or email
       // are not the client's legal identity — those are the facts most likely to
       // change on a client you are actively working with, and locking them would
@@ -278,7 +279,7 @@ function createClientService({ get, all, run, logChange, orders }) {
       await partyContacts.attachClientContacts({ all }, client);
       return { already: true, row: client };
     }
-    const orderLines = await orders.clientLineCount(id);
+    const { count: orderLines } = await desk.ask('orders.clients.lineCount', { clientId: id });
     const subContractors = Number(
       (await get('SELECT COUNT(*) AS c FROM sub_contractors WHERE client_id = ?', [id]))?.c || 0,
     );

@@ -1,5 +1,7 @@
 'use strict';
 
+const { answer, deskRoutes } = require('../../kernel/desk-kit');
+
 // ---------------------------------------------------------------------------
 // The item sheet's own property columns — added with the sheet's "+", each
 // with a list of options, kept for every user until the column is removed.
@@ -86,11 +88,13 @@ function rowToDto(row) {
   };
 }
 
-module.exports = function registerItemSheetPropertyRoutes(ctx) {
-  const { app, get, all, run, requirePermission, trackCreate, trackUpdate, trackDelete } = ctx;
+/// What the handlers did, as functions of a plain request that return the
+/// status and body they used to send. Published at the kernel desk by
+/// ./operations.js; the routes below ask the desk.
+function createSheetPropertyWork({ get, all, run }) {
 
-  const fail = (res, error) =>
-    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  const fail = (error) =>
+    answer(error.statusCode || 500, { success: false, error: error.message });
 
   const load = async (id) => {
     const row = await get('SELECT * FROM item_sheet_properties WHERE id = ?', [Number(id)]);
@@ -102,16 +106,16 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
     return row;
   };
 
-  app.get('/api/item-sheet-properties', requirePermission('items.read'), async (_req, res) => {
+  async function listSheetProperties(req) {
     try {
       const rows = await all('SELECT * FROM item_sheet_properties ORDER BY position ASC, id ASC');
-      res.json({ success: true, properties: rows.map(rowToDto) });
+      return answer(200, { success: true, properties: rows.map(rowToDto) });
     } catch (error) {
-      fail(res, error);
+      return fail(error);
     }
-  });
+  }
 
-  app.post('/api/item-sheet-properties', requirePermission('items.create'), async (req, res) => {
+  async function createSheetProperty(req) {
     try {
       const body = req.body || {};
       const name = cleanName(body.name);
@@ -127,7 +131,7 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
         [key],
       );
       if (existing) {
-        return res.status(409).json({
+        return answer(409, {
           success: false,
           code: 'property_exists',
           error: `"${existing.display_name}" is already a column on the sheet.`,
@@ -151,7 +155,7 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
           'SELECT * FROM item_sheet_properties WHERE property_key = ? COLLATE NOCASE',
           [key],
         );
-        return res.status(409).json({
+        return answer(409, {
           success: false,
           code: 'property_exists',
           error: `"${name}" is already a column on the sheet.`,
@@ -159,14 +163,14 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
         });
       }
       const row = await load(result.lastID);
-      if (trackCreate) trackCreate('item_sheet_properties', row.id, row, req);
-      res.status(201).json({ success: true, property: rowToDto(row) });
+      req.track('create', 'item_sheet_properties', row.id, row);
+      return answer(201, { success: true, property: rowToDto(row) });
     } catch (error) {
-      fail(res, error);
+      return fail(error);
     }
-  });
+  }
 
-  app.patch('/api/item-sheet-properties/:id', requirePermission('items.update'), async (req, res) => {
+  async function updateSheetProperty(req) {
     try {
       const before = await load(req.params.id);
       const body = req.body || {};
@@ -188,17 +192,17 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
         await run(`UPDATE item_sheet_properties SET ${sets.join(', ')} WHERE id = ?`, params);
       }
       const after = await load(before.id);
-      if (trackUpdate) trackUpdate('item_sheet_properties', before.id, before, after, req);
-      res.json({ success: true, property: rowToDto(after) });
+      req.track('update', 'item_sheet_properties', before.id, before, after);
+      return answer(200, { success: true, property: rowToDto(after) });
     } catch (error) {
-      fail(res, error);
+      return fail(error);
     }
-  });
+  }
 
   // One option, appended unless it is already there (ignoring case). Its own
   // route rather than a PATCH of the whole list: two people adding a value
   // at once would otherwise each write a list without the other's.
-  app.post('/api/item-sheet-properties/:id/options', requirePermission('items.update'), async (req, res) => {
+  async function addSheetPropertyOption(req) {
     try {
       const before = await load(req.params.id);
       const label = cleanOption((req.body || {}).label);
@@ -214,20 +218,20 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
           [JSON.stringify(options), new Date().toISOString(), before.id],
         );
         const after = await load(before.id);
-        if (trackUpdate) trackUpdate('item_sheet_properties', before.id, before, after, req);
-        return res.json({ success: true, property: rowToDto(after) });
+        req.track('update', 'item_sheet_properties', before.id, before, after);
+        return answer(200, { success: true, property: rowToDto(after) });
       }
-      res.json({ success: true, property: rowToDto(before) });
+      return answer(200, { success: true, property: rowToDto(before) });
     } catch (error) {
-      fail(res, error);
+      return fail(error);
     }
-  });
+  }
 
   // Takes one option off the list, matched in any case — the delete button in
   // the column's dropdown. One label rather than a whole new list, for the
   // same reason adding is: two windows at once must not undo each other.
   // Parts that carry the value keep it; the list only offers it no more.
-  app.delete('/api/item-sheet-properties/:id/options', requirePermission('items.delete'), async (req, res) => {
+  async function removeSheetPropertyOption(req) {
     try {
       const before = await load(req.params.id);
       const label = cleanOption(req.query.label);
@@ -235,31 +239,64 @@ module.exports = function registerItemSheetPropertyRoutes(ctx) {
       const options = parseOptions(before.options_json);
       const kept = options.filter((o) => o.toLowerCase() !== label.toLowerCase());
       if (kept.length === options.length) {
-        return res.json({ success: true, property: rowToDto(before) });
+        return answer(200, { success: true, property: rowToDto(before) });
       }
       await run(
         'UPDATE item_sheet_properties SET options_json = ?, updated_at = ? WHERE id = ?',
         [JSON.stringify(kept), new Date().toISOString(), before.id],
       );
       const after = await load(before.id);
-      if (trackUpdate) trackUpdate('item_sheet_properties', before.id, before, after, req);
-      res.json({ success: true, property: rowToDto(after) });
+      req.track('update', 'item_sheet_properties', before.id, before, after);
+      return answer(200, { success: true, property: rowToDto(after) });
     } catch (error) {
-      fail(res, error);
+      return fail(error);
     }
-  });
+  }
 
-  app.delete('/api/item-sheet-properties/:id', requirePermission('items.delete'), async (req, res) => {
+  async function deleteSheetProperty(req) {
     try {
       const before = await load(req.params.id);
       await run('DELETE FROM item_sheet_properties WHERE id = ?', [before.id]);
-      if (trackDelete) trackDelete('item_sheet_properties', before.id, before, req);
-      res.json({ success: true });
+      req.track('delete', 'item_sheet_properties', before.id, before);
+      return answer(200, { success: true });
     } catch (error) {
-      fail(res, error);
+      return fail(error);
     }
-  });
+  }
+
+  return {
+    listSheetProperties,
+    createSheetProperty,
+    updateSheetProperty,
+    addSheetPropertyOption,
+    removeSheetPropertyOption,
+    deleteSheetProperty,
+  };
+}
+
+module.exports = function registerItemSheetPropertyRoutes(ctx) {
+  const { app, desk, requirePermission } = ctx;
+  const send = deskRoutes(desk, { create: ctx.trackCreate, update: ctx.trackUpdate, delete: ctx.trackDelete });
+
+  app.get('/api/item-sheet-properties', requirePermission('items.read'),
+    send('items.sheetProperties.list', (req) => ({ query: req.query, data: req.body })));
+
+  app.post('/api/item-sheet-properties', requirePermission('items.create'),
+    send('items.sheetProperties.create', (req) => ({ query: req.query, data: req.body })));
+
+  app.patch('/api/item-sheet-properties/:id', requirePermission('items.update'),
+    send('items.sheetProperties.update', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
+
+  app.post('/api/item-sheet-properties/:id/options', requirePermission('items.update'),
+    send('items.sheetProperties.addOption', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
+
+  app.delete('/api/item-sheet-properties/:id/options', requirePermission('items.delete'),
+    send('items.sheetProperties.removeOption', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
+
+  app.delete('/api/item-sheet-properties/:id', requirePermission('items.delete'),
+    send('items.sheetProperties.delete', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
 };
 
 module.exports.rowToDto = rowToDto;
 module.exports.propertyKeyOf = propertyKeyOf;
+module.exports.createSheetPropertyWork = createSheetPropertyWork;

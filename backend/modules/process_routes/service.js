@@ -190,6 +190,11 @@ module.exports = function createProcessRouteService({ get, all, run }) {
     });
   }
 
+  /// Whether the part a route would belong to is still there.
+  async function partExists(partId) {
+    return Boolean(await get('SELECT 1 FROM items WHERE id = ?', [partId]));
+  }
+
   async function stepsFor(routeId) {
     return all(
       `SELECT s.id, s.seq, s.stage_id, s.notes, s.machine_id, s.die_id,
@@ -458,6 +463,7 @@ module.exports = function createProcessRouteService({ get, all, run }) {
   }
 
   return {
+    partExists,
     listStages,
     createStage,
     retireStage,

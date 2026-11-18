@@ -18,29 +18,23 @@
 //   DELETE /api/sub-contractors/:id                  remove one
 //
 // `clients` is the first path segment of most of these, so the central CRUD gate
-// maps them to the clients module. `sub-contractors` is mapped there too. The
-// handlers are the ones that lived in server.js, moved whole.
+// maps them to the clients module. `sub-contractors` is mapped there too.
+//
+// The work is the module's operations (./operations.js), asked for at the
+// kernel desk. A handler translates a request into an operation's input and its
+// result into the answer the app has always had, broadcasts the change, and
+// writes the Track entry, which needs the request.
 //
 // The company's people (/api/clients/:clientId/contacts) are the sibling file
 // modules/parties/contacts.js, mounted elsewhere. The B2B portal that hangs off
 // a client is portal-routes.js.
 // ---------------------------------------------------------------------------
 
+const { httpKit } = require('../../kernel/desk-kit');
+
 module.exports = function registerClientRoutes(ctx) {
-  const {
-    app,
-    all,
-    get,
-    requirePermission,
-    trackCreate,
-    trackUpdate,
-    trackDelete,
-    trashAndDelete,
-    partyDeleteBlockers,
-    partyContacts,
-    getIo,
-    clients,
-  } = ctx;
+  const { app, desk, requirePermission, trackCreate, trackUpdate, trackDelete, getIo } = ctx;
+  const { ask, refuse } = httpKit(desk);
 
   const emit = (event, payload) => {
     const io = getIo();
@@ -49,10 +43,27 @@ module.exports = function registerClientRoutes(ctx) {
     }
   };
 
+  /// A client write's refusal. Archive and unarchive say `code` even when there
+  /// is none; a client that is not there is answered with the error alone.
+  const refuseClient = (res, result, { withCode = false } = {}) => {
+    if (result.notFound) {
+      return res.status(404).json({ success: false, error: result.error });
+    }
+    return res.status(result.status || 400).json({
+      success: false,
+      client: null,
+      ...(withCode ? { code: result.code || null } : {}),
+      error: result.error,
+    });
+  };
+
   app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
     try {
-      const rows = await partyContacts.attachClientContacts({ all }, await clients.getClientsWithUsage());
-      res.json({ success: true, clients: rows.map(clients.rowToClientDto), error: null });
+      const result = await ask(req, 'clients.list');
+      if (!result.ok) {
+        return res.status(result.status || 400).json({ success: false, clients: [], error: result.error });
+      }
+      res.json({ success: true, clients: result.clients, error: null });
     } catch (error) {
       res.status(500).json({ success: false, clients: [], error: error.message });
     }
@@ -60,12 +71,9 @@ module.exports = function registerClientRoutes(ctx) {
 
   app.get('/api/clients/:id', requirePermission('config.read'), async (req, res) => {
     try {
-      const row = await clients.getClientRowById(req.params.id);
-      if (!row) {
-        return res.status(404).json({ success: false, client: null, error: 'Not found' });
-      }
-      await partyContacts.attachClientContacts({ all }, row);
-      res.json({ success: true, client: clients.rowToClientDto(row), error: null });
+      const result = await ask(req, 'clients.get', { id: req.params.id });
+      if (!result.ok) return refuseClient(res, result);
+      res.json({ success: true, client: result.client, error: null });
     } catch (error) {
       res.status(500).json({ success: false, client: null, error: error.message });
     }
@@ -73,12 +81,11 @@ module.exports = function registerClientRoutes(ctx) {
 
   app.post('/api/clients', requirePermission('config.write'), async (req, res) => {
     try {
-      const client = await clients.saveClient(req.body || {});
-      await partyContacts.attachClientContacts({ all }, client);
-      const clientDto = clients.rowToClientDto(client);
-      emit('client_added', clientDto);
-      trackCreate('clients', client.id, client, req);
-      res.status(201).json({ success: true, client: clientDto, error: null });
+      const result = await ask(req, 'clients.create', { ...(req.body || {}) });
+      if (!result.ok) return refuseClient(res, result);
+      emit('client_added', result.client);
+      trackCreate('clients', result.row.id, result.row, req);
+      res.status(201).json({ success: true, client: result.client, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -91,21 +98,17 @@ module.exports = function registerClientRoutes(ctx) {
   app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const result = await clients.archiveClient(id);
-      if (result.notFound) {
-        return res.status(404).json({ success: false, error: 'Not found' });
+      const result = await ask(req, 'clients.archive', { id });
+      if (!result.ok) return refuseClient(res, result, { withCode: true });
+      if (!result.already) {
+        // Every other client write broadcasts; this one never did, so an archive
+        // stayed invisible to every other session until it reloaded.
+        emit('client_updated', result.client);
+        trackUpdate('clients', id, result.before, result.after, req);
       }
-      if (result.already) {
-        return res.json({ success: true, client: clients.rowToClientDto(result.row), error: null });
-      }
-      const clientDto = clients.rowToClientDto(result.row);
-      // Every other client write broadcasts; this one never did, so an archive
-      // stayed invisible to every other session until it reloaded.
-      emit('client_updated', clientDto);
-      trackUpdate('clients', id, result.before, result.row, req);
       // The updated row, so the caller knows the new state without refetching
       // the whole list.
-      res.json({ success: true, client: clientDto, error: null });
+      res.json({ success: true, client: result.client, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -121,14 +124,11 @@ module.exports = function registerClientRoutes(ctx) {
   app.patch('/api/clients/:id/unarchive', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const result = await clients.unarchiveClient(id);
-      if (result.notFound) {
-        return res.status(404).json({ success: false, error: 'Not found' });
-      }
-      const clientDto = clients.rowToClientDto(result.row);
-      emit('client_updated', clientDto);
-      trackUpdate('clients', id, result.before, result.row, req);
-      res.json({ success: true, client: clientDto, error: null });
+      const result = await ask(req, 'clients.unarchive', { id });
+      if (!result.ok) return refuseClient(res, result, { withCode: true });
+      emit('client_updated', result.client);
+      trackUpdate('clients', id, result.before, result.after, req);
+      res.json({ success: true, client: result.client, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -142,18 +142,15 @@ module.exports = function registerClientRoutes(ctx) {
   app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
-      const blockers = await partyDeleteBlockers('clients', id);
-      if (blockers.length > 0) {
-        return res.status(409).json({
+      const result = await ask(req, 'clients.delete', { id });
+      if (!result.ok) {
+        return res.status(result.status || 400).json({
           success: false,
-          code: 'client_in_use',
-          error: `"${before?.name || 'This client'}" is still named on ${blockers.join(' and ')}. `
-            + 'Archive it instead, or move those first.',
+          ...(result.code ? { code: result.code } : {}),
+          error: result.error,
         });
       }
-      await trashAndDelete('clients', id, req);
-      trackDelete('clients', id, before, req);
+      trackDelete('clients', id, result.before, req);
       emit('client_deleted', { id });
       res.json({ success: true, error: null });
     } catch (error) {
@@ -164,17 +161,11 @@ module.exports = function registerClientRoutes(ctx) {
   app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
-      const client = await clients.saveClient({
-        ...(req.body || {}),
-        id,
-      });
-      await partyContacts.attachClientContacts({ all }, client);
-      const clientDto = clients.rowToClientDto(client);
-      emit('client_updated', clientDto);
-      const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
-      trackUpdate('clients', id, before, after, req);
-      res.json({ success: true, client: clientDto, error: null });
+      const result = await ask(req, 'clients.update', { ...(req.body || {}), id });
+      if (!result.ok) return refuseClient(res, result);
+      emit('client_updated', result.client);
+      trackUpdate('clients', id, result.before, result.after, req);
+      res.json({ success: true, client: result.client, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -188,7 +179,9 @@ module.exports = function registerClientRoutes(ctx) {
 
   app.get('/api/sub-contractors', requirePermission('config.read'), async (req, res) => {
     try {
-      res.json({ success: true, subContractors: await clients.listSubContractors(), error: null });
+      const result = await ask(req, 'clients.subContractors.list');
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, subContractors: result.subContractors, error: null });
     } catch (error) {
       res.status(500).json({ success: false, subContractors: [], error: error.message });
     }
@@ -196,12 +189,11 @@ module.exports = function registerClientRoutes(ctx) {
 
   app.get('/api/clients/:clientId/sub-contractors', requirePermission('config.read'), async (req, res) => {
     try {
-      const clientId = Number(req.params.clientId);
-      res.json({
-        success: true,
-        subContractors: await clients.listSubContractorsForClient(clientId),
-        error: null,
+      const result = await ask(req, 'clients.subContractors.listForClient', {
+        clientId: Number(req.params.clientId),
       });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, subContractors: result.subContractors, error: null });
     } catch (error) {
       res.status(500).json({ success: false, subContractors: [], error: error.message });
     }
@@ -209,13 +201,13 @@ module.exports = function registerClientRoutes(ctx) {
 
   app.post('/api/clients/:clientId/sub-contractors', requirePermission('config.write'), async (req, res) => {
     try {
-      const clientId = Number(req.params.clientId);
-      const made = await clients.createSubContractor(clientId, req.body);
-      if (made.refusal) {
-        return res.status(made.refusal.status).json(made.refusal.body);
-      }
-      trackCreate('sub_contractors', made.id, made.row, req);
-      res.status(201).json({ success: true, subContractor: made.dto, error: null });
+      const result = await ask(req, 'clients.subContractors.create', {
+        ...(req.body || {}),
+        clientId: Number(req.params.clientId),
+      });
+      if (!result.ok) return refuse(res, result);
+      trackCreate('sub_contractors', result.id, result.row, req);
+      res.status(201).json({ success: true, subContractor: result.subContractor, error: null });
     } catch (error) {
       res.status(500).json({ success: false, subContractor: null, error: error.message });
     }
@@ -224,12 +216,10 @@ module.exports = function registerClientRoutes(ctx) {
   app.put('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const saved = await clients.updateSubContractor(id, req.body);
-      if (saved.refusal) {
-        return res.status(saved.refusal.status).json(saved.refusal.body);
-      }
-      trackUpdate('sub_contractors', id, saved.existing, saved.row, req);
-      res.json({ success: true, subContractor: saved.dto, error: null });
+      const result = await ask(req, 'clients.subContractors.update', { ...(req.body || {}), id });
+      if (!result.ok) return refuse(res, result);
+      trackUpdate('sub_contractors', id, result.before, result.after, req);
+      res.json({ success: true, subContractor: result.subContractor, error: null });
     } catch (error) {
       res.status(500).json({ success: false, subContractor: null, error: error.message });
     }
@@ -238,8 +228,9 @@ module.exports = function registerClientRoutes(ctx) {
   app.delete('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const before = await clients.deleteSubContractor(id);
-      trackDelete('sub_contractors', id, before, req);
+      const result = await ask(req, 'clients.subContractors.delete', { id });
+      if (!result.ok) return refuse(res, result);
+      trackDelete('sub_contractors', id, result.before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

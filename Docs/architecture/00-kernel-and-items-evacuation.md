@@ -92,8 +92,9 @@ backend/
     index.js          // boot: load modules, mount legacy, start reconciler
     registry.js       // module manifests (the seven scattered maps consolidated)
     borders.js        // auth chain + central permission gate + ingress/egress engine
-    ports.js          // inter-module call bus (sync queries between modules)
-    events.js         // event bus (module facts: challan.issued, item.created…)
+    desk.js           // BUILT 2026-11-18, in place of ports.js: see the note below
+    ports.js          // (planned, superseded) inter-module call bus
+    events.js         // (planned, not built) event bus: challan.issued, item.created…
     reconcile.js      // desired-state vs actual-state; plan/apply
     migrate.js        // per-module migration chains (wraps existing migrations/)
     territory.js      // burn-down metering: routes/tables still unclaimed by manifests
@@ -102,6 +103,16 @@ backend/
   legacy/
     server.legacy.js  // what remains of server.js, shrinking to zero
 ```
+
+> **2026-11-18: the call bus is `kernel/desk.js`.** A module publishes named
+> operations in `modules/<name>/operations.js`; the desk serves them to a
+> terminal (`bin/paper.js`), to HTTP handlers and to other modules, checking the
+> caller and the input the same way each time. A module's `ports.js` becomes the
+> implementation behind its internal operations and is no longer handed to
+> anyone. Process routes and orders are converted; the other modules still use
+> hand-wired ports. Calls stay in process, so cross-module transactions are
+> unchanged. The event bus is still not built. See change 45 in `11-mindmap.md`.
+
 
 Kernel rules (constitution, enforced from day one):
 

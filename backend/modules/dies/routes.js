@@ -12,33 +12,35 @@
 //   POST   /api/dies/:id/assets/upload-complete   say it arrived
 //
 // `dies` is the first path segment, so the central CRUD gate maps every route
-// here to the dies module. Handlers are the ones that lived in server.js, moved
-// whole. The die makers master is the sibling file, die-makers.js.
+// here to the dies module. The four master routes ask the module's operations
+// (./operations.js) at the kernel desk; the asset routes call the kernel's asset
+// service. The die makers master is the sibling file, die-makers.js.
 // ---------------------------------------------------------------------------
+
+const { httpKit } = require('../../kernel/desk-kit');
 
 module.exports = function registerDieRoutes(ctx) {
   const {
     app,
+    desk,
     requirePermission,
     cacheMasterData,
     trackCreate,
     trackUpdate,
     trackDelete,
-    dies,
-    production,
     // Assets are a kernel capability still defined in server.js.
     listAssetsForEntity,
     createAssetUploadIntent,
     completeAssetUpload,
-    // Late-bound: the links and variations modules mount after this one.
-    getPurgeEntityLinks,
-    getPurgeEntityVariations,
   } = ctx;
+  const { ask, refuse } = httpKit(desk);
 
   // Dies CRUD Endpoints
   app.get('/api/dies', requirePermission('config.read'), cacheMasterData, async (req, res) => {
     try {
-      res.json({ success: true, dies: await dies.listDies(), error: null });
+      const result = await ask(req, 'dies.list');
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, dies: result.dies, error: null });
     } catch (error) {
       res.status(500).json({ success: false, dies: [], error: error.message });
     }
@@ -46,11 +48,9 @@ module.exports = function registerDieRoutes(ctx) {
 
   app.get('/api/dies/:id', requirePermission('config.read'), async (req, res) => {
     try {
-      const die = await dies.getDie(req.params.id);
-      if (!die) {
-        return res.status(404).json({ success: false, die: null, error: 'Die not found' });
-      }
-      res.json({ success: true, die, error: null });
+      const result = await ask(req, 'dies.get', { id: req.params.id });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, die: result.die, error: null });
     } catch (error) {
       res.status(500).json({ success: false, die: null, error: error.message });
     }
@@ -58,16 +58,14 @@ module.exports = function registerDieRoutes(ctx) {
 
   app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
     try {
-      const saved = await dies.saveDie(req.body);
-      if (saved.refusal) {
-        return res.status(saved.refusal.status).json(saved.refusal.body);
-      }
-      if (saved.isUpdate) {
-        trackUpdate('dies', saved.resultId, saved.beforeRow, saved.row, req);
+      const result = await ask(req, 'dies.save', req.body);
+      if (!result.ok) return refuse(res, result);
+      if (result.isUpdate) {
+        trackUpdate('dies', result.resultId, result.before, result.row, req);
       } else {
-        trackCreate('dies', saved.resultId, saved.row, req);
+        trackCreate('dies', result.resultId, result.row, req);
       }
-      res.json({ success: true, die: saved.die, error: null });
+      res.json({ success: true, die: result.die, error: null });
     } catch (error) {
       res.status(500).json({ success: false, die: null, error: error.message });
     }
@@ -76,15 +74,9 @@ module.exports = function registerDieRoutes(ctx) {
   app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = req.params.id;
-      if (await production.dieAssignedToActiveRun(id)) {
-        return res.status(400).json({ success: false, error: 'Cannot delete die: assigned to an active pipeline run.' });
-      }
-      const before = await dies.deleteDie(id);
-      const purgeEntityLinks = getPurgeEntityLinks();
-      const purgeEntityVariations = getPurgeEntityVariations();
-      if (purgeEntityLinks) await purgeEntityLinks('die', id);
-      if (purgeEntityVariations) await purgeEntityVariations('die', id);
-      trackDelete('dies', id, before, req);
+      const result = await ask(req, 'dies.delete', { id });
+      if (!result.ok) return refuse(res, result);
+      trackDelete('dies', id, result.before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

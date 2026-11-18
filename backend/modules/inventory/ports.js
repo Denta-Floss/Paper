@@ -55,7 +55,7 @@
 //                                   its stock positions
 // ---------------------------------------------------------------------------
 
-function createInventoryPorts({ inventory }) {
+function createInventoryPorts({ inventory, getMaterialRowByBarcode }) {
   return {
     sets: {
       deleteById: (setId) => inventory.deleteInventorySet(setId),
@@ -65,6 +65,7 @@ function createInventoryPorts({ inventory }) {
     },
     materials: {
       delete: (barcode) => inventory.deleteMaterialRecord(barcode),
+      rowByBarcode: (barcode) => getMaterialRowByBarcode(barcode),
     },
     governance: {
       get: (materialId) => inventory.getMaterialGroupGovernance(materialId),

@@ -40,7 +40,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
     dieRowToDto,
     actorFromRequest,
     recordLedgerEvent,
-    productionPorts,
+    desk,
   } = ctx;
 
   /// An order's runs, newest first, one row per run-and-line link, each with
@@ -48,7 +48,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
   /// asked of production.
   async function runsForOrderNo(orderNo) {
     const lines = await all('SELECT id FROM order_items WHERE order_no = ?', [orderNo]);
-    return productionPorts.runs.forOrderItems(lines.map((line) => line.id));
+    return (await desk.ask('production.runs.forOrderItems', { orderItemIds: lines.map((line) => line.id) })).runs;
   }
 
   // Fulfilment rollup for the whole order book, in one request. Everything else
@@ -123,7 +123,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
         return entry;
       };
 
-      const assignments = await productionPorts.runs.allWithOrderItem();
+      const { runs: assignments } = await desk.ask('production.runs.allWithOrderItem');
       const runsByOrderItem = new Map();
       for (const run of assignments) {
         const list = runsByOrderItem.get(run.order_item_id) || [];
@@ -557,7 +557,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
             };
           });
 
-        const inputs = await productionPorts.runs.inputsForRun(runRow.id);
+        const { inputs } = await desk.ask('production.runs.inputs', { runId: runRow.id });
         const sheets = [];
         for (const inp of inputs) {
           if (inp.source_kind === 'sheet' && inp.piece_parent_code) {

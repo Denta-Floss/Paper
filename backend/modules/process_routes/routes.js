@@ -25,48 +25,29 @@
 // ordered list of stage ids.
 // ---------------------------------------------------------------------------
 
-const createProcessRouteService = require('./service');
-
 module.exports = function registerProcessRoutesModule(ctx) {
-  const {
-    app, get, all, run,
-    requirePermission,
-    trackCreate,
-    trackUpdate,
-  } = ctx;
+  const { app, desk, requirePermission, trackCreate, trackUpdate } = ctx;
 
-  const service = createProcessRouteService({ get, all, run });
+  // The module's work is its operations (./operations.js), asked for at the
+  // kernel desk. A handler here only translates: request in, result out, and
+  // the Track entry, which needs the request for its actor and sitting.
+  const ask = (req, name, input) => desk.call(name, input, { actor: desk.actorFromRequest(req) });
 
-  /// The part must exist before it can be routed. Checked explicitly so the
-  /// answer is a 404 about the part rather than a foreign-key error about a
-  /// table the caller has never heard of.
-  async function partOr404(req, res) {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      res.status(400).json({ success: false, error: 'Invalid part id.' });
-      return null;
-    }
-    const row = await get('SELECT id, name, display_name FROM items WHERE id = ?', [id]);
-    if (!row) {
-      res.status(404).json({ success: false, error: 'That part no longer exists.' });
-      return null;
-    }
-    return row;
-  }
-
+  /// A refusal as the app has always received it: the error, its code, and
+  /// whatever the operation attached so the caller has somewhere to go (the
+  /// stage that already has the name, the route to version, the use count).
   function refuse(res, result) {
-    res.status(result.status || 400).json({
-      success: false,
-      error: result.error,
-      code: result.code,
-      ...(result.routeId ? { routeId: result.routeId, version: result.version } : {}),
-    });
+    const { ok, status, ...detail } = result;
+    res.status(status || 400).json({ success: false, ...detail });
   }
 
   app.get('/api/process-stages', requirePermission('items.read'), async (req, res) => {
     try {
-      const includeInactive = String(req.query.includeInactive || '') === 'true';
-      res.json({ success: true, stages: await service.listStages({ includeInactive }) });
+      const result = await ask(req, 'process_routes.stages.list', {
+        includeInactive: String(req.query.includeInactive || '') === 'true',
+      });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, stages: result.stages });
     } catch (error) {
       console.error('[Routes] stage master failed:', error);
       res.status(500).json({ success: false, error: 'Could not read the stage master.' });
@@ -75,18 +56,10 @@ module.exports = function registerProcessRoutesModule(ctx) {
 
   app.post('/api/process-stages', requirePermission('items.create'), async (req, res) => {
     try {
-      const result = await service.createStage({ name: req.body?.name });
-      if (!result.ok) {
-        // The 409 carries the stage that already has this name, so the
-        // caller can simply use it.
-        res.status(result.status || 400).json({
-          success: false,
-          error: result.error,
-          code: result.code,
-          ...(result.stage ? { stage: result.stage } : {}),
-        });
-        return;
-      }
+      const result = await ask(req, 'process_routes.stages.create', { name: req.body?.name });
+      // The 409 carries the stage that already has this name, so the caller
+      // can simply use it.
+      if (!result.ok) return refuse(res, result);
       if (trackCreate) trackCreate('process_stages', result.stage.id, result.stage, req);
       res.status(201).json({ success: true, stage: result.stage });
     } catch (error) {
@@ -97,16 +70,8 @@ module.exports = function registerProcessRoutesModule(ctx) {
 
   app.delete('/api/process-stages/:id', requirePermission('items.delete'), async (req, res) => {
     try {
-      const result = await service.retireStage(req.params.id);
-      if (!result.ok) {
-        res.status(result.status || 400).json({
-          success: false,
-          error: result.error,
-          code: result.code,
-          ...(result.uses ? { uses: result.uses } : {}),
-        });
-        return;
-      }
+      const result = await ask(req, 'process_routes.stages.retire', { id: req.params.id });
+      if (!result.ok) return refuse(res, result);
       if (trackUpdate) {
         trackUpdate('process_stages', result.stage.id, { ...result.stage, active: 1 }, result.stage, req);
       }
@@ -119,9 +84,9 @@ module.exports = function registerProcessRoutesModule(ctx) {
 
   app.get('/api/items/:id/routes', requirePermission('items.read'), async (req, res) => {
     try {
-      const part = await partOr404(req, res);
-      if (!part) return;
-      res.json({ success: true, routes: await service.routesFor(part.id) });
+      const result = await ask(req, 'process_routes.routes.list', { partId: req.params.id });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, routes: result.routes });
     } catch (error) {
       console.error('[Routes] read failed:', error);
       res.status(500).json({ success: false, error: 'Could not read this part’s routes.' });
@@ -130,27 +95,25 @@ module.exports = function registerProcessRoutesModule(ctx) {
 
   app.post('/api/items/:id/routes', requirePermission('items.update'), async (req, res) => {
     try {
-      const part = await partOr404(req, res);
-      if (!part) return;
-      const result = await service.saveRoute(part.id, req.body?.steps, {
-        status: String(req.body?.status || 'active'),
-        note: String(req.body?.note || '').trim(),
-        userId: req.user?.id || null,
+      const partId = Number(req.params.id);
+      const result = await ask(req, 'process_routes.routes.save', {
+        partId: req.params.id,
+        steps: req.body?.steps,
+        status: req.body?.status,
+        note: req.body?.note,
       });
-      if (!result.ok) {
-        refuse(res, result);
-        return;
-      }
+      if (!result.ok) return refuse(res, result);
       // A route is a part attribute with its own lifecycle, so it is logged
       // against the PART — that is the record somebody opens the Track tab on.
       // `route_created` / `route_versioned` in the doc's metric map are entity
       // lifecycle, which entity_activity_log already carries (and with them a
       // sitting, free, via logEntityActivity). The floor transitions
       // stage_entered / stage_exited belong to Stage tracking and are not this.
-      const label = { name: `${await service.pipelineNameFor(part.id)} v${result.version}` };
-      if (result.created) trackCreate('items', part.id, label, req);
-      else trackUpdate('items', part.id, { name: 'route' }, label, req);
-      res.json({ success: true, ...result, routes: await service.routesFor(part.id) });
+      const { pipelineName, ...saved } = result;
+      const label = { name: `${pipelineName} v${saved.version}` };
+      if (saved.created) trackCreate('items', partId, label, req);
+      else trackUpdate('items', partId, { name: 'route' }, label, req);
+      res.json({ success: true, ...saved });
     } catch (error) {
       console.error('[Routes] save failed:', error);
       res.status(500).json({ success: false, error: 'Could not save the route.' });
@@ -159,30 +122,25 @@ module.exports = function registerProcessRoutesModule(ctx) {
 
   app.post('/api/items/:id/routes/versions', requirePermission('items.update'), async (req, res) => {
     try {
-      const part = await partOr404(req, res);
-      if (!part) return;
-      const result = await service.declareVersion(part.id, req.body?.steps, {
-        note: String(req.body?.note || '').trim(),
-        userId: req.user?.id || null,
+      const partId = Number(req.params.id);
+      const result = await ask(req, 'process_routes.routes.version', {
+        partId: req.params.id,
+        steps: req.body?.steps,
+        note: req.body?.note,
       });
-      if (!result.ok) {
-        refuse(res, result);
-        return;
-      }
-      const pipeline = await service.pipelineNameFor(part.id);
+      if (!result.ok) return refuse(res, result);
+      const { pipelineName, ...saved } = result;
       trackUpdate(
         'items',
-        part.id,
-        { name: `${pipeline} v${result.previousVersion}` },
-        { name: `${pipeline} v${result.version}` },
+        partId,
+        { name: `${pipelineName} v${saved.previousVersion}` },
+        { name: `${pipelineName} v${saved.version}` },
         req,
       );
-      res.json({ success: true, ...result, routes: await service.routesFor(part.id) });
+      res.json({ success: true, ...saved });
     } catch (error) {
       console.error('[Routes] version failed:', error);
       res.status(500).json({ success: false, error: 'Could not declare a new version.' });
     }
   });
-
-  return service;
 };

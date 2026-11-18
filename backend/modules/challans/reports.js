@@ -25,7 +25,7 @@ function createChallanReportService({
   effectiveReportGroupCodesForChallan,
   listInvoices,
   normalizePositiveNumber,
-  productionPorts,
+  desk,
 }) {
   function rowToConversionOverrideDto(row) {
     return {
@@ -697,10 +697,7 @@ function createChallanReportService({
       throw error;
     }
 
-    const orderLines = await all(
-      `SELECT * FROM order_items WHERE order_no = ? ORDER BY id ASC`,
-      [orderNo],
-    );
+    const { rows: orderLines } = await desk.ask('orders.rows.forOrderNo', { orderNo });
     if (orderLines.length === 0) {
       const error = new Error(`Unknown order: ${orderNo}.`);
       error.statusCode = 404;
@@ -748,11 +745,11 @@ function createChallanReportService({
     }
 
     // --- the runs that made it ------------------------------------------------
-    const runRows = await productionPorts.runs.summariesForOrderItems(orderItemIds);
+    const { runs: runRows } = await desk.ask('production.runs.summariesForOrderItems', { orderItemIds });
     const runIds = runRows.map((row) => row.id);
 
     // --- in: stock those runs consumed, and where it came from ----------------
-    const consumed = await productionPorts.runs.inputsForRuns(runIds);
+    const { inputs: consumed } = await desk.ask('production.runs.inputsForRuns', { runIds });
 
     // Where the consumed stock came in.
     //
@@ -824,7 +821,7 @@ function createChallanReportService({
     // --- scrap and yield, per stage, for those runs ---------------------------
     const scrapRow = runIds.length === 0
       ? null
-      : await productionPorts.runs.stageTotalsForRuns(runIds);
+      : (await desk.ask('production.runs.stageTotals', { runIds })).totals;
 
     // --- what could not be traced, said out loud ------------------------------
     const tracedBarcodes = new Set(

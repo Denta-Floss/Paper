@@ -12,36 +12,38 @@
 //   POST   /api/machines/:id/assets/upload-complete   say it arrived
 //
 // `machines` is the first path segment, so the central CRUD gate maps every
-// route here to the machines module. Handlers are the ones that lived in
-// server.js, moved whole.
+// route here to the machines module. The four master routes ask the module's
+// operations (./operations.js) at the kernel desk; the asset routes call the
+// kernel's asset service.
 //
 // NOT here: GET /api/machines/:id/queue. It reads pipeline_runs, so it is in
 // modules/production/routes.js.
 // ---------------------------------------------------------------------------
 
+const { httpKit } = require('../../kernel/desk-kit');
+
 module.exports = function registerMachineRoutes(ctx) {
   const {
     app,
+    desk,
     requirePermission,
     cacheMasterData,
     trackCreate,
     trackUpdate,
     trackDelete,
-    machines,
-    production,
     // Assets are a kernel capability still defined in server.js.
     listAssetsForEntity,
     createAssetUploadIntent,
     completeAssetUpload,
-    // Late-bound: the links and variations modules mount after this one.
-    getPurgeEntityLinks,
-    getPurgeEntityVariations,
   } = ctx;
+  const { ask, refuse } = httpKit(desk);
 
   // Machines CRUD Endpoints
   app.get('/api/machines', requirePermission('config.read'), cacheMasterData, async (req, res) => {
     try {
-      res.json({ success: true, machines: await machines.listMachines(), error: null });
+      const result = await ask(req, 'machines.list');
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, machines: result.machines, error: null });
     } catch (error) {
       res.status(500).json({ success: false, machines: [], error: error.message });
     }
@@ -49,11 +51,9 @@ module.exports = function registerMachineRoutes(ctx) {
 
   app.get('/api/machines/:id', requirePermission('config.read'), async (req, res) => {
     try {
-      const machine = await machines.getMachine(req.params.id);
-      if (!machine) {
-        return res.status(404).json({ success: false, machine: null, error: 'Machine not found' });
-      }
-      res.json({ success: true, machine, error: null });
+      const result = await ask(req, 'machines.get', { id: req.params.id });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, machine: result.machine, error: null });
     } catch (error) {
       res.status(500).json({ success: false, machine: null, error: error.message });
     }
@@ -61,16 +61,14 @@ module.exports = function registerMachineRoutes(ctx) {
 
   app.post('/api/machines', requirePermission('config.write'), async (req, res) => {
     try {
-      const saved = await machines.saveMachine(req.body);
-      if (saved.refusal) {
-        return res.status(saved.refusal.status).json(saved.refusal.body);
-      }
-      if (saved.isUpdate) {
-        trackUpdate('machines', saved.resultId, saved.beforeRow, saved.row, req);
+      const result = await ask(req, 'machines.save', req.body);
+      if (!result.ok) return refuse(res, result);
+      if (result.isUpdate) {
+        trackUpdate('machines', result.resultId, result.before, result.row, req);
       } else {
-        trackCreate('machines', saved.resultId, saved.row, req);
+        trackCreate('machines', result.resultId, result.row, req);
       }
-      res.json({ success: true, machine: saved.machine, error: null });
+      res.json({ success: true, machine: result.machine, error: null });
     } catch (error) {
       res.status(500).json({ success: false, machine: null, error: error.message });
     }
@@ -79,15 +77,9 @@ module.exports = function registerMachineRoutes(ctx) {
   app.delete('/api/machines/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = req.params.id;
-      if (await production.machineAssignedToActiveRun(id)) {
-        return res.status(400).json({ success: false, error: 'Cannot delete machine: assigned to an active pipeline run.' });
-      }
-      const before = await machines.deleteMachine(id);
-      const purgeEntityLinks = getPurgeEntityLinks();
-      const purgeEntityVariations = getPurgeEntityVariations();
-      if (purgeEntityLinks) await purgeEntityLinks('machine', id);
-      if (purgeEntityVariations) await purgeEntityVariations('machine', id);
-      trackDelete('machines', id, before, req);
+      const result = await ask(req, 'machines.delete', { id });
+      if (!result.ok) return refuse(res, result);
+      trackDelete('machines', id, result.before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

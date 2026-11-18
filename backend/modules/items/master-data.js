@@ -1,5 +1,7 @@
 'use strict';
 
+const { answer, deskRoutes } = require('../../kernel/desk-kit');
+
 // ---------------------------------------------------------------------------
 // Master Data — keyed by (variant, pipeline).
 //
@@ -83,7 +85,12 @@ function rowToDto(row) {
   };
 }
 
-function createMasterData({ get, all, run }) {
+function createMasterData({ get, all, run, templateRow }) {
+  // A pipeline template is the pipelines module's. `templateRow(id)` answers
+  // its row; the module hands in one that asks the kernel desk.
+  if (typeof templateRow !== 'function') {
+    throw new Error('createMasterData needs templateRow(id)');
+  }
   async function readPair(itemId, pipelineId) {
     return get(
       'SELECT * FROM item_pipeline_baselines WHERE item_id = ? AND pipeline_id = ?',
@@ -171,10 +178,7 @@ function createMasterData({ get, all, run }) {
     }
 
     // 3 — data attached to the pipeline that makes this item as output.
-    const template = await get(
-      'SELECT id, name, pen_paper_baseline_json FROM pipeline_templates WHERE id = ?',
-      [targetPipelineId]
-    );
+    const template = await templateRow(targetPipelineId);
     const templateBaseline = parse(template?.pen_paper_baseline_json);
     if (templateBaseline) {
       const persisted = adopt
@@ -223,13 +227,12 @@ function createMasterData({ get, all, run }) {
   /// Every record for one item, one per pipeline it runs on.
   async function listForItem(itemId) {
     const rows = await all(
-      `SELECT b.*, t.name AS pipeline_name
-         FROM item_pipeline_baselines b
-         LEFT JOIN pipeline_templates t ON t.id = b.pipeline_id
-        WHERE b.item_id = ?
-        ORDER BY b.updated_at DESC`,
+      'SELECT b.* FROM item_pipeline_baselines b WHERE b.item_id = ? ORDER BY b.updated_at DESC',
       [itemId]
     );
+    for (const row of rows) {
+      row.pipeline_name = (await templateRow(row.pipeline_id))?.name ?? null;
+    }
     return rows.map((row) => ({
       ...rowToDto(row),
       pipelineName: row.pipeline_name || '',
@@ -355,122 +358,136 @@ function summarise(baseline) {
 // Routes
 // ---------------------------------------------------------------------------
 
-function registerMasterDataRoutes(ctx) {
-  const { app, requirePermission, get, all, run, logChange } = ctx;
-  const masterData = createMasterData({ get, all, run });
+/// What the handlers did, as functions of a plain request that return the
+/// status and body they used to send. Published at the kernel desk by
+/// ./operations.js; the routes below ask the desk.
+function createMasterDataWork({ get, all, run, logChange, desk }) {
+  const masterData = createMasterData({
+    get,
+    all,
+    run,
+    templateRow: async (id) => (await desk.ask('pipelines.templates.row', { id })).row,
+  });
 
   // Every Master Data record for an item, one per pipeline.
-  app.get(
-    '/api/items/:id/master-data',
-    requirePermission('config.read'),
-    async (req, res) => {
-      try {
-        const records = await masterData.listForItem(req.params.id);
-        res.json({ success: true, records });
-      } catch (error) {
-        res.status(error.status || 500).json({ success: false, error: error.message });
-      }
+  async function masterDataFor(req) {
+    try {
+      const records = await masterData.listForItem(req.params.id);
+      return answer(200, { success: true, records });
+    } catch (error) {
+      return answer(error.status || 500, { success: false, error: error.message });
     }
-  );
+  }
 
   // The rule itself, as a question: does this (variant, pipeline) pair have a
   // match, and if not, what would be created? `?adopt=1` commits the answer.
-  app.get(
-    '/api/items/:id/master-data/resolve',
-    requirePermission('config.read'),
-    async (req, res) => {
-      try {
-        const resolution = await masterData.resolve({
-          itemId: req.params.id,
-          pipelineId: req.query.pipelineId,
-          adopt: req.query.adopt === '1' || req.query.adopt === 'true',
-        });
-        res.json({ success: true, ...resolution });
-      } catch (error) {
-        res.status(error.status || 500).json({ success: false, error: error.message });
-      }
+  async function resolveMasterData(req) {
+    try {
+      const resolution = await masterData.resolve({
+        itemId: req.params.id,
+        pipelineId: req.query.pipelineId,
+        adopt: req.query.adopt === '1' || req.query.adopt === 'true',
+      });
+      return answer(200, { success: true, ...resolution });
+    } catch (error) {
+      return answer(error.status || 500, { success: false, error: error.message });
     }
-  );
+  }
 
   // Typed against this pair, so origin is 'manual' however it got here.
-  app.put(
-    '/api/items/:id/master-data/:pipelineId',
-    requirePermission('config.write'),
-    async (req, res) => {
-      try {
-        const itemId = Number(req.params.id);
-        const pipelineId = String(req.params.pipelineId || '').trim();
-        if (!pipelineId) {
-          res.status(400).json({ success: false, error: 'A pipeline is required.' });
-          return;
-        }
-        const item = await get('SELECT id FROM items WHERE id = ?', [itemId]);
-        if (!item) {
-          res.status(404).json({ success: false, error: 'Item not found' });
-          return;
-        }
-        const baseline = req.body?.baseline ?? req.body;
-        const row = await masterData.writePair({
-          itemId,
+  async function saveMasterData(req) {
+    try {
+      const itemId = Number(req.params.id);
+      const pipelineId = String(req.params.pipelineId || '').trim();
+      if (!pipelineId) {
+        return answer(400, { success: false, error: 'A pipeline is required.' });
+        return;
+      }
+      const item = await get('SELECT id FROM items WHERE id = ?', [itemId]);
+      if (!item) {
+        return answer(404, { success: false, error: 'Item not found' });
+        return;
+      }
+      const baseline = req.body?.baseline ?? req.body;
+      const row = await masterData.writePair({
+        itemId,
+        pipelineId,
+        baseline,
+        origin: masterData.ORIGINS.manual,
+      });
+      if (typeof logChange === 'function') {
+        // There is no `item_master_data` table, and 'update' is not one of
+        // the three event types the changelog allows — this was rejected and
+        // swallowed on every call. The record belongs to the item.
+        await logChange('items', String(itemId), 'UPDATE', {
           pipelineId,
-          baseline,
-          origin: masterData.ORIGINS.manual,
         });
-        if (typeof logChange === 'function') {
-          // There is no `item_master_data` table, and 'update' is not one of
-          // the three event types the changelog allows — this was rejected and
-          // swallowed on every call. The record belongs to the item.
-          await logChange('items', String(itemId), 'UPDATE', {
-            pipelineId,
-          });
-        }
-        res.json({ success: true, record: rowToDto(row) });
-      } catch (error) {
-        res.status(error.status || 500).json({ success: false, error: error.message });
       }
+      return answer(200, { success: true, record: rowToDto(row) });
+    } catch (error) {
+      return answer(error.status || 500, { success: false, error: error.message });
     }
-  );
+  }
 
-  app.delete(
-    '/api/items/:id/master-data/:pipelineId',
-    requirePermission('config.write'),
-    async (req, res) => {
-      try {
-        const removed = await masterData.deletePair(
-          Number(req.params.id),
-          String(req.params.pipelineId || '').trim()
-        );
-        if (!removed) {
-          res.status(404).json({ success: false, error: 'No Master Data for that pair.' });
-          return;
-        }
-        res.json({ success: true });
-      } catch (error) {
-        res.status(error.status || 500).json({ success: false, error: error.message });
+  async function deleteMasterData(req) {
+    try {
+      const removed = await masterData.deletePair(
+        Number(req.params.id),
+        String(req.params.pipelineId || '').trim()
+      );
+      if (!removed) {
+        return answer(404, { success: false, error: 'No Master Data for that pair.' });
+        return;
       }
+      return answer(200, { success: true });
+    } catch (error) {
+      return answer(error.status || 500, { success: false, error: error.message });
     }
-  );
+  }
 
   // The insight view: one pipeline, every variant's Master Data beside it.
-  app.get(
-    '/api/pipelines/:id/master-data',
-    requirePermission('config.read'),
-    async (req, res) => {
-      try {
-        const roster = await masterData.listForPipeline(String(req.params.id));
-        res.json({ success: true, ...roster });
-      } catch (error) {
-        res.status(error.status || 500).json({ success: false, error: error.message });
-      }
+  async function pipelineMasterData(req) {
+    try {
+      const roster = await masterData.listForPipeline(String(req.params.id));
+      return answer(200, { success: true, ...roster });
+    } catch (error) {
+      return answer(error.status || 500, { success: false, error: error.message });
     }
-  );
+  }
 
-  return masterData;
+  return {
+    masterDataFor,
+    resolveMasterData,
+    saveMasterData,
+    deleteMasterData,
+    pipelineMasterData,
+  };
+}
+
+function registerMasterDataRoutes(ctx) {
+  const { app, desk, requirePermission } = ctx;
+  const send = deskRoutes(desk);
+
+  app.get('/api/items/:id/master-data', requirePermission('config.read'),
+    send('items.masterData.list', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
+
+  app.get('/api/items/:id/master-data/resolve', requirePermission('config.read'),
+    send('items.masterData.resolve', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
+
+  app.put('/api/items/:id/master-data/:pipelineId', requirePermission('config.write'),
+    send('items.masterData.save', (req) => ({ id: req.params.id, pipelineId: req.params.pipelineId, query: req.query, data: req.body })));
+
+  app.delete('/api/items/:id/master-data/:pipelineId', requirePermission('config.write'),
+    send('items.masterData.delete', (req) => ({ id: req.params.id, pipelineId: req.params.pipelineId, query: req.query, data: req.body })));
+
+  app.get('/api/pipelines/:id/master-data', requirePermission('config.read'),
+    send('items.masterData.forPipeline', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
 }
 
 module.exports = {
   createMasterData,
   registerMasterDataRoutes,
+  createMasterDataWork,
   blankBaseline,
   materialTypeOf,
   summarise,

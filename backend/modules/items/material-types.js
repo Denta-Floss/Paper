@@ -1,5 +1,7 @@
 'use strict';
 
+const { answer, deskRoutes } = require('../../kernel/desk-kit');
+
 // ---------------------------------------------------------------------------
 // Material types — the master of what a material IS, as opposed to the
 // `materials` table, which is barcoded physical stock: this sheet, from this
@@ -61,10 +63,12 @@ function validate(body) {
   };
 }
 
-function registerMaterialTypeRoutes(ctx) {
-  const { app, requirePermission, get, all, run, logChange } = ctx;
+/// What the handlers did, as functions of a plain request that return the
+/// status and body they used to send. Published at the kernel desk by
+/// ./operations.js; the routes below ask the desk.
+function createMaterialTypeWork({ get, all, run, logChange }) {
 
-  app.get('/api/material-types', requirePermission('config.read'), async (req, res) => {
+  async function listMaterialTypes(req) {
     try {
       const includeArchived = req.query.includeArchived === '1';
       const rows = await all(
@@ -72,17 +76,17 @@ function registerMaterialTypeRoutes(ctx) {
           ${includeArchived ? '' : 'WHERE is_archived = 0'}
           ORDER BY name COLLATE NOCASE`
       );
-      res.json({ success: true, materialTypes: rows.map(rowToDto) });
+      return answer(200, { success: true, materialTypes: rows.map(rowToDto) });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      return answer(500, { success: false, error: error.message });
     }
-  });
+  }
 
-  app.post('/api/material-types', requirePermission('config.write'), async (req, res) => {
+  async function createMaterialType(req) {
     try {
       const parsed = validate(req.body);
       if (parsed.error) {
-        res.status(400).json({ success: false, error: parsed.error });
+        return answer(400, { success: false, error: parsed.error });
         return;
       }
       const clash = await get(
@@ -90,7 +94,7 @@ function registerMaterialTypeRoutes(ctx) {
         [parsed.name]
       );
       if (clash) {
-        res.status(409).json({
+        return answer(409, {
           success: false,
           error: `"${parsed.name}" is already in the material master.`,
         });
@@ -113,99 +117,115 @@ function registerMaterialTypeRoutes(ctx) {
           name: parsed.name,
         });
       }
-      res.status(201).json({ success: true, materialType: rowToDto(row) });
+      return answer(201, { success: true, materialType: rowToDto(row) });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      return answer(500, { success: false, error: error.message });
     }
-  });
+  }
 
-  app.patch(
-    '/api/material-types/:id',
-    requirePermission('config.write'),
-    async (req, res) => {
-      try {
-        const existing = await get('SELECT * FROM material_types WHERE id = ?', [
-          req.params.id,
-        ]);
-        if (!existing) {
-          res.status(404).json({ success: false, error: 'Material type not found' });
-          return;
-        }
-        const parsed = validate({
-          name: req.body?.name ?? existing.name,
-          densityGCm3: req.body?.densityGCm3 ?? existing.density_g_cm3,
-          category: req.body?.category ?? existing.category,
-          notes: req.body?.notes ?? existing.notes,
-        });
-        if (parsed.error) {
-          res.status(400).json({ success: false, error: parsed.error });
-          return;
-        }
-        const clash = await get(
-          'SELECT id FROM material_types WHERE name = ? COLLATE NOCASE AND id <> ?',
-          [parsed.name, req.params.id]
-        );
-        if (clash) {
-          res.status(409).json({
-            success: false,
-            error: `"${parsed.name}" is already in the material master.`,
-          });
-          return;
-        }
-        await run(
-          `UPDATE material_types
-              SET name = ?, density_g_cm3 = ?, category = ?, notes = ?,
-                  is_archived = ?, updated_at = datetime('now')
-            WHERE id = ?`,
-          [
-            parsed.name,
-            parsed.density,
-            parsed.category,
-            parsed.notes,
-            req.body?.isArchived === true ? 1 : Number(existing.is_archived || 0),
-            req.params.id,
-          ]
-        );
-        const row = await get('SELECT * FROM material_types WHERE id = ?', [
-          req.params.id,
-        ]);
-        if (typeof logChange === 'function') {
-          await logChange('material_types', String(req.params.id), 'UPDATE', {
-            name: parsed.name,
-          });
-        }
-        res.json({ success: true, materialType: rowToDto(row) });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+  async function updateMaterialType(req) {
+    try {
+      const existing = await get('SELECT * FROM material_types WHERE id = ?', [
+        req.params.id,
+      ]);
+      if (!existing) {
+        return answer(404, { success: false, error: 'Material type not found' });
+        return;
       }
+      const parsed = validate({
+        name: req.body?.name ?? existing.name,
+        densityGCm3: req.body?.densityGCm3 ?? existing.density_g_cm3,
+        category: req.body?.category ?? existing.category,
+        notes: req.body?.notes ?? existing.notes,
+      });
+      if (parsed.error) {
+        return answer(400, { success: false, error: parsed.error });
+        return;
+      }
+      const clash = await get(
+        'SELECT id FROM material_types WHERE name = ? COLLATE NOCASE AND id <> ?',
+        [parsed.name, req.params.id]
+      );
+      if (clash) {
+        return answer(409, {
+          success: false,
+          error: `"${parsed.name}" is already in the material master.`,
+        });
+        return;
+      }
+      await run(
+        `UPDATE material_types
+            SET name = ?, density_g_cm3 = ?, category = ?, notes = ?,
+                is_archived = ?, updated_at = datetime('now')
+          WHERE id = ?`,
+        [
+          parsed.name,
+          parsed.density,
+          parsed.category,
+          parsed.notes,
+          req.body?.isArchived === true ? 1 : Number(existing.is_archived || 0),
+          req.params.id,
+        ]
+      );
+      const row = await get('SELECT * FROM material_types WHERE id = ?', [
+        req.params.id,
+      ]);
+      if (typeof logChange === 'function') {
+        await logChange('material_types', String(req.params.id), 'UPDATE', {
+          name: parsed.name,
+        });
+      }
+      return answer(200, { success: true, materialType: rowToDto(row) });
+    } catch (error) {
+      return answer(500, { success: false, error: error.message });
     }
-  );
+  }
 
   // Archived rather than deleted: a plan recorded last year names the material
   // it was cut from, and that name has to keep resolving.
-  app.delete(
-    '/api/material-types/:id',
-    requirePermission('config.write'),
-    async (req, res) => {
-      try {
-        const result = await run(
-          `UPDATE material_types SET is_archived = 1, updated_at = datetime('now')
-            WHERE id = ?`,
-          [req.params.id]
-        );
-        if (result.changes === 0) {
-          res.status(404).json({ success: false, error: 'Material type not found' });
-          return;
-        }
-        if (typeof logChange === 'function') {
-          await logChange('material_types', String(req.params.id), 'UPDATE', {});
-        }
-        res.json({ success: true });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+  async function deleteMaterialType(req) {
+    try {
+      const result = await run(
+        `UPDATE material_types SET is_archived = 1, updated_at = datetime('now')
+          WHERE id = ?`,
+        [req.params.id]
+      );
+      if (result.changes === 0) {
+        return answer(404, { success: false, error: 'Material type not found' });
+        return;
       }
+      if (typeof logChange === 'function') {
+        await logChange('material_types', String(req.params.id), 'UPDATE', {});
+      }
+      return answer(200, { success: true });
+    } catch (error) {
+      return answer(500, { success: false, error: error.message });
     }
-  );
+  }
+
+  return {
+    listMaterialTypes,
+    createMaterialType,
+    updateMaterialType,
+    deleteMaterialType,
+  };
+}
+
+function registerMaterialTypeRoutes(ctx) {
+  const { app, desk, requirePermission } = ctx;
+  const send = deskRoutes(desk);
+
+  app.get('/api/material-types', requirePermission('config.read'),
+    send('items.materialTypes.list', (req) => ({ query: req.query, data: req.body })));
+
+  app.post('/api/material-types', requirePermission('config.write'),
+    send('items.materialTypes.create', (req) => ({ query: req.query, data: req.body })));
+
+  app.patch('/api/material-types/:id', requirePermission('config.write'),
+    send('items.materialTypes.update', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
+
+  app.delete('/api/material-types/:id', requirePermission('config.write'),
+    send('items.materialTypes.delete', (req) => ({ id: req.params.id, query: req.query, data: req.body })));
 }
 
 /// The weight of a volume of this material, which is the whole reason the
@@ -217,6 +237,7 @@ function weightKg(volumeCm3, densityGCm3) {
 
 module.exports = {
   registerMaterialTypeRoutes,
+  createMaterialTypeWork,
   rowToDto,
   validate,
   weightKg,

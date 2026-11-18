@@ -26,11 +26,9 @@ const OWNED_ITEMS_SQL = `
     items.id, items.name, items.display_name, items.photo_url, items.quantity,
     items.base_item_id, items.unit_id, items.default_pipeline_id,
     items.pen_paper_baseline_json,
-    units.name AS unit_name,
     COALESCE(ordered.lines, 0) AS order_count,
     COALESCE(ordered.qty, 0) AS order_quantity
   FROM items
-  LEFT JOIN units ON units.id = items.unit_id
   LEFT JOIN (
     SELECT item_id, COUNT(*) AS lines, COALESCE(SUM(quantity), 0) AS qty
     FROM order_items WHERE item_id IS NOT NULL GROUP BY item_id
@@ -46,12 +44,10 @@ const CURATED_ITEMS_SQL = `
     items.id, items.name, items.display_name, items.photo_url, items.quantity,
     items.base_item_id, items.unit_id, items.default_pipeline_id,
     items.pen_paper_baseline_json,
-    units.name AS unit_name,
     COALESCE(ordered.lines, 0) AS order_count,
     COALESCE(ordered.qty, 0) AS order_quantity
   FROM group_item_memberships
   JOIN items ON items.id = group_item_memberships.item_id
-  LEFT JOIN units ON units.id = items.unit_id
   LEFT JOIN (
     SELECT item_id, COUNT(*) AS lines, COALESCE(SUM(quantity), 0) AS qty
     FROM order_items WHERE item_id IS NOT NULL GROUP BY item_id
@@ -146,7 +142,7 @@ function schemaToDto(schema) {
   return { properties, lineage };
 }
 
-async function buildGroupOverview({ all, group, schema }) {
+async function buildGroupOverview({ all, group, schema, unitNameOf = async () => null }) {
   const structure = group.group_structure || 'hierarchical';
   const isCombination = structure === 'combination';
   // A combination group is curated, but an item can also be filed under one
@@ -164,6 +160,13 @@ async function buildGroupOverview({ all, group, schema }) {
     rows = [...curated, ...owned.filter((row) => !seen.has(row.id))];
   } else {
     rows = await all(OWNED_ITEMS_SQL, [group.id]);
+  }
+  // A unit's name is the units module's; it is asked for, once per unit.
+  // Asked once per unit for this overview, and not kept beyond it.
+  const unitNames = new Map();
+  for (const row of rows) {
+    if (!unitNames.has(row.unit_id)) unitNames.set(row.unit_id, await unitNameOf(row.unit_id));
+    row.unit_name = unitNames.get(row.unit_id);
   }
   const items = rows.map(itemToDto);
   const children = (await all(CHILDREN_SQL, [group.id])).map((row) => ({

@@ -28,7 +28,7 @@ function normalizeGstNumber(value = '') {
 /// that module's port rather than read here: a vendor is named by challans, a
 /// client by order lines (orders) and by the parts developed for it (items). Its
 /// sub-contractors are the clients module's own and are read directly.
-function createPartyDeleteBlockers({ get, challans, orders, items }) {
+function createPartyDeleteBlockers({ get, challans, desk, items }) {
   const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
   return async function partyDeleteBlockers(table, id) {
@@ -38,7 +38,7 @@ function createPartyDeleteBlockers({ get, challans, orders, items }) {
     };
 
     if (table === 'clients') {
-      note(await orders.clientLineCount(id), 'order line');
+      note((await desk.ask('orders.clients.lineCount', { clientId: id })).count, 'order line');
       const subs = await get('SELECT COUNT(*) AS c FROM sub_contractors WHERE client_id = ?', [id]);
       note(Number(subs?.c || 0), 'sub-contractor');
       note(Number(await items.developedForCount(id)) || 0, 'part');

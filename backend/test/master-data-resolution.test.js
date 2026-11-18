@@ -90,7 +90,7 @@ async function fixture() {
     `INSERT INTO items (name, display_name, base_item_id, default_pipeline_id)
      VALUES ('Alloy - 16A - MS Sheet', 'Alloy - 16A - MS Sheet', 1, 'pl-cut')`
   );
-  return { ...ctx, masterData: createMasterData(ctx) };
+  return { ...ctx, masterData: createMasterData({ ...ctx, templateRow: (id) => ctx.get('SELECT * FROM pipeline_templates WHERE id = ?', [id]) }) };
 }
 
 test('step 1 — the exact (variant, pipeline) pair is a match', async () => {
@@ -379,7 +379,7 @@ test('the migration carries an existing item baseline onto its pipeline pair', a
 
   await applyMigration(ctx);
 
-  const masterData = createMasterData(ctx);
+  const masterData = createMasterData({ ...ctx, templateRow: (id) => ctx.get('SELECT * FROM pipeline_templates WHERE id = ?', [id]) });
   const moved = await masterData.resolve({ itemId: 1, pipelineId: 'pl-cut' });
   assert.equal(moved.source, 'pair');
   assert.equal(moved.baseline.inputKg, 100);

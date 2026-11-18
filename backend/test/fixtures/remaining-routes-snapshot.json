@@ -1727,7 +1727,7 @@
   "error": "itemId is required for conversion override."
  },
  "owner PATCH /api/unit-groups/:id": {
-  "status": 500,
+  "status": 400,
   "type": "application/json",
   "shape": {
    "error": "string",
@@ -1736,14 +1736,14 @@
   "error": "name is required"
  },
  "owner PATCH /api/units/:id": {
-  "status": 500,
+  "status": 400,
   "type": "application/json",
   "shape": {
    "error": "string",
    "success": "boolean",
    "unit": "null"
   },
-  "error": "name and symbol are required."
+  "error": "name is required"
  },
  "owner PATCH /api/units/:id/archive": {
   "status": 404,
@@ -2061,7 +2061,7 @@
   "error": "Missing replay data"
  },
  "owner POST /api/unit-groups": {
-  "status": 500,
+  "status": 400,
   "type": "application/json",
   "shape": {
    "error": "string",
@@ -2070,14 +2070,14 @@
   "error": "name is required"
  },
  "owner POST /api/units": {
-  "status": 500,
+  "status": 400,
   "type": "application/json",
   "shape": {
    "error": "string",
    "success": "boolean",
    "unit": "null"
   },
-  "error": "name and symbol are required."
+  "error": "name is required"
  },
  "owner POST /api/units/convert-batch": {
   "status": 200,

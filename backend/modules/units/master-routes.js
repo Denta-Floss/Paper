@@ -1,8 +1,8 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// Units master: units and unit groups (families), their create, edit and
-// archive routes. The conversion engine's own routes are in routes.js.
+// Units master over HTTP: units and unit groups (families), their create, edit
+// and archive routes. The families-with-units and seed routes are in routes.js.
 //
 //   GET    /api/units
 //   POST   /api/units
@@ -16,35 +16,31 @@
 //   PATCH  /api/units/:id/archive
 //   DELETE /api/units/:id
 //
-// URLs, guards and the order routes are matched in are exactly as they were in
-// server.js: each group below is registered into a router that holds the place
-// its routes had there. Handlers are moved whole. What they use from the rest
-// of the server (the database helpers, the permission checks, shared services)
-// is handed in by name.
+// URLs, guards and the order routes are matched in are exactly as they were:
+// they are registered into a router that holds the place they had in server.js.
+//
+// The work is the module's operations (./operations.js), asked for at the
+// kernel desk. A handler translates a request into an operation's input and its
+// result into the answer the app has always had, and writes the Track entry,
+// which needs the request. It is handed neither the database nor the service.
 // ---------------------------------------------------------------------------
 function registerUnitMasterRoutes(app, {
-  all,
-  buildUnitGraph,
   cacheMasterData,
-  convertValue,
-  get,
-  getUnitsWithUsage,
-  parseQualifiedValue,
+  desk,
   requirePermission,
-  rowToUnitDto,
-  rowToUnitGroupDto,
-  run,
-  saveUnit,
-  saveUnitGroup,
   trackCreate,
   trackDelete,
   trackUpdate,
-  trashAndDelete,
 }) {
+  const ask = (req, name, input) => desk.call(name, input, { actor: desk.actorFromRequest(req) });
+  const refuse = (res, result, extra = {}) =>
+    res.status(result.status || 400).json({ success: false, ...extra, error: result.error });
+
   app.get('/api/units', requirePermission('config.read'), cacheMasterData, async (req, res) => {
     try {
-      const rows = await getUnitsWithUsage();
-      res.json({ success: true, units: rows.map(rowToUnitDto), error: null });
+      const result = await ask(req, 'units.list');
+      if (!result.ok) return refuse(res, result, { units: [] });
+      res.json({ success: true, units: result.units, error: null });
     } catch (error) {
       res.status(500).json({ success: false, units: [], error: error.message });
     }
@@ -52,9 +48,10 @@ function registerUnitMasterRoutes(app, {
 
   app.post('/api/units', requirePermission('config.write'), async (req, res) => {
     try {
-      const unit = await saveUnit(req.body || {});
-      trackCreate('units', unit.id, unit, req);
-      res.status(201).json({ success: true, unit: rowToUnitDto(unit), error: null });
+      const result = await ask(req, 'units.create', { ...(req.body || {}) });
+      if (!result.ok) return refuse(res, result, { unit: null });
+      trackCreate('units', result.row.id, result.row, req);
+      res.status(201).json({ success: true, unit: result.unit, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -67,14 +64,10 @@ function registerUnitMasterRoutes(app, {
   app.patch('/api/units/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const before = await get('SELECT * FROM units WHERE id = ?', [id]);
-      const unit = await saveUnit({
-        ...(req.body || {}),
-        id,
-      });
-      const after = await get('SELECT * FROM units WHERE id = ?', [id]);
-      trackUpdate('units', id, before, after, req);
-      res.json({ success: true, unit: rowToUnitDto(unit), error: null });
+      const result = await ask(req, 'units.update', { ...(req.body || {}), id });
+      if (!result.ok) return refuse(res, result, { unit: null });
+      trackUpdate('units', id, result.before, result.after, req);
+      res.json({ success: true, unit: result.unit, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
         success: false,
@@ -86,8 +79,9 @@ function registerUnitMasterRoutes(app, {
 
   app.get('/api/unit-groups', requirePermission('config.read'), async (req, res) => {
     try {
-      const rows = await all('SELECT * FROM unit_groups');
-      res.json({ success: true, unitGroups: rows.map(rowToUnitGroupDto), error: null });
+      const result = await ask(req, 'units.families.list');
+      if (!result.ok) return refuse(res, result, { unitGroups: [] });
+      res.json({ success: true, unitGroups: result.unitGroups, error: null });
     } catch (error) {
       res.status(500).json({ success: false, unitGroups: [], error: error.message });
     }
@@ -95,8 +89,9 @@ function registerUnitMasterRoutes(app, {
 
   app.post('/api/unit-groups', requirePermission('config.write'), async (req, res) => {
     try {
-      const group = await saveUnitGroup(req.body || {});
-      res.status(201).json({ success: true, unitGroup: rowToUnitGroupDto(group), error: null });
+      const result = await ask(req, 'units.families.create', { ...(req.body || {}) });
+      if (!result.ok) return refuse(res, result);
+      res.status(201).json({ success: true, unitGroup: result.unitGroup, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, error: error.message });
     }
@@ -105,8 +100,9 @@ function registerUnitMasterRoutes(app, {
   app.patch('/api/unit-groups/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const group = await saveUnitGroup({ ...(req.body || {}), id });
-      res.json({ success: true, unitGroup: rowToUnitGroupDto(group), error: null });
+      const result = await ask(req, 'units.families.update', { ...(req.body || {}), id });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, unitGroup: result.unitGroup, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, error: error.message });
     }
@@ -114,9 +110,8 @@ function registerUnitMasterRoutes(app, {
 
   app.delete('/api/unit-groups/:id', requirePermission('config.write'), async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      await run('DELETE FROM unit_groups WHERE id = ?', [id]);
-      if (typeof buildUnitGraph === 'function') buildUnitGraph();
+      const result = await ask(req, 'units.families.delete', { id: Number(req.params.id) });
+      if (!result.ok) return refuse(res, result);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -125,37 +120,19 @@ function registerUnitMasterRoutes(app, {
 
   app.get('/api/units/gauge-table', requirePermission('config.read'), async (req, res) => {
     try {
-      const points = await all('SELECT * FROM unit_conversion_points');
-      res.json({ success: true, points, error: null });
+      const result = await ask(req, 'units.gaugeTable');
+      if (!result.ok) return refuse(res, result, { points: [] });
+      res.json({ success: true, points: result.points, error: null });
     } catch (error) {
       res.status(500).json({ success: false, points: [], error: error.message });
     }
   });
 
-  app.post('/api/units/convert-batch', requirePermission('config.read'), (req, res) => {
+  app.post('/api/units/convert-batch', requirePermission('config.read'), async (req, res) => {
     try {
-      const { conversions = [] } = req.body;
-      const results = conversions.map((conv) => {
-        try {
-          let fromUnitId = conv.fromUnitId;
-          const toUnitId = conv.toUnitId;
-        
-          let value = conv.value;
-          if (typeof value === 'string') {
-            const parsed = parseQualifiedValue(value);
-            value = parsed.value; 
-            if (!fromUnitId && parsed.unit) {
-              fromUnitId = parsed.unit.id;
-            }
-          }
-        
-          const converted = convertValue(value, fromUnitId, toUnitId);
-          return { success: true, value: converted };
-        } catch (err) {
-          return { success: false, error: err.message };
-        }
-      });
-      res.json({ success: true, results });
+      const result = await ask(req, 'units.convertBatch', { conversions: req.body.conversions });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, results: result.results });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
     }
@@ -163,27 +140,8 @@ function registerUnitMasterRoutes(app, {
 
   app.patch('/api/units/:id/archive', requirePermission('config.write'), async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      const unit = await get('SELECT * FROM units WHERE id = ?', [id]);
-      if (!unit) {
-        return res.status(404).json({ success: false, error: 'Not found' });
-      }
-      const usage = await get(`
-        SELECT
-          (SELECT COUNT(*) FROM materials WHERE unit_id = ?) +
-          (SELECT COUNT(*) FROM groups WHERE unit_id = ?) +
-          (SELECT COUNT(*) FROM items WHERE unit_id = ?) +
-          (SELECT COUNT(*) FROM item_unit_conversions WHERE unit_id = ?) +
-          (SELECT COUNT(*) FROM order_items WHERE unit_id = ?) +
-          (SELECT COUNT(*) FROM units WHERE conversion_base_unit_id = ?) +
-          (SELECT COUNT(*) FROM order_material_requirements WHERE unit_id = ?) AS count
-      `, [id, id, id, id, id, id, id]);
-      if ((usage?.count || 0) > 0) {
-        const error = new Error('Unit is in use');
-        error.statusCode = 409;
-        throw error;
-      }
-      await run('UPDATE units SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+      const result = await ask(req, 'units.archive', { id: Number(req.params.id) });
+      if (!result.ok) return refuse(res, result);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, error: error.message });
@@ -193,9 +151,9 @@ function registerUnitMasterRoutes(app, {
   app.delete('/api/units/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const before = await get('SELECT * FROM units WHERE id = ?', [id]);
-      await trashAndDelete('units', id, req);
-      trackDelete('units', id, before, req);
+      const result = await ask(req, 'units.delete', { id });
+      if (!result.ok) return refuse(res, result);
+      trackDelete('units', id, result.before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

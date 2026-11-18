@@ -3,7 +3,8 @@
 One map of the backend, updated with every change. It reads from the business
 down to the code: each module breaks into what the business needs from it, the
 API it exposes, the handlers that serve it, the service functions behind those,
-the ports it shares with other modules, the tables it owns and the tests that
+the operations it publishes at the kernel desk, the ports it still shares with
+other modules, the tables it owns and the tests that
 pin it.
 
 Nodes touched by the latest change carry **⟳**. Modules that have left
@@ -21,7 +22,8 @@ is what a person reads first, the registry is what the server reads.
 | API surface | What can a client ask? | `modules/<name>/routes.js` |
 | Orchestration | Which steps run for one request? | route handlers, `register<Name>Routes(ctx)` |
 | Services | What are the reusable operations? | `modules/<name>/service.js` |
-| Ports | What may another module ask of this one? | `modules/<name>/ports.js` |
+| Operations | What can be asked by name, from a terminal, a route or another module? | `modules/<name>/operations.js`, served by `kernel/desk.js` |
+| Ports | What may another module ask of this one? (modules not yet at the desk) | `modules/<name>/ports.js` |
 | Data | What is stored? | tables in `registry.js` |
 | Tests | What pins the behaviour? | `backend/test/*.test.js` |
 
@@ -31,19 +33,34 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c44["⟳ Change 44: the deploy was blocked by two tests that only ran on one machine"]
-        c44a["assembly-job-dedupe and order-fulfilment loaded the server from an absolute path on the developer's Mac"]
-        c44b["they now load ../server.js; no-machine-paths.test.js refuses such a path in any backend file"]
+      c54["⟳ Change 54: every operation's contract is enforced"]
+        c54a["evidence: the journey and the whole suite in report mode broke 9 inputs, all deliberate, and no result"]
+        c54b["server.js asks the desk for enforce by default; PAPER_CONTRACTS_MODE=report switches it off without a code change"]
+        c54c["a contract says what a field is; a master's own rules keep answering in their own words"]
+        c54d["four units routes answer 400 for a missing name where they answered 500"]
     Kernel
-      k1["registry.js: 15 modules, permissions, Track labels"]
+      k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
       k2["territory.js: meters routes and tables per module"]
       k3["contracts.js, barcodes.js, event-logger.js"]
+      k5["desk.js: operations by name, one result shape, ok or a refusal"]
+        k5a["callers: HTTP route handlers for a user, desk.as module for another module, system for boot and tests"]
+        k5b["each call: name resolved, actor checked, input checked, function run, result checked against the output contract"]
+        k5c["a user needs the operation's permission, its access rule (signedIn, anyRole or anyPermission), or both when both are set; plus roles when set"]
+        k5d["a module is refused any operation it has not declared in its uses list, in server.js"]
+        k5e["internal operations are for modules, never a user"]
+        k5h["⟳ enforce refuses a broken input with 400, worded about the field, and throws on a broken result; report records and carries on; the server defaults to enforce, an operator can force report"]
+        k5i["catalogue: every operation, its contract, its mode and who uses it; contract-surface.test.js pins it"]
+      k6["module-borders.test.js: the places a module names a table it does not own; 56, may only shrink; a read declared in the registry is marked and counted apart"]
+      k7["desk-kit.js: refusing, fromRefusal, httpKit; for moved handlers: answer, answerFile, runMoved, deskRoutes; for what a module offers others: operationsFromAsks, clientFromAsks, joinOperations"]
+        k5f["in process, on the one connection: a call joins the caller's transaction"]
+        k5g["calls per operation are counted and shown by /api/kernel/territory"]
       k4["boot order"]
         k4a["startServer: runMigrations in migrate.js, then initDb"]
         k4b["initDb: inline CREATE TABLEs, then runPendingMigrations in modules/kernel/migration-runner.js"]
         k4c["two ledgers: _migrations and schema_migrations"]
     Masters
       Vendors evacuated
+        vOps["operations.js: list, get, purchaseHistory, create, update, delete; internal rows.get for challans"]
         vBiz["Business rules"]
           vb1["one vendor per name or GST number"]
           vb2["a vendor named on a challan cannot be deleted"]
@@ -84,13 +101,27 @@ mindmap
           vl2["delete-request approve: DELETE FROM vendors"]
           vl3["getVendorForChallan in the challan code"]
       Items evacuated
+        itOps["operations.js: items, groups, Master Data, material types, sheet properties for users; rows, groups, variations and the ports for other modules"]
+        itWork["work.js and a work function in master-data.js, material-types.js, sheet-properties.js: what the handlers did"]
+        itClient["asks.js and client.js: describe, selection, stock, groups, reconcile helpers, cascade delete; held by eight callers"]
+        itAsk["asks pipelines, clients, units, orders, challans, inventory instead of joining their tables"]
+        itLeft["still in server.js: saveItem, saveGroup, the variation tree, stock deltas, usage reads, reconcile helpers"]
         i1["modules/items: routes, ports, contract, master-data, section-tree"]
         i2["items ports grow developedForCount"]
       Units evacuated
-        u1["modules/units: families and seed only; CRUD routes still legacy"]
+        u1["modules/units: master.js (units, families, conversion graph), service.js (standard ladders, quantity engine)"]
+        u2["⟳ operations.js: 13 for users, 2 internal; typed inputs and outputs, enforced; a missing name is a 400, not a 500"]
+        u3["routes.js and master-routes.js ask the desk; neither is handed the database"]
+        u4["usage of a unit = inventory + items + orders answers at the desk + units that convert through it"]
+        u5["unit-groups paths are now gated as units; convert-batch is gated as a read"]
+        u6["the conversion graph is built per batch, not only after a save"]
       Process routes evacuated
         pr1["modules/process_routes: routes, service"]
+        pr2["operations.js: stages list, create, retire; routes list, save, version"]
+        pr3["routes.js is handed neither the database nor the service; it asks the desk"]
+        pr4["the part-exists check moved from the handlers into the operations"]
       Clients evacuated
+        cOps["operations.js: 7 clients, 5 sub-contractors, 3 contacts, 7 portal; internal rows.get for orders and invoices, exists for dies"]
         cBiz["Business rules"]
           cb1["one client per name or GST number; GST is 15 characters"]
           cb2["a client on a live order keeps its name and GST"]
@@ -136,6 +167,7 @@ mindmap
           cl3["a portal order for an item with variations still fails: no selection is sent"]
           cl4["portal passwords are stored and compared as plain text"]
       Machines evacuated
+        maOps["operations.js: list, get, save, delete; asks items for the group name a machine is numbered after"]
         mBiz["Business rules"]
           mb1["a machine number is the type initials plus the next in that type"]
           mb2["a taken number is refused by name and a free one is offered"]
@@ -171,6 +203,7 @@ mindmap
           ml1["GET /api/machines/:id/queue reads pipeline_runs"]
           ml2["direct SQL on machines from item save, barcode resolve, seeds, delete-request approve"]
       Dies evacuated
+        diOps["operations.js: list, get, save, delete; dies.makers list, get, create, update, delete; asks clients whether a client exists"]
         dBiz["Business rules"]
           db1["a die code is the type initials, then D, then the part code"]
           db2["a typed die type is allowed only with its label"]
@@ -211,6 +244,7 @@ mindmap
         dLeft["Still in server.js"]
           dl1["direct SQL on dies from item save, photo sync, barcode resolve, seeds, delete-request approve"]
       People evacuated
+        peOps["operations.js: departments and employees, 4 each; create, link and unlink a login, admins only; internal employees.idByBarcode for jobs"]
         pBiz["Business rules"]
           pb1["a department needs a name; an employee needs a name and a department"]
           pb2["deleting a department trashes its employees with it, and records both in Track"]
@@ -250,6 +284,7 @@ mindmap
           pl2["freelancer card route reads employees through the people port"]
           pl3["seeds, delete-request approve and the sandbox dashboard read employees"]
       Pipelines evacuated
+        piOps["operations.js: templates list, save, update, delete; legacyTemplates for the older /templates set, read by anyone signed in, changed with config.write"]
         plBiz["Business rules"]
           plb1["a template with any run, ongoing or historical, cannot be deleted through the api set"]
           plb2["the api set takes the version from the body; the root set starts at 1 and bumps on every update"]
@@ -298,7 +333,7 @@ mindmap
           oa5["reports: fulfilment, pipeline-runs, production-report, trace"]
           oa6["returns: GET and POST by order number"]
         oOrch["Orchestration"]
-          oo1["modules/orders/routes.js: registerOrderRoutes, the lines"]
+          oo1["modules/orders/routes.js: the six line routes ask the desk; PO documents still call the service"]
           oo2["modules/orders/reports.js: registerOrderReportRoutes, read models and returns"]
           oo3["emits orders_changed on create, edit and delete only"]
         oSvc["Services: modules/orders/service.js"]
@@ -309,9 +344,15 @@ mindmap
           os5["PO documents: createPoUploadIntent, completePoUpload, linkPoDocumentsToOrder, getPoDocumentsForOrder, createPoDocumentReadUrl"]
           os6["resolveOrderUnitSelection; rowToOrderDto and three more DTOs"]
           os7["reports.js: orderReturnRowToDto, nextOrderReturnNo"]
+        oOps["Operations: modules/orders/operations.js"]
+          ox1["for users: orders.list, get, save, edit, lifecycle.set, delete"]
+          ox2["internal: orders.clients line counts, orders.lines get, summary, ids, custom variation values, orders.portal insertHeader and saveLine"]
+          ox3["line-writes.js: editOrderLine and deleteOrderLine, out of their HTTP handlers, statements unchanged"]
+          ox4["asked by: clients and its portal, parties delete blockers, production, inventory"]
+          ox5["a refusal the service throws, 4xx, comes back as a result"]
         oPort["Ports"]
-          op1["offers: client line counts, insertOrderHeader, saveOrder, customVariationValueRows"]
-          op2["uses: inventoryPorts.movements.applyCore, clients getClientRowById, items resolveOrderVariationSelection"]
+          op1["ports.js is now only the implementation behind the internal operations; nobody is handed it"]
+          op2["uses: inventoryPorts.movements.applyCore and productionPorts.runs on delete, clients getClientRowById, items resolveOrderVariationSelection"]
           op3["uses by name from production: getMergedNodeMetrics, rowToRun, machine and die DTOs"]
         oData["Data"]
           od1["order_headers, order_items, order_activity_log, order_status_history"]
@@ -328,6 +369,10 @@ mindmap
           ol4["seeds and demo scenarios; resolveOrderVariationSelection, an items helper"]
           ol5["pinned oddities: PUT answers a raw row, DELETE says success for an unknown id, lifecycle does not notify"]
       Inventory evacuated
+        inOps["operations.js: sets, materials, stock, health, movements.record for users; 25 internal from asks.js"]
+        inWork["work.js: what the 22 handlers did, returning a status and a body and noting Track entries"]
+        inClient["client.js: the ports' shape over the desk; handed to challans, orders, production and jobs"]
+        inAsk["asks items, orders, challans, pipelines, machines, dies for rows; six of its operations join the caller's transaction"]
         ivBiz["Business rules"]
           ivb1["a set is a bill of material; saving replaces its lines; a stale expectedVersion is refused as set_changed"]
           ivb2["a material is a parent with children; deleting a parent takes its children, deleting a child gives the parent its count back"]
@@ -381,6 +426,10 @@ mindmap
           ivn6["items reads inventory tables for usage counts, and its Sets card route reads inventory_sets"]
           ivn7["getMaterialRowByBarcode and the group property normalisers stay: items and inventory both use them"]
       Challans evacuated
+        chOps["operations.js: the challan itself, templates, invoices, reports; 42 for users, 11 internal"]
+        chWork["work.js, template-work.js, invoice-work.js, report-work.js: what the handlers did, returning a status and a body or a PDF"]
+        chClient["asks.js and client.js: stage notes, sheets, vendor usage, numbers by id; held by vendors, parties, production, inventory"]
+        chAsk["asks orders for rows and lifecycle moves, production for an output row, items and units for a line's unit, clients and vendors for a party"]
         chBiz["Business rules"]
           chb1["a challan is a draft until issued; issuing freezes its printed snapshot and moves stock"]
           chb2["a reception mints material; a delivery takes stock out; internal use is settled later"]
@@ -461,6 +510,9 @@ mindmap
         kr6["each group is registered into a router mounted where its routes were, so matching order and guards are unchanged"]
         kr7["helpers they call (sessions, permission checks, asset store, change log) are still in server.js, handed in by name"]
       Production evacuated
+        prOps["operations.js: runs list, get, start, delete, node status and metrics, batches, stock on a node; scrap; finished output; a machine's queue; an item's history; 19 internal"]
+        prWork["work.js: what the handlers did, as functions of a plain req that return a status and a body"]
+        prAsk["asks pipelines.templates.row, machines.rows.get, items.rows.get, units.rows.get; still uses inventory, items, challans and jobs ports to write"]
         pd1["runs, node status, stock on a run, stage numbers, scrap, completed output"]
         n40x15685["order status rule lives in orders/service.js ORDER_ROW_SELECT; what the runs say comes from production as orderItemRunStatusSql; a hand-made move is checked against stored_status"]
         n39x63718["pinned fault: the order LIST shows the stored status, not the one from its runs; the single read shows the derived one"]
@@ -482,6 +534,8 @@ mindmap
         n36x99224["production/routes.js registerProductionRoutes: /runs x10, /api/production-scrap x2, /api/production-runs/completed, /api/machines/:id/queue, /api/items/:id/pipeline-history"]
         n35x5019["production/service.js createProductionService: rowToRun, getMergedNodeMetrics, createRunFromTemplate, ensurePipelineRunRecord, upsertStageReconciliation, backfillStageReconciliations, ensureTemporarySetFromAssembly, stockTemporarySet, listCompletedProductionRuns, getProductionRunRowById, assignMaterialToRunNode, STAGE_RECON_COLUMNS"]
       Jobs evacuated
+        jbOps["operations.js: list, create, update, delete, batches.create, portalData; internal syncAssemblyJob and propagateAssemblyRejection for production"]
+        jbAsk["asks items.bom.lines, inventory.materials.linkOf, inventory.movements.issuedToWorkerQty"]
         jBiz["Business rules"]
           jb1["one assembly job per run and node, never duplicated"]
           jb2["a re-synced job is only rewritten while unassigned"]
@@ -518,6 +572,9 @@ mindmap
           jl2["freelancer-* not in the inline gate map, legacy write gate only"]
           jl3["production picks the job's item, then hands it to syncAssemblyJob"]
       Action center evacuated
+        acOps["operations.js: trash list and restore, delete requests list, create, approve, reject, export, the issue scan"]
+        acDel["deletes are asked of the owner: vendors, machines, dies, challans, inventory, items"]
+        acScan["the integrity scan reads nine tables of six modules, declared in the registry"]
         acBiz["Business rules"]
           acb1["a delete copies the row to the trash, then removes it with foreign keys off, so a referenced row can go"]
           acb2["what is left dangling is found by the integrity scan, not blocked at delete time"]
@@ -604,3 +661,13 @@ mindmap
 | 42 | Fix found by the pre-merge check on a copy of a real database. The one-time `variation_stock` rebuild only looked for the `CHECK (variation_leaf_node_id > 0)` shape. Real databases made earlier have no such CHECK but have the leaf as a foreign key into `item_variation_nodes`, which refuses leaf 0 just the same, so they were skipped and whole-item stock would have failed on them. `initDb` now rebuilds for either shape, in one transaction and without a table rename (a rename makes SQLite check every trigger, which fails on an empty database still being built); `whole-item-stock.test.js` covers both shapes and `empty-database-boot.test.js` the empty one. Verified on the copy: rebuilt once, rows and totals carried, second boot a no-op, 14 read endpoints answer. | Data, Tests |
 | 43 | The 104 routes that belonged to no business module leave `server.js` for nine files: `modules/accounts/routes.js` (29: auth, users, me, admins, permissions, permission presets, record options), `assets` (16), `control_plane` (17), `units/master-routes.js` (11), `payroll` (9), `settings` (9: favourites, company profile, phone signals), `search` (6), `track` (5), `realtime` (2). Matching order is kept exactly: where each group's routes were, `server.js` mounts an empty router, and the group is registered into it further down where everything it uses exists; groups that sat before the login gate or after the mid-file error handler have their own function (`…RoutesBeforeLogin`, `…RoutesAfterErrorHandler`). Checked three ways: `remaining-routes-snapshot.test.js` (112 routes called anonymously and as owner, status and shape compared with before the move), a route-by-route comparison of the old and new stacks (same middleware ahead of all 371 routes; no two routes that swapped places can match one request), and a parser-based check that no handler uses a name it was not given (it found three the text scan missed). Handlers that read files take `serverDir`; the phone-signal routes take `getIo`. The route listers in `kernel/territory.js` and `route-surface.test.js` now walk mounted routers. Helpers these routes call are still in `server.js`. | API surface (unchanged paths), Orchestration, Tests |
 | 44 | Why the staging deploy failed: seven tests in `assembly-job-dedupe.test.js` and `order-fulfilment.test.js` required the server by an absolute path on the developer's machine (`/Users/…/backend/server.js`). They passed there and failed on GitHub's runner, where the path does not exist, so `npm test` could not pass and nothing deployed. The same path also made a clean copy of the repository test the original instead of itself. Both now require `../server.js`, and `no-machine-paths.test.js` fails if any backend source or test names a home-directory path. The deploy workflow's failure summary now joins multi-line errors and leaves out lines every healthy boot logs. | Tests |
+| 45 | The function level. `kernel/desk.js` keeps every module's operations: a named function with a declared input and a required permission, answering `{ ok, … }` or `{ ok: false, status, code, error }`. Three doors ask it: the terminal (`bin/paper.js`, `npm run paper -- <operation> key=value`), an HTTP handler, and another module through `desk.as('<module>')`. The desk checks who is asking: a user needs the operation's permission (the server's own `hasPermission`; a request the central gate already cleared for that exact key, per-record grants included, is not asked twice), a module needs the name in its `uses` list in `server.js`, an `internal` operation is never a user's, and the terminal is the operator at the machine. Everything stays in one process on one connection, so a call joins the caller's transaction. Converted: process routes (6 operations; `routes.js` no longer receives the database) and orders (6 for users, 10 internal). Order edit and delete left their handlers for `modules/orders/line-writes.js`, statements unchanged, minus the delete's insert into the nonexistent `activity_logs`. Every caller of the orders ports (clients and its portal, the party delete blockers, production, inventory) now asks the desk, which removed one `lateBound` proxy. `/api/kernel/territory` shows calls per operation. Not done: the other 13 modules, PO document operations, a per-client module switch (the system level). Tests: `kernel-desk.test.js` (14), `function-level.test.js` (7, including `paper` as a child process); 399 pass. | Kernel, Operations, Ports, Orchestration, Tests |
+| 46 | Contracts first. The terminal program (`bin/paper.js`) is removed and the desk's `terminal` actor is now `system`. The desk checks an operation's result against a declared `output`, holds each operation in `report` mode (a violation is recorded at `/api/kernel/guard-alerts` and the call proceeds) or `enforce` mode (input refused with 400, a broken output throws), and publishes `catalogue()`, pinned by `contract-surface.test.js` (40 operations). `kernel/registry.js` gains `TABLE_OWNERS`: all 137 known tables have exactly one owner (29 had none; payroll's are listed as an unregistered module; four are created by old migrations and named by no code). `module-borders.test.js` scans every module folder's SQL for tables it does not own: 93 at the start, and the fixture may only shrink. Units is the first module taken to the full standard: `saveUnit`, `saveUnitGroup`, the conversion graph, `getUnitsWithUsage`, `getUnitRowById` and `ensureKgUnit` left `server.js` (16,947 → 16,620 lines) for `modules/units/master.js`; 15 operations with typed inputs and outputs; both route files ask the desk; a unit's usage is asked of inventory, items and orders (their first operations) instead of read from their tables, which took the crossings to 87. Inventory asks `units.rows.get` and challans `units.ensureKilogram` instead of being handed functions. Fixed on the way: seed-standard answered 500 after seeding; the converter was dead after a restart; `/api/unit-groups` was gated by no module (behaviour change: users without units rights are now refused); convert-batch needed `units.create`. Plan, checklist and bug log: `12-modules-as-services.md`. Tests: `units-operations.test.js` (6), `module-borders.test.js` (4), `contract-surface.test.js` (2); 412 pass. | Kernel, Operations, Data ownership, Services, API surface (two gate changes), Tests |
+| 47 | The six small masters behind the desk. Each gets `modules/<name>/operations.js` and its master routes ask the desk: vendors (7 operations), clients and sub-contractors (14), people (9), machines (4), dies (4), pipeline templates (4); items gains `items.groups.name` and `items.rows.forCatalogue`. Typed inputs where the body has fixed fields, a declared output on every operation that returns data, all in `report` mode; the suite's ordinary use breaks none. A write's result carries the raw rows Track is written from, and the route still writes Track and broadcasts. Hand-offs replaced by declared desk calls: `getVendorRowById` and `getClientRowById` to challans, `getClientRowById` to orders, the people port to jobs. Foreign reads removed: the portal catalogue no longer joins `items`, a die asks `clients.exists`, a machine asks items for its group's name. Crossings 87 → 84. `kernel/desk-kit.js` holds what every operations and routes file was repeating. Left with their own handlers, each for a stated reason: client contacts, the portal, die makers, the three employee login routes (guarded by role), the older `/templates` set (guarded outside `/api`), machine and die photos (the kernel's asset service). Found, not fixed: a die created without status or ownership answers 500 with a raw database error; a sub-contractor update needs the name. Tests: `small-masters-operations.test.js` (4); 416 pass. | Operations, Orchestration, Ports, Tests |
+| 48 | The small masters' leftovers. `kernel/desk.js` gains three ways to say who may ask besides `permission`: `access: 'signedIn'`, `access: { anyRole, anyPermission }` and `roles` on top, because some routes were never behind a module permission and an operation must ask exactly what its route's guard asked. With those: a company's contacts (`clients.contacts.*`, work in `modules/parties/contacts.js` as `createClientContactService`), the B2B portal (`clients.portal.*`, work in the new `modules/clients/portal.js`; its three POSTs ask what the old write gate asks), die makers (`dies.makers.*`, `createDieMakerService` in `die-makers.js`), an employee's login (`people.employees.createLogin/linkLogin/unlinkLogin`, admins only, the first also needing `users.create_user`), and the older `/templates` set (`pipelines.legacyTemplates.*`: any signed-in user reads, `config.write` changes). 24 more routes ask the desk; no HTTP answer changed. 107 operations. Found: portal passwords are stored and compared as plain text and a fixed test account signs in anywhere (kept, needs a decision); the portal routes' own comment said any signed-in session could use them, while the gate lets only an admin or a holder of `config.write` or `inventory.update` make a POST. Tests: two more in `small-masters-operations.test.js`, one in `kernel-desk.test.js`; 419 pass. | Kernel, Operations, Orchestration, Tests |
+| 49 | Production behind the desk. Its handlers held the work: about 900 lines in 15 route bodies. They are now functions in `modules/production/work.js`, moved mechanically (a script rewrote each `res.status(x).json(y)` into `return answer(x, y)` and checked all 63 sites; one nested helper needed its callers to return what it returned). `operations.js` turns an answer into a result and `routes.js` (110 lines, was 1,150) sends it back as the same status and body. Fifteen operations for users, each asking what its route's guard asked: the `/runs` set outside `/api` is read by any signed-in user and changed with `config.write`; `/api/production-scrap` maps to no module, so the old write gate decides; a machine's queue is a machines read and an item's history an items read, because the gate goes by path. Nineteen internal operations publish `ports.js`; orders (order delete, reports), inventory, challans (service, reports), machines, dies and pipelines ask them at the desk with declared uses, and `production.runs.dissolve` and `unlinkOrderItem` are marked as joining the caller's transaction. Production in turn asks `pipelines.templates.row`, `machines.rows.get`, `items.rows.get` and `units.rows.get` instead of reading those tables. The one read it keeps, a join to `items` inside the finished-output search, is declared in the registry (`reads`) and the border meter marks it. Crossings 84 → 81. Still handed over as text: `orderItemRunStatusSql`. Tests: `production-operations.test.js` (4); 423 pass. | Operations, Services, Orchestration, Ports, Data ownership, Tests |
+| 50 | Inventory behind the desk. `modules/inventory/work.js` holds the 22 handlers' bodies, moved by the same script as production's (52 response sites and 7 Track calls, all converted; no nested senders). A moved handler that wrote a Track entry now notes it with `req.track(...)`; the entries ride on the result and `deskRoutes` in `kernel/desk-kit.js` writes them with the real request, because Track reads the actor and the sitting from it. `kernel/desk-kit.js` gains `answer`, `plainRequest`, `answered`, `runMoved` and `deskRoutes`. What other modules ask of inventory is one list, `modules/inventory/asks.js`: 25 functions with their argument names and whether each joins the caller's transaction. From it, `operations.js` publishes internal operations (`inventory.movements.applyCore`, `inventory.receipts.mintFromChallanLine`, …) and `client.js` builds `inventoryClient(desk)`, an object shaped like `ports.js` whose every function asks the desk. Challans, orders, production and jobs are handed that client made from their own desk handle, so their code is unchanged and each call is checked against what they declared; two `lateBound` proxies are gone. The barcode lookup they were handed is `inventory.materials.rowByBarcode`. Inventory's own reads of eight foreign tables became asks: `items.rows.get`, `items.groups.row`, `items.groups.propertyNamesInUse`, `items.variations.node`, `items.variations.codeForValue`, `orders.items.demand`, `challans.rows.brief` (challans' first operation), `pipelines.templates.row`, `machines.rows.byAssetOrName`, `dies.rows.byToolCode`. Crossings 81 → 73. Two mistakes made and caught by the suite: a user operation and an internal one shared the name `inventory.movements.apply` (the user's is now `inventory.movements.record`, and a clash is refused when the operations are built), and `sources.propose` was called without `await`. Still by hand: items and the action centre, whose code is in `server.js`, call the ports directly, and inventory is still handed items' stock and group functions. Tests: `inventory-operations.test.js` (4); 427 pass. | Operations, Services, Orchestration, Ports, Kernel, Tests |
+| 51 | Challans behind the desk. Four route files held 42 handlers and 1,609 lines; the move script now also handles named handlers registered on two paths (`/api/challans` and `/api/delivery-challans` reach one operation) and named functions. 101 response sites converted. Hand-fixed: three PDF responses answer with `answerFile` (`kernel/desk-kit.js`; the result carries `file`, `deskRoutes` sends it); issue and cancel sent their answer and then broadcast a stock change, so they now decide the answer, call `announceStockChange` (which cannot throw) and return it; three test-print wrappers return what the shared function returns; `barcodes` was imported at the top of the invoice routes and went to `invoice-work.js`. Route order inside `routes.js` is the original. Operations: 42 for users, each with the key `moduleOpForRequest` gives its path (issue, cancel, print, piece barcodes and the client statement are POSTs and ask for `challans.create`; settle asks for `challans.reconcile`; an order's challans and an order's reconciliation ask for `orders.read`), and 11 internal from `modules/challans/asks.js`. `operationsFromAsks`, `clientFromAsks` and `joinOperations` moved to `kernel/desk-kit.js` and inventory uses them too; a port that answers a Map says `returns: 'map'` and crosses as pairs. The vendor master, the party delete check, production and inventory hold `challansClient(desk)`. In the other direction challans no longer gets `getOrderRowById`, `updateOrderLifecycle` or `getProductionRunRowById` from `server.js`: it asks `orders.rows.get`, `orders.rows.byIds`, `orders.rows.forOrderNo`, `orders.lifecycle.move` and `production.output.row`; an order line's client GST number is two asks where it was a join; a line's unit is `items.rows.get` then `units.rows.get`; a template's party is `clients.rows.get` or `vendors.rows.get`. Two report joins stay and are declared in the registry (`order_items`, `inventory_movements`). Crossings 73 → 69. Still by hand: the reconcile's group and item helpers and the items stock functions, which are items code in `server.js`. Tests: `challans-operations.test.js` (5); 432 pass. | Operations, Services, Orchestration, Ports, Kernel, Data ownership, Tests |
+| 52 | Items behind the desk at its borders. Four route sets, 43 handlers: `routes.js` (28) became `work.js`; `master-data.js` (5), `material-types.js` (4) and `sheet-properties.js` (6) keep their helpers and gain a work function beside thin routes. The move script now reads multi-line route declarations and keeps each route's own guards, so `guardContract(contracts.itemWrite)` still stands in front of item and group writes and `requireAssetEntityPermission` in front of a part's photos. Operations ask what stood in front of each route: `items.*` by method under /api/items, /api/groups and /api/item-sheet-properties; `items.asset.list` and `items.asset.upload` for photos; a signed-in session to read and the old write gate to change /api/material-types; a signed-in session for /api/pipelines/:id/master-data. `modules/items/asks.js` lists 16 functions (the ports, plus `groups.rowById` and `groups.save`); `itemsClient(desk)` replaces the ports and five functions `server.js` handed out by name, for production, challans, inventory, orders, vendors, search, the party delete check and the action centre. Items' own foreign reads became asks: an item read asks `pipelines.templates.row`, `clients.rows.get`, `clients.subContractors.row`, `clients.contacts.byIds`, `orders.items.usage`, `challans.items.lineCount` and `inventory.items.usage`; archiving uses the same usage sum; a group's delete check asks `inventory.groups.materialCount`; a part code asks `inventory.sets.name`; the group overview asks `units.rows.get` per unit; Master Data asks for the template row. One read stays and is declared: the overview and cover rankings sort by order counts inside the query. Crossings 69 → 59. Mistakes caught: `if (trackCreate)` guards left naming a variable that was gone (a test failed; a parser-based scan of every module file for names used and never declared now finds none), and a module-level cache of unit names that would have gone stale on rename (removed before it shipped). Not done: the items logic is still in `server.js`, and pure tree helpers and DTO mappers are still passed between modules as code. Tests: `items-operations.test.js` (5), including the old statement run beside the new read; 437 pass. | Operations, Services, Orchestration, Ports, Data ownership, Tests |
+| 53 | The last two modules. `kernel/desk.js`: an operation may set both `access` and `permission`, and then both must hold; approving or rejecting a delete request sat behind the old write gate and its own `delete_requests.review`. Jobs: six handlers to `modules/jobs/work.js`; `/api/freelancer-jobs` and `/api/freelancer-portal` map to no module in the gate, so the operations ask for a signed-in session to read and the old write gate to change; `asks.js` and `client.js` publish `syncAssemblyJob` and `propagateAssemblyRejection`, and production holds the client in place of `jobsService`. Jobs no longer reads `item_bom_lines`, `materials` or `inventory_movements`: it asks `items.bom.lines` (the port answered an empty list until now), `inventory.materials.linkOf` and `inventory.movements.issuedToWorkerQty`. Action centre: eight handlers to `modules/action_center/work.js`; the CSV export answers with `answerFile`. The deleters in `server.js` no longer run SQL against other modules' tables: an approved request asks `vendors.rows.remove`, `machines.rows.remove`, `dies.rows.remove`, `challans.templates.remove`, `inventory.materials.deleteRecord`, `inventory.sets.deleteById` or `items.deleteWithCascade`; only a user account, which is the kernel's, is deleted in place. The integrity scan's nine joins across six modules are declared in the registry with one reason. Crossings 59 → 56, of which 13 are undeclared module reads (orders 11, process routes 2). All 15 modules publish operations: 343, of which 121 internal and 14 marked as joining the caller's transaction. Found: the freelancer portal token is encrypted with a key written in the source. Tests: `jobs-action-center-operations.test.js` (3); 440 pass. | Kernel, Operations, Orchestration, Ports, Data ownership, Tests |
+| 54 | Contracts enforced. `kernel/desk.js`: `createDesk({ defaultMode, forceMode })`; an operation without a mode takes the desk's default, and `forceMode` overrides every operation's. An enforced input refusal is worded about the field (the operation's name is taken off the front of the message; the full paths stay in `problems`). `server.js` creates the desk with `defaultMode: 'enforce'` and `forceMode: 'report'` when `PAPER_CONTRACTS_MODE=report`; a violation is also appended to the file named by `PAPER_CONTRACT_VIOLATIONS_FILE`, because each test file boots its own server and the in-memory window is lost with it. Evidence gathered that way before the switch: the journey and all 440 tests in report mode, 9 violations in 7 operations (`units.create`, `units.update`, `units.families.create`, `units.families.update`, `clients.create`, `clients.subContractors.create`, `vendors.create`), every one a deliberately missing or empty name, none on a result. Loosened so that enforcing adds no rule the code did not have: a unit's conversion factor is a number (the master requires it above zero only for a unit in a family) and its type and a family's base unit carry no extra constraint; clients, vendors, sub-contractors and die makers leave "needs a name" to the service, which says it in its own words; list arguments the production ports treat as optional are optional. The Flutter request models for those masters were read against the contracts. Behaviour change: POST and PATCH on `/api/units` and `/api/unit-groups` with no name answer 400 "name is required" where they answered 500 (`remaining-routes-snapshot.json` updated). Not done: the same evidence from a real installation, and tightening the loose `any` contracts. Tests: one more in `kernel-desk.test.js`, one more in `units-operations.test.js`; 442 pass. | Kernel, Operations, API surface (four error answers), Tests |

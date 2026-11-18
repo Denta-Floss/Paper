@@ -20,6 +20,7 @@ const PDFDocument = require('pdfkit');
 // ---------------------------------------------------------------------------
 
 function createChallanTemplateService({
+  desk,
   get,
   all,
   run,
@@ -489,9 +490,13 @@ function createChallanTemplateService({
     validateTemplateSheetLayout({ stockSize, paperSize, nUpLayout });
 
     if (partyType !== 'generic') {
-      const partyRow = partyType === 'client'
-        ? await get('SELECT id FROM clients WHERE id = ? AND is_archived = 0', [partyId])
-        : await get('SELECT id FROM vendors WHERE id = ? AND is_archived = 0', [partyId]);
+      // The party is a client or a vendor; its master is asked whether it is
+      // there and still live.
+      const { row: party } = await desk.ask(
+        partyType === 'client' ? 'clients.rows.get' : 'vendors.rows.get',
+        { id: partyId },
+      );
+      const partyRow = party && !Number(party.is_archived || 0) ? party : null;
       if (!partyRow) {
         const error = new Error('Template party does not exist or is archived.');
         error.statusCode = 400;

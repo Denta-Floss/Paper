@@ -1,0 +1,8178 @@
+{
+  "operations": [
+    {
+      "name": "action_center.deleteRequests.approve",
+      "module": "action_center",
+      "permission": "delete_requests.review",
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Approve a delete request and delete the record.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.deleteRequests.create",
+      "module": "action_center",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Ask for a record to be deleted.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.deleteRequests.export",
+      "module": "action_center",
+      "permission": "delete_requests.review",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every delete request, as a CSV file.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.deleteRequests.list",
+      "module": "action_center",
+      "permission": "delete_requests.review",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The delete requests waiting for review, and the reviewed ones.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.deleteRequests.reject",
+      "module": "action_center",
+      "permission": "delete_requests.review",
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Reject a delete request.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.issues",
+      "module": "action_center",
+      "permission": "action_center.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "References to records that are gone: an order naming a deleted client, an item in a deleted group.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.trash.list",
+      "module": "action_center",
+      "permission": "action_center.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What is in the trash.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "action_center.trash.restore",
+      "module": "action_center",
+      "permission": "action_center.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Put a trashed record back.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.assets.uploadComplete",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Say a challan photo arrived.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.assets.uploadIntent",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Ask for somewhere to upload a challan photo.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.cancel",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Cancel a challan and undo its stock; a partly used reception becomes a vendor return instead.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.cancelOptions",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What cancelling a challan would do.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.create",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create a draft challan.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.customVariationValueRows",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Custom variation values typed on an item and variation’s challan lines.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        },
+        "variationLeafNodeId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "challans.delete",
+      "module": "challans",
+      "permission": "challans.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Delete a draft challan.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.get",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One challan.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.create",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Raise an invoice from challans.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.delete",
+      "module": "challans",
+      "permission": "challans.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Delete an invoice.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.get",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One invoice, with its lines.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.list",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Invoices.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.pdf",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An invoice as a PDF.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.setStatus",
+      "module": "challans",
+      "permission": "challans.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move an invoice along its status.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.invoices.update",
+      "module": "challans",
+      "permission": "challans.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Replace an invoice’s lines and recompute its totals.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.issue",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Issue a challan: its lines move stock, in one transaction.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.items.lineCount",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many challan lines name an item.",
+      "input": {
+        "itemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "challans.list",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Challans, paged and filtered.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.listForOrder",
+      "module": "challans",
+      "permission": "orders.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The delivery challans raised against an order line.",
+      "input": {
+        "orderId": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.numbersByIds",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The challan numbers for these ids, as { id: number }.",
+      "input": {
+        "ids": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "challans.pieceBarcodes.add",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Record the per-piece barcodes of a challan line.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.print",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Record that a challan was printed.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.printPreview",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A challan as its template would print it, as a PDF.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reconcile",
+      "module": "challans",
+      "permission": "challans.reconcile",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Settle an internal-use challan into stock, scrap and finished goods, and complete its order.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reports.clientStatement",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A client’s statement over a period.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reports.conversionOverrides",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The unit conversions the report uses in place of the defaults.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reports.orderReconciliation",
+      "module": "challans",
+      "permission": "orders.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One order’s reconciliation.",
+      "input": {
+        "orderNo": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reports.reconciliation",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The reconciliation report: received against delivered, with scrap.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reports.setConversionOverrides",
+      "module": "challans",
+      "permission": "challans.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set those conversions.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.reports.wasteAudit",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where material went that was not delivered.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.rows.brief",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The number and type of these challans, as rows of id, challan_no and type.",
+      "input": {
+        "ids": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "challans.setReportGroups",
+      "module": "challans",
+      "permission": "challans.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set which report groups a challan counts under.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.sheets.findByCode",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The vendor sheet a scanned tag belongs to, or nothing.",
+      "input": {
+        "code": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "challans.stageNotes.create",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Raise an internal leftover or scrap note for a stage.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "challans.stageNotes.find",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The internal note a stage raised, by what it refers to; or nothing.",
+      "input": {
+        "sourceReference": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "challans.stageNotes.remove",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a stage’s note.",
+      "input": {
+        "challanId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "challans.stageNotes.setQuantity",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change the quantity on a stage’s note.",
+      "input": {
+        "challanId": {
+          "type": "any"
+        },
+        "quantity": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "challans.templates.create",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a print template.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.delete",
+      "module": "challans",
+      "permission": "challans.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a print template.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.get",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One print template.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.list",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The print templates.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.remove",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Delete a print template: an approved delete request.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "challans.templates.scans",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The scanned stationery a template can be built on.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.stampUploadComplete",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Say a stamp arrived.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.stampUploadIntent",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Ask for somewhere to upload a stamp.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.testPrint",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A test print of a template, as a PDF.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.testPrintFor",
+      "module": "challans",
+      "permission": "challans.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A test print of a stored template, as a PDF.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.testPrintPosted",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A test print of a template sent in the request, as a PDF.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.update",
+      "module": "challans",
+      "permission": "challans.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a print template.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.uploadComplete",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Say a template scan arrived.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.templates.uploadIntent",
+      "module": "challans",
+      "permission": "challans.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Ask for somewhere to upload a template scan.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.update",
+      "module": "challans",
+      "permission": "challans.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Edit a draft challan.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "challans.vendorPurchaseRows",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The distinct lines a vendor has delivered on reception challans, newest first, at most 100.",
+      "input": {
+        "vendorId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "vendors"
+      ]
+    },
+    {
+      "name": "challans.vendorUsageCount",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many challans name a vendor.",
+      "input": {
+        "vendorId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "parties",
+        "vendors"
+      ]
+    },
+    {
+      "name": "challans.vendorUsageCounts",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Challan counts for every vendor that has any.",
+      "input": {},
+      "output": null,
+      "usedBy": [
+        "vendors"
+      ]
+    },
+    {
+      "name": "clients.archive",
+      "module": "clients",
+      "permission": "clients.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Archive a client no order line or sub-contractor names. Archiving twice is not an error.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "client": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.contacts.byIds",
+      "module": "clients",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "These people, the first call first and then by name.",
+      "input": {
+        "ids": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "clients.contacts.create",
+      "module": "clients",
+      "permission": "clients.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a person at a client. The first one becomes the first call.",
+      "input": {
+        "clientId": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "required": true,
+          "fields": {
+            "name": {
+              "type": "string",
+              "nullable": true
+            },
+            "designation": {
+              "type": "string",
+              "nullable": true
+            },
+            "phone": {
+              "type": "string",
+              "nullable": true
+            },
+            "email": {
+              "type": "string",
+              "nullable": true
+            },
+            "notes": {
+              "type": "string",
+              "nullable": true
+            },
+            "isPrimary": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "isArchived": {
+              "type": "boolean",
+              "nullable": true
+            }
+          }
+        }
+      },
+      "output": {
+        "contact": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.contacts.list",
+      "module": "clients",
+      "permission": "clients.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A client’s people: the first call first, archived last.",
+      "input": {
+        "clientId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "contacts": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.contacts.update",
+      "module": "clients",
+      "permission": "clients.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change, archive or restore a person, or make them the first call.",
+      "input": {
+        "clientId": {
+          "type": "any",
+          "required": true
+        },
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "required": true,
+          "fields": {
+            "name": {
+              "type": "string",
+              "nullable": true
+            },
+            "designation": {
+              "type": "string",
+              "nullable": true
+            },
+            "phone": {
+              "type": "string",
+              "nullable": true
+            },
+            "email": {
+              "type": "string",
+              "nullable": true
+            },
+            "notes": {
+              "type": "string",
+              "nullable": true
+            },
+            "isPrimary": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "isArchived": {
+              "type": "boolean",
+              "nullable": true
+            }
+          }
+        }
+      },
+      "output": {
+        "contact": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.create",
+      "module": "clients",
+      "permission": "clients.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a client. One per name or GST number.",
+      "input": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "alias": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "contactName": {
+          "type": "string",
+          "nullable": true
+        },
+        "designation": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "logoUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "client": {
+          "type": "object",
+          "required": true
+        },
+        "row": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.delete",
+      "module": "clients",
+      "permission": "clients.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a client nothing names to the trash.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "clients.exists",
+      "module": "clients",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Whether this id is a client.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "exists": {
+          "type": "boolean",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "dies"
+      ]
+    },
+    {
+      "name": "clients.get",
+      "module": "clients",
+      "permission": "clients.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One client, with its people.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "client": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.list",
+      "module": "clients",
+      "permission": "clients.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every client, archived last, with its people and how many order lines name it.",
+      "input": {},
+      "output": {
+        "clients": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.addToCart",
+      "module": "clients",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add an item to a buyer’s cart, or raise its quantity.",
+      "input": {
+        "portal_user_id": {
+          "type": "any"
+        },
+        "item_id": {
+          "type": "any"
+        },
+        "quantity": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.catalog",
+      "module": "clients",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The unarchived items in a client’s catalogue, by display name.",
+      "input": {
+        "clientId": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "items": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.catalogItemIds",
+      "module": "clients",
+      "permission": "clients.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The ids of the items a client may order through the portal.",
+      "input": {
+        "clientId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "itemIds": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.login",
+      "module": "clients",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Check a buyer’s email and password. It starts no session.",
+      "input": {
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "password": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "user": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.placeOrder",
+      "module": "clients",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Turn a cart into a draft order, in one transaction, and empty the cart.",
+      "input": {
+        "portal_user_id": {
+          "type": "any"
+        },
+        "items": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "orderNo": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.replaceCatalog",
+      "module": "clients",
+      "permission": "clients.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Replace the list of items a client may order.",
+      "input": {
+        "clientId": {
+          "type": "any",
+          "required": true
+        },
+        "itemIds": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "clients.portal.setCredentials",
+      "module": "clients",
+      "permission": "clients.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Give a client a portal login, or replace the one it has.",
+      "input": {
+        "clientId": {
+          "type": "any",
+          "required": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "password": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "clients.rows.get",
+      "module": "clients",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A client’s row with its usage count, or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans",
+        "items",
+        "orders"
+      ]
+    },
+    {
+      "name": "clients.subContractors.create",
+      "module": "clients",
+      "permission": "clients.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a sub-contractor under a client.",
+      "input": {
+        "clientId": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "designation": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "notes": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "subContractor": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.subContractors.delete",
+      "module": "clients",
+      "permission": "clients.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a sub-contractor.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "clients.subContractors.list",
+      "module": "clients",
+      "permission": "clients.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every sub-contractor, with its client.",
+      "input": {},
+      "output": {
+        "subContractors": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.subContractors.listForClient",
+      "module": "clients",
+      "permission": "clients.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One client’s sub-contractors.",
+      "input": {
+        "clientId": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "subContractors": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.subContractors.row",
+      "module": "clients",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A sub-contractor’s row as stored, or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "clients.subContractors.update",
+      "module": "clients",
+      "permission": "clients.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a sub-contractor. Whatever is left out is kept.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "designation": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "notes": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "subContractor": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.unarchive",
+      "module": "clients",
+      "permission": "clients.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Bring an archived client back.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "client": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "clients.update",
+      "module": "clients",
+      "permission": "clients.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a client. Whatever is left out is kept.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "alias": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "contactName": {
+          "type": "string",
+          "nullable": true
+        },
+        "designation": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "logoUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "client": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.delete",
+      "module": "dies",
+      "permission": "dies.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a die, unless a live run holds it. Its links and variation tree go with it.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "dies.get",
+      "module": "dies",
+      "permission": "dies.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One die.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "die": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.list",
+      "module": "dies",
+      "permission": "dies.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every die, newest first.",
+      "input": {},
+      "output": {
+        "dies": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.makers.create",
+      "module": "dies",
+      "permission": "dies.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a die maker. Only a name is needed; one per name.",
+      "input": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "alias": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "contactName": {
+          "type": "string",
+          "nullable": true
+        },
+        "designation": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "logoUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "dieMaker": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.makers.delete",
+      "module": "dies",
+      "permission": "dies.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a die maker no die names; archive one that a die does.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "dies.makers.get",
+      "module": "dies",
+      "permission": "dies.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One die maker.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "dieMaker": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.makers.list",
+      "module": "dies",
+      "permission": "dies.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The die makers, archived last, each with how many dies name it.",
+      "input": {
+        "includeArchived": {
+          "type": "boolean"
+        }
+      },
+      "output": {
+        "dieMakers": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.makers.update",
+      "module": "dies",
+      "permission": "dies.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a die maker. A field left out is kept; one sent empty is cleared.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "data": {
+          "type": "object",
+          "required": true,
+          "fields": {
+            "name": {
+              "type": "string",
+              "nullable": true
+            },
+            "alias": {
+              "type": "string",
+              "nullable": true
+            },
+            "gstNumber": {
+              "type": "string",
+              "nullable": true
+            },
+            "address": {
+              "type": "string",
+              "nullable": true
+            },
+            "contactName": {
+              "type": "string",
+              "nullable": true
+            },
+            "designation": {
+              "type": "string",
+              "nullable": true
+            },
+            "phone": {
+              "type": "string",
+              "nullable": true
+            },
+            "email": {
+              "type": "string",
+              "nullable": true
+            },
+            "logoUrl": {
+              "type": "string",
+              "nullable": true
+            },
+            "photoUrl": {
+              "type": "string",
+              "nullable": true
+            },
+            "isArchived": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "output": {
+        "dieMaker": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "dies.rows.byToolCode",
+      "module": "dies",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The die a pipeline node names, by its tool code; or nothing.",
+      "input": {
+        "toolCode": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "dies.rows.remove",
+      "module": "dies",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Delete a die’s row outright: an approved delete request.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "dies.save",
+      "module": "dies",
+      "permission": "dies.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create a die, or update the one whose id is given. What is left out is kept.",
+      "input": {
+        "id": {
+          "type": "any"
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "die": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "inventory.governance.get",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A material’s group-inheritance configuration.",
+      "input": {
+        "materialId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.governance.retireMissingProperties",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Retire group properties a save dropped.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.groups.materialCount",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many materials inherit from a group.",
+      "input": {
+        "groupId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "inventory.health",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The inventory summary tiles.",
+      "input": {
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.items.usage",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many materials and material-group links name an item.",
+      "input": {
+        "itemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "inventory.ledger.recomputeSummary",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Re-derive a material’s on-hand figures from its stock positions.",
+      "input": {
+        "barcode": {
+          "type": "any"
+        },
+        "now": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.materials.activity",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A material’s per-barcode activity feed.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.createChild",
+      "module": "inventory",
+      "permission": "inventory.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One more child under a parent.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.createParent",
+      "module": "inventory",
+      "permission": "inventory.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A parent material and its children.",
+      "input": {
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.delete",
+      "module": "inventory",
+      "permission": "inventory.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a material; a parent takes its children.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.deleteRecord",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a material.",
+      "input": {
+        "barcode": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "inventory.materials.detail",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A material’s life story: where it came from, what took it, what is nested under it.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.get",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One material, with its group configuration.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.linkGroup",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make a material inherit from a group.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.linkItem",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make a material inherit from an item and variation.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.linkOf",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The item and variation a material stands for, by its exact barcode; or nothing.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "link": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "jobs"
+      ]
+    },
+    {
+      "name": "inventory.materials.list",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every material.",
+      "input": {
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.resetScan",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Clear a material’s scan trace.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.rowByBarcode",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A material’s row by its barcode, however the barcode is written, or nothing.",
+      "input": {
+        "barcode": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "jobs",
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.materials.scan",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Count a scan of a material.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.setGroupConfig",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set a material group’s governance: units, properties, preferences.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.unlink",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Stop a material inheriting.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.materials.update",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Edit a material.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.movements.apply",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Receive, issue, transfer or adjust stock, in its own transaction.",
+      "input": {
+        "movement": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.movements.applyCore",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The same, inside the caller’s transaction (options.useTransaction false).",
+      "input": {
+        "movement": {
+          "type": "any"
+        },
+        "options": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans",
+        "jobs",
+        "orders",
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.movements.forChallan",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The ledger rows a cancel or delete of a challan must undo.",
+      "input": {
+        "challanId": {
+          "type": "any"
+        },
+        "challanType": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.movements.issuedToWorkerQty",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How much of a material was already issued to a worker against a job.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        },
+        "referenceId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "qty": {
+          "type": "number",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "jobs"
+      ]
+    },
+    {
+      "name": "inventory.movements.producedLotCodeForRun",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The lot a pipeline run last produced.",
+      "input": {
+        "pipelineRunId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.movements.record",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Receive, issue, transfer or adjust stock. One transaction.",
+      "input": {
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.movements.recordChallanReversal",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The ledger row that undoes one of a challan’s.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.movements.recordForChallan",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The ledger row for an issued challan line.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.receipts.materialForChallanLine",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The material a reception line became.",
+      "input": {
+        "lineId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.receipts.mintFromChallanLine",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A reception line becomes a material with a stock position.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.receipts.mintLot",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A lot production made: finished output, or scrap off a stage.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.receipts.mintReconcileLot",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The lot an in-use settle receives into.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.receipts.retire",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A cancelled reception’s material stops being listed as stock.",
+      "input": {
+        "barcode": {
+          "type": "any"
+        },
+        "now": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.receipts.usageForChallan",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What a reception brought in and how much of it stock still holds.",
+      "input": {
+        "challanId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "inventory.scans.increment",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Count a scan against a material.",
+      "input": {
+        "barcode": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.sets.create",
+      "module": "inventory",
+      "permission": "inventory.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Define a set: a quantified list of items.",
+      "input": {
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.sets.delete",
+      "module": "inventory",
+      "permission": "inventory.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a set and its links. Permanent.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.sets.deleteById",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a set and its links.",
+      "input": {
+        "setId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "inventory.sets.list",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every set, with its lines and its group.",
+      "input": {
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.sets.membershipForItem",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The sets an item is in, with its quantity in each.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.sets.name",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A set’s name, or nothing when there is no such set.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "inventory.sets.recordProduced",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The temporary set an Assembly stage produced, with its stock.",
+      "input": {
+        "args": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.sets.removeLinesForItem",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Take an item out of every set.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.sets.update",
+      "module": "inventory",
+      "permission": "inventory.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a set (a full replace of its lines). With expectedVersion, refused if it moved on (code set_changed).",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.sources.forItem",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The barcodes that hold free stock of an item and variation, oldest first.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        },
+        "leafNodeId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.sources.propose",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where a quantity comes from among those barcodes, oldest first.",
+      "input": {
+        "sources": {
+          "type": "any"
+        },
+        "quantity": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "inventory.stock.list",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Stock by item and variation.",
+      "input": {
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.stock.sources",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The barcodes that hold free stock of an item and variation, and a proposed split of a quantity over them.",
+      "input": {
+        "query": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "inventory.units.usageCounts",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many inventory records name each unit.",
+      "input": {
+        "unitId": {
+          "type": "integer",
+          "nullable": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "counts": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "units"
+      ]
+    },
+    {
+      "name": "items.archive",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Archive or restore an item.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.assets.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item’s attachments.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.assets.uploadComplete",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Say an item attachment arrived.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.assets.uploadIntent",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Ask for somewhere to upload an item attachment.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.bom.lines",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item’s bill-of-material lines.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "jobs"
+      ]
+    },
+    {
+      "name": "items.create",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create an item, with its variation tree.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.delete",
+      "module": "items",
+      "permission": "items.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move an item to the trash.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.deleteWithCascade",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove an item or a group with everything that hangs off it. `by` says who.",
+      "input": {
+        "type": {
+          "type": "any"
+        },
+        "id": {
+          "type": "any"
+        },
+        "by": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "items.describe",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item as the app shows it, or nothing.",
+      "input": {
+        "id": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory",
+        "search",
+        "vendors"
+      ]
+    },
+    {
+      "name": "items.developedForCount",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many parts were developed for a client.",
+      "input": {
+        "clientId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "parties"
+      ]
+    },
+    {
+      "name": "items.ensureForReconcile",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A named item in such a group, made if missing.",
+      "input": {
+        "name": {
+          "type": "any"
+        },
+        "groupId": {
+          "type": "any"
+        },
+        "unitId": {
+          "type": "any"
+        },
+        "options": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "items.get",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One item, with its variation tree.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.addItems",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "File items or variants into a group.",
+      "input": {
+        "groupId": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.archive",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Archive a group.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.create",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create a group.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.delete",
+      "module": "items",
+      "permission": "items.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a group to the trash.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.effectiveSchema",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The properties a group’s items carry, inherited ones included.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.ensureReconcilePrimary",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The primary group settled stock is filed under, made if missing.",
+      "input": {},
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "items.groups.ensureReconcileSub",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A named group under it, made if missing.",
+      "input": {
+        "name": {
+          "type": "any"
+        },
+        "parentGroupId": {
+          "type": "any"
+        },
+        "unitId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "items.groups.items",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The items in a group.",
+      "input": {
+        "groupId": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every group, with how many items it holds and its cover pictures.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.name",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A group’s name, or nothing when there is no such group.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "machines"
+      ]
+    },
+    {
+      "name": "items.groups.overview",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A group at a glance: its items, sets and stock.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.propertyNamesInUse",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The names of the live variation properties on a group’s unarchived items, as rows of name.",
+      "input": {
+        "groupId": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.groups.row",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A group’s row as stored, or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.groups.rowById",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A group with its unit and usage, or nothing.",
+      "input": {
+        "id": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.groups.save",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Create or change a group.",
+      "input": {
+        "group": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.groups.schemaImpact",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Which items a change to a group’s properties would leave without a value.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.unarchive",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Restore a group.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.groups.update",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a group.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Items, with usage.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.lookupByName",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The item with exactly this name, whatever its case; or nothing.",
+      "input": {
+        "name": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "items.masterData.delete",
+      "module": "items",
+      "permission": "items.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove an item’s Master Data for a pipeline.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "pipelineId": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.masterData.forPipeline",
+      "module": "items",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every item’s Master Data on one pipeline.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.masterData.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every Master Data record for an item, one per pipeline.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.masterData.resolve",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The Master Data that applies to an item on a pipeline, and where each value came from.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.masterData.save",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Save an item’s Master Data for a pipeline.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "pipelineId": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.materialTypes.create",
+      "module": "items",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a material type.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.materialTypes.delete",
+      "module": "items",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a material type.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.materialTypes.list",
+      "module": "items",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The material types, each with its density.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.materialTypes.update",
+      "module": "items",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a material type.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.moveToGroup",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "File an item under another group.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.nextPartIdentity",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The next part number and code for a group and set.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.photos.arrange",
+      "module": "items",
+      "permission": "items.asset.upload",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set a part’s photos and their order.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.photos.list",
+      "module": "items",
+      "permission": "items.asset.list",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A part’s photos, in order.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.resolveSelection",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Which variation of an item a line means: its leaf, path and label. Refuses a selection the item does not have.",
+      "input": {
+        "selection": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "items.rows.forCatalogue",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The unarchived items among these ids, as a catalogue shows them, by display name.",
+      "input": {
+        "ids": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": [
+        "clients"
+      ]
+    },
+    {
+      "name": "items.rows.get",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item’s row as stored, or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans",
+        "inventory",
+        "production"
+      ]
+    },
+    {
+      "name": "items.selectionSnapshot",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item and one of its variations as a line records them.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        },
+        "variationLeafNodeId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans",
+        "inventory",
+        "production"
+      ]
+    },
+    {
+      "name": "items.sets",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The sets an item is in, with its quantity in each.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.setSectionTree",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set how a part’s sheet sections nest, and reconcile its links.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.setShortCode",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set an item’s short code.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.sheetProperties.addOption",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a value to a property column’s list.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.sheetProperties.create",
+      "module": "items",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a property column.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.sheetProperties.delete",
+      "module": "items",
+      "permission": "items.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a property column.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.sheetProperties.list",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The item sheet’s property columns.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.sheetProperties.removeOption",
+      "module": "items",
+      "permission": "items.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a value no saved part carries.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.sheetProperties.update",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a property column.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.stock.applyDelta",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Add to or take from an item’s stock under one variation. The one write path.",
+      "input": {
+        "delta": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans",
+        "inventory",
+        "production"
+      ]
+    },
+    {
+      "name": "items.stock.assertLeaf",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Refuse a variation an item’s stock cannot be kept under.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        },
+        "variationLeafNodeId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "items.stock.holdsWholeItemStock",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Whether an item has no variations, so its stock is one figure.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.units.usageCounts",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many items records name each unit.",
+      "input": {
+        "unitId": {
+          "type": "integer",
+          "nullable": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "counts": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "units"
+      ]
+    },
+    {
+      "name": "items.update",
+      "module": "items",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change an item. What is left out is kept.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.usage",
+      "module": "items",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where an item is used: orders, challans, stock.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "items.variations.codeForValue",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The code of a variation value under a named property of an item, with the property’s position.",
+      "input": {
+        "itemId": {
+          "type": "any",
+          "required": true
+        },
+        "propertyName": {
+          "type": "any",
+          "required": true
+        },
+        "valueName": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.variations.node",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A variation node: which item it belongs to, its kind, and whether it is archived.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "node": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "items.variationStockRows",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every stock row, by item then variation.",
+      "input": {},
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "jobs.batches.create",
+      "module": "jobs",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Hand a batch of jobs to a worker; assembly sets go out of stock with it.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "jobs.create",
+      "module": "jobs",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create a job for an item, with tasks from its bill of materials.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "jobs.delete",
+      "module": "jobs",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a job and its tasks.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "jobs.list",
+      "module": "jobs",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Everything the job board draws: batches, jobs and tasks.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "jobs.portalData",
+      "module": "jobs",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A freelancer’s own batches, jobs and tasks, by the token on their card.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "jobs.propagateAssemblyRejection",
+      "module": "jobs",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Carry scrap booked against an Assembly stage onto its job as rejections.",
+      "input": {
+        "runId": {
+          "type": "any"
+        },
+        "nodeId": {
+          "type": "any"
+        },
+        "metrics": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "jobs.syncAssemblyJob",
+      "module": "jobs",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make or update the job for an Assembly stage of a run.",
+      "input": {
+        "assembly": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "jobs.update",
+      "module": "jobs",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a job along its status.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "machines.delete",
+      "module": "machines",
+      "permission": "machines.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a machine, unless a live run holds it. Its links and variation tree go with it.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "machines.get",
+      "module": "machines",
+      "permission": "machines.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One machine.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "machine": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "machines.list",
+      "module": "machines",
+      "permission": "machines.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every machine, newest first.",
+      "input": {},
+      "output": {
+        "machines": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "machines.rows.byAssetOrName",
+      "module": "machines",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The machine a pipeline node names, by its machine number or its name; or nothing.",
+      "input": {
+        "key": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "machines.rows.get",
+      "module": "machines",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A machine’s row as stored, or nothing. Production reads it for a machine’s queue.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "machines.rows.remove",
+      "module": "machines",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Delete a machine’s row outright: an approved delete request.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "machines.save",
+      "module": "machines",
+      "permission": "machines.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create a machine, or update the one whose id is given. What is left out is kept.",
+      "input": {
+        "id": {
+          "type": "any"
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "machine": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "orders.clients.lineCount",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many order lines name this client.",
+      "input": {
+        "clientId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "clients",
+        "parties"
+      ]
+    },
+    {
+      "name": "orders.clients.lineCounts",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Line counts for every client that has any, keyed by client id.",
+      "input": {},
+      "output": null,
+      "usedBy": [
+        "clients"
+      ]
+    },
+    {
+      "name": "orders.clients.lockedLineCount",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many of this client’s lines are in progress, completed or delayed.",
+      "input": {
+        "clientId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "clients"
+      ]
+    },
+    {
+      "name": "orders.delete",
+      "module": "orders",
+      "permission": "orders.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a line, dissolve its runs and put the stock they consumed back.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "wipBarcode": {
+          "type": "any"
+        },
+        "wipQty": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "orders.edit",
+      "module": "orders",
+      "permission": "orders.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change fields of an order line. Answers with the raw row.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "orders.get",
+      "module": "orders",
+      "permission": "orders.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One order line, shaped exactly like a row of the list.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "orders.items.demand",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many order lines name an item, and the quantity they add up to.",
+      "input": {
+        "itemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "lines": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        },
+        "quantity": {
+          "type": "number",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "orders.items.usage",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many order lines and material requirements name an item.",
+      "input": {
+        "itemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "orders.lifecycle.move",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a line along its lifecycle for another module. A step the lifecycle forbids throws.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "status": {
+          "type": "string",
+          "required": true
+        },
+        "actor": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "orders.lifecycle.set",
+      "module": "orders",
+      "permission": "orders.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a line along its lifecycle, or set its start and end dates.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "status": {
+          "type": "any"
+        },
+        "startDate": {
+          "type": "any"
+        },
+        "endDate": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "orders.lines.customVariationValues",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Custom variation values typed on an item and variation’s order lines.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        },
+        "variationLeafNodeId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "orders.lines.get",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Which item and variation an order line is for.",
+      "input": {
+        "orderItemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "orders.lines.idsForItem",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The ids of every order line for an item.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "orders.lines.idsForOrderNo",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The ids of every line on an order.",
+      "input": {
+        "orderNo": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans",
+        "production"
+      ]
+    },
+    {
+      "name": "orders.lines.summary",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An order line with its order number and client name.",
+      "input": {
+        "orderItemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "orders.list",
+      "module": "orders",
+      "permission": "orders.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Order lines. Narrowing and paging are opt-in: no limit means every line.",
+      "input": {
+        "search": {
+          "type": "any"
+        },
+        "clientId": {
+          "type": "any"
+        },
+        "statuses": {
+          "type": "any"
+        },
+        "ids": {
+          "type": "any"
+        },
+        "limit": {
+          "type": "any"
+        },
+        "offset": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "orders.portal.insertHeader",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The header row a portal order’s lines hang off.",
+      "input": {
+        "orderNo": {
+          "type": "any"
+        },
+        "clientId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "clients"
+      ]
+    },
+    {
+      "name": "orders.portal.saveLine",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Save one line inside the caller’s transaction (it opens none of its own).",
+      "input": {
+        "line": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "clients"
+      ]
+    },
+    {
+      "name": "orders.rows.byIds",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "These order lines as stored, newest first.",
+      "input": {
+        "ids": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "orders.rows.forOrderNo",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every line of an order as stored, in the order they were added.",
+      "input": {
+        "orderNo": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "orders.rows.get",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An order line as the list shows it, with its derived status; or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "orders.save",
+      "module": "orders",
+      "permission": "orders.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add an order line, or merge the quantity into a matching one.",
+      "input": {
+        "clientId": {
+          "type": "any"
+        },
+        "itemId": {
+          "type": "any"
+        },
+        "quantity": {
+          "type": "any"
+        },
+        "orderNo": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "orders.units.usageCounts",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many order lines and material requirements name each unit.",
+      "input": {
+        "unitId": {
+          "type": "integer",
+          "nullable": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "counts": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "units"
+      ]
+    },
+    {
+      "name": "people.departments.create",
+      "module": "people",
+      "permission": "people.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a department.",
+      "input": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "department": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.departments.delete",
+      "module": "people",
+      "permission": "people.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a department, and the people in it, to the trash.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "people.departments.list",
+      "module": "people",
+      "permission": "people.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The live departments, by name.",
+      "input": {},
+      "output": {
+        "departments": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.departments.update",
+      "module": "people",
+      "permission": "people.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a department. What is left out is kept.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "department": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.create",
+      "module": "people",
+      "permission": "people.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add an employee.",
+      "input": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "employee": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.createLogin",
+      "module": "people",
+      "permission": "users.create_user",
+      "roles": [
+        "super_admin",
+        "admin"
+      ],
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make a login account for an in-house employee and link it.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "password": {
+          "type": "string",
+          "nullable": true
+        },
+        "role": {
+          "type": "string",
+          "nullable": true
+        },
+        "ipAddress": {
+          "type": "any"
+        },
+        "userAgent": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "employee": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.delete",
+      "module": "people",
+      "permission": "people.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move an employee to the trash.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.idByBarcode",
+      "module": "people",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The id of the employee whose barcode this is, or nothing.",
+      "input": {
+        "barcodeId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "employeeId": {
+          "type": "integer",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "jobs"
+      ]
+    },
+    {
+      "name": "people.employees.linkLogin",
+      "module": "people",
+      "permission": null,
+      "access": "signedIn",
+      "roles": [
+        "super_admin",
+        "admin"
+      ],
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Link an in-house employee to a login account that already exists.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "userId": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "employee": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.list",
+      "module": "people",
+      "permission": "people.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The live employees, each with its login.",
+      "input": {},
+      "output": {
+        "employees": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.unlinkLogin",
+      "module": "people",
+      "permission": null,
+      "access": "signedIn",
+      "roles": [
+        "super_admin",
+        "admin"
+      ],
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Unlink an employee from its login. The account itself is kept.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "employee": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "people.employees.update",
+      "module": "people",
+      "permission": "people.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change an employee. What is left out is kept.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "employee": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.legacyTemplates.create",
+      "module": "pipelines",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Create a template; id and name are required (the older /templates set).",
+      "input": {
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": {
+        "template": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.legacyTemplates.delete",
+      "module": "pipelines",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a template without checking for runs (the older /templates set).",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.legacyTemplates.get",
+      "module": "pipelines",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One template (the older /templates set).",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "template": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.legacyTemplates.list",
+      "module": "pipelines",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every template (the older /templates set).",
+      "input": {},
+      "output": {
+        "templates": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.legacyTemplates.update",
+      "module": "pipelines",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a template and bump its version (the older /templates set).",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": {
+        "template": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.templates.delete",
+      "module": "pipelines",
+      "permission": "pipelines.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a template no run was ever started from.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.templates.list",
+      "module": "pipelines",
+      "permission": "pipelines.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every template, or one factory’s plus the shared ones.",
+      "input": {
+        "factoryId": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "templates": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.templates.row",
+      "module": "pipelines",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A template’s row as stored, or nothing. Production reads the nodes a run was started from.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory",
+        "items",
+        "production"
+      ]
+    },
+    {
+      "name": "pipelines.templates.save",
+      "module": "pipelines",
+      "permission": "pipelines.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Save a template; one with the same id is replaced.",
+      "input": {
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "template": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "pipelines.templates.update",
+      "module": "pipelines",
+      "permission": "pipelines.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a template; what is left out is kept.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "template": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "process_routes.routes.list",
+      "module": "process_routes",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every version of a part’s route, active first.",
+      "input": {
+        "partId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "process_routes.routes.save",
+      "module": "process_routes",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Save a part’s route as a draft or as the active one.",
+      "input": {
+        "partId": {
+          "type": "any",
+          "required": true
+        },
+        "steps": {
+          "type": "any"
+        },
+        "status": {
+          "type": "any"
+        },
+        "note": {
+          "type": "any"
+        },
+        "userId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "process_routes.routes.version",
+      "module": "process_routes",
+      "permission": "items.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Declare a new version of the active route; the old one is retired.",
+      "input": {
+        "partId": {
+          "type": "any",
+          "required": true
+        },
+        "steps": {
+          "type": "any"
+        },
+        "note": {
+          "type": "any"
+        },
+        "userId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "process_routes.stages.create",
+      "module": "process_routes",
+      "permission": "items.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a stage by name. A name already in the master answers with that stage.",
+      "input": {
+        "name": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "process_routes.stages.list",
+      "module": "process_routes",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The factory’s stage master, in order.",
+      "input": {
+        "includeInactive": {
+          "type": "boolean"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "process_routes.stages.retire",
+      "module": "process_routes",
+      "permission": "items.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Retire a stage no draft or active route stands on.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.challanLines.runInputs",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What runs have claimed from these reception lines that stock does not show yet.",
+      "input": {
+        "lineIds": {
+          "type": "array",
+          "nullable": true
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "production.dies.assignedToActiveRun",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Whether a live run has this die on any node.",
+      "input": {
+        "dieId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "assigned": {
+          "type": "boolean",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "dies"
+      ]
+    },
+    {
+      "name": "production.items.pipelineHistory",
+      "module": "production",
+      "permission": "items.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The runs that made an item, and its default pipeline.",
+      "input": {
+        "itemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "runs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.machines.assignedToActiveRun",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Whether a live run has this machine on any node.",
+      "input": {
+        "machineId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "assigned": {
+          "type": "boolean",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "machines"
+      ]
+    },
+    {
+      "name": "production.machines.queue",
+      "module": "production",
+      "permission": "machines.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The live runs that name a machine.",
+      "input": {
+        "machineId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "queue": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.output.completed",
+      "module": "production",
+      "permission": "production.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Finished output a delivery challan can be raised for.",
+      "input": {
+        "search": {
+          "type": "any"
+        },
+        "q": {
+          "type": "any"
+        },
+        "limit": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "productionRuns": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.output.row",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A finished-output record with its item name, or nothing. A challan line may deliver from one.",
+      "input": {
+        "productionRunId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "production.output.source",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where a finished lot came from: its run code and source details.",
+      "input": {
+        "productionRunId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "source": {
+          "type": "any"
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "production.runs.allWithOrderItem",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every linked run, one row per link, with its order line.",
+      "input": {},
+      "output": {
+        "runs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "production.runs.assignStock",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Put stock on a node: a material, a vendor sheet, or a quantity split over barcodes.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.changeStock",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change how much of a barcode a node took.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        },
+        "nodeId": {
+          "type": "any"
+        },
+        "barcode": {
+          "type": "any"
+        },
+        "quantity": {
+          "type": "any"
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.delete",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a run, with its inputs and scrap rows.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.dissolve",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Remove a run and the stock inputs recorded on it. The caller has put the stock back.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "production.runs.forOrderItems",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The runs of these order lines, newest first, one row per link.",
+      "input": {
+        "orderItemIds": {
+          "type": "array",
+          "nullable": true
+        }
+      },
+      "output": {
+        "runs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "production.runs.get",
+      "module": "production",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One run.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "run": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.inputCountForBarcode",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many times a barcode was put on a run.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "production.runs.inputs",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What was put on a run.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "inputs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "production.runs.inputsForRuns",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What these runs consumed, oldest first.",
+      "input": {
+        "runIds": {
+          "type": "array",
+          "nullable": true
+        }
+      },
+      "output": {
+        "inputs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "production.runs.latestInputForBarcode",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The run and node a barcode was last put on, or nothing.",
+      "input": {
+        "barcode": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "input": {
+          "type": "any"
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "production.runs.linksForOrderItem",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The links from one order line to its runs.",
+      "input": {
+        "orderItemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "links": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "production.runs.list",
+      "module": "production",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Runs, newest first; with templateId, only that template’s.",
+      "input": {
+        "templateId": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "runs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.orderItemIds",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The order lines a run was started for, as rows of order_item_id.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "production.runs.removeStock",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Take a barcode back off a node and return what it had taken.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        },
+        "nodeId": {
+          "type": "any"
+        },
+        "barcode": {
+          "type": "any"
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.row",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A run’s row, or nothing.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "any"
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "production.runs.setBatches",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Replace a run’s batches, as the client keeps them.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.setNodeMetrics",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Record a stage’s reconciliation numbers: allotted, output, scrap, leftover.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.setNodeStatus",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Set a node’s status. Completing the last node books and mints the output.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        },
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.stages",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A run’s stage reconciliation rows.",
+      "input": {
+        "runId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "stages": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "production.runs.stageTotals",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Allotted, output, scrap and leftover summed over these runs’ stages.",
+      "input": {
+        "runIds": {
+          "type": "array",
+          "nullable": true
+        }
+      },
+      "output": {
+        "totals": {
+          "type": "any"
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "production.runs.start",
+      "module": "production",
+      "permission": "config.write",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Start a run from a pipeline template, for an order line, an order, or nothing.",
+      "input": {
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": {
+        "run": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.runs.summariesForOrderItems",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The runs of these order lines once each, with what a summary needs.",
+      "input": {
+        "orderItemIds": {
+          "type": "array",
+          "nullable": true
+        }
+      },
+      "output": {
+        "runs": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "production.runs.unlinkOrderItem",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Forget an order line’s runs: the line is being deleted.",
+      "input": {
+        "orderItemId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
+      "name": "production.scrap.list",
+      "module": "production",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Scrap rows, newest first; optionally one run’s, or one node’s.",
+      "input": {
+        "pipelineRunId": {
+          "type": "any"
+        },
+        "nodeId": {
+          "type": "any"
+        }
+      },
+      "output": {
+        "data": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "production.scrap.record",
+      "module": "production",
+      "permission": null,
+      "access": {
+        "anyRole": [
+          "super_admin",
+          "admin"
+        ],
+        "anyPermission": [
+          "config.write",
+          "inventory.update"
+        ]
+      },
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Book scrap against a run’s node.",
+      "input": {
+        "data": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "production.templates.runCount",
+      "module": "production",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "How many runs, ongoing or finished, were started from a template.",
+      "input": {
+        "templateId": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "pipelines"
+      ]
+    },
+    {
+      "name": "units.archive",
+      "module": "units",
+      "permission": "units.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Archive a unit nothing uses.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "units.convertBatch",
+      "module": "units",
+      "permission": "units.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Convert values between units of one family. Each line answers for itself.",
+      "input": {
+        "conversions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "value": {
+                "type": "any",
+                "required": true
+              },
+              "fromUnitId": {
+                "type": "any"
+              },
+              "toUnitId": {
+                "type": "any"
+              }
+            }
+          }
+        }
+      },
+      "output": {
+        "results": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.create",
+      "module": "units",
+      "permission": "units.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a unit. A named family that does not exist is made.",
+      "input": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "symbol": {
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "notes": {
+          "type": "string",
+          "nullable": true
+        },
+        "unitGroupName": {
+          "type": "string",
+          "nullable": true
+        },
+        "conversionFactor": {
+          "type": "number",
+          "nullable": true
+        },
+        "conversionType": {
+          "type": "string",
+          "nullable": true
+        },
+        "precision": {
+          "type": "integer",
+          "nullable": true,
+          "min": 0
+        }
+      },
+      "output": {
+        "unit": {
+          "type": "object",
+          "required": true
+        },
+        "row": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.delete",
+      "module": "units",
+      "permission": "units.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a unit to the trash.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "units.ensureKilogram",
+      "module": "units",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The kilogram’s id; the unit is made if the master has none.",
+      "input": {},
+      "output": {
+        "unitId": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "units.families.create",
+      "module": "units",
+      "permission": "units.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a unit family.",
+      "input": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "dimension": {
+          "type": "string",
+          "nullable": true
+        },
+        "baseUnitId": {
+          "type": "integer",
+          "nullable": true
+        }
+      },
+      "output": {
+        "unitGroup": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.families.delete",
+      "module": "units",
+      "permission": "units.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Remove a unit family.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "units.families.list",
+      "module": "units",
+      "permission": "units.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The unit families.",
+      "input": {},
+      "output": {
+        "unitGroups": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.families.update",
+      "module": "units",
+      "permission": "units.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Rename a unit family, or set its dimension and base unit.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "dimension": {
+          "type": "string",
+          "nullable": true
+        },
+        "baseUnitId": {
+          "type": "integer",
+          "nullable": true
+        }
+      },
+      "output": {
+        "unitGroup": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.families.withUnits",
+      "module": "units",
+      "permission": "units.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every family with its unarchived units, smallest first.",
+      "input": {},
+      "output": {
+        "families": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.gaugeTable",
+      "module": "units",
+      "permission": "units.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The points of every table-backed unit (wire gauges).",
+      "input": {},
+      "output": {
+        "points": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.list",
+      "module": "units",
+      "permission": "units.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every unit, with its family and how many records use it.",
+      "input": {},
+      "output": {
+        "units": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.rows.get",
+      "module": "units",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A unit’s row with its family and usage count, or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans",
+        "inventory",
+        "items",
+        "production"
+      ]
+    },
+    {
+      "name": "units.seedStandard",
+      "module": "units",
+      "permission": "units.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Make sure the standard families and their ladders exist.",
+      "input": {},
+      "output": {
+        "seededFamilies": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "units.update",
+      "module": "units",
+      "permission": "units.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a unit. A unit in use keeps its identity and conversion.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "symbol": {
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "notes": {
+          "type": "string",
+          "nullable": true
+        },
+        "unitGroupName": {
+          "type": "string",
+          "nullable": true
+        },
+        "conversionFactor": {
+          "type": "number",
+          "nullable": true
+        },
+        "conversionType": {
+          "type": "string",
+          "nullable": true
+        },
+        "precision": {
+          "type": "integer",
+          "nullable": true,
+          "min": 0
+        }
+      },
+      "output": {
+        "unit": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "vendors.create",
+      "module": "vendors",
+      "permission": "vendors.create",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Add a vendor. One per name or GST number.",
+      "input": {
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "alias": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "contactName": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "logoUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "vendor": {
+          "type": "object",
+          "required": true
+        },
+        "row": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "vendors.delete",
+      "module": "vendors",
+      "permission": "vendors.delete",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Move a vendor nothing names to the trash.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
+      "name": "vendors.get",
+      "module": "vendors",
+      "permission": "vendors.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "One vendor.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "vendor": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "vendors.list",
+      "module": "vendors",
+      "permission": "vendors.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every vendor, archived last, with how many challans name each.",
+      "input": {},
+      "output": {
+        "vendors": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "vendors.purchaseHistory",
+      "module": "vendors",
+      "permission": "vendors.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The distinct items and variations a vendor has delivered.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "history": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "usedBy": []
+    },
+    {
+      "name": "vendors.rows.get",
+      "module": "vendors",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A vendor’s row with its usage count, or nothing.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "vendors.rows.remove",
+      "module": "vendors",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Delete a vendor’s row outright: an approved delete request.",
+      "input": {
+        "id": {
+          "type": "any",
+          "required": true
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "action_center"
+      ]
+    },
+    {
+      "name": "vendors.update",
+      "module": "vendors",
+      "permission": "vendors.update",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Change a vendor. A logo or photo left out is kept.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "name": {
+          "type": "string",
+          "nullable": true
+        },
+        "alias": {
+          "type": "string",
+          "nullable": true
+        },
+        "gstNumber": {
+          "type": "string",
+          "nullable": true
+        },
+        "address": {
+          "type": "string",
+          "nullable": true
+        },
+        "contactName": {
+          "type": "string",
+          "nullable": true
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "email": {
+          "type": "string",
+          "nullable": true
+        },
+        "logoUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "photoUrl": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "output": {
+        "vendor": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "usedBy": []
+    }
+  ],
+  "uses": {
+    "clients": [
+      "items.rows.forCatalogue",
+      "orders.clients.lineCount",
+      "orders.clients.lineCounts",
+      "orders.clients.lockedLineCount",
+      "orders.portal.insertHeader",
+      "orders.portal.saveLine"
+    ],
+    "parties": [
+      "challans.vendorUsageCount",
+      "items.developedForCount",
+      "orders.clients.lineCount"
+    ],
+    "vendors": [
+      "challans.vendorPurchaseRows",
+      "challans.vendorUsageCount",
+      "challans.vendorUsageCounts",
+      "items.describe"
+    ],
+    "search": [
+      "items.describe"
+    ],
+    "items": [
+      "challans.items.lineCount",
+      "clients.contacts.byIds",
+      "clients.rows.get",
+      "clients.subContractors.row",
+      "inventory.groups.materialCount",
+      "inventory.items.usage",
+      "inventory.sets.name",
+      "orders.items.usage",
+      "pipelines.templates.row",
+      "units.rows.get"
+    ],
+    "action_center": [
+      "challans.templates.remove",
+      "dies.rows.remove",
+      "inventory.materials.deleteRecord",
+      "inventory.sets.deleteById",
+      "items.deleteWithCascade",
+      "machines.rows.remove",
+      "vendors.rows.remove"
+    ],
+    "production": [
+      "challans.sheets.findByCode",
+      "challans.stageNotes.create",
+      "challans.stageNotes.find",
+      "challans.stageNotes.remove",
+      "challans.stageNotes.setQuantity",
+      "inventory.ledger.recomputeSummary",
+      "inventory.materials.rowByBarcode",
+      "inventory.movements.apply",
+      "inventory.movements.applyCore",
+      "inventory.receipts.materialForChallanLine",
+      "inventory.receipts.mintLot",
+      "inventory.scans.increment",
+      "inventory.sets.recordProduced",
+      "inventory.sources.forItem",
+      "inventory.sources.propose",
+      "items.lookupByName",
+      "items.rows.get",
+      "items.selectionSnapshot",
+      "items.stock.applyDelta",
+      "jobs.propagateAssemblyRejection",
+      "jobs.syncAssemblyJob",
+      "machines.rows.get",
+      "orders.lines.get",
+      "orders.lines.idsForItem",
+      "orders.lines.idsForOrderNo",
+      "orders.lines.summary",
+      "pipelines.templates.row",
+      "units.rows.get"
+    ],
+    "inventory": [
+      "challans.customVariationValueRows",
+      "challans.numbersByIds",
+      "challans.rows.brief",
+      "dies.rows.byToolCode",
+      "items.describe",
+      "items.groups.propertyNamesInUse",
+      "items.groups.row",
+      "items.groups.rowById",
+      "items.groups.save",
+      "items.rows.get",
+      "items.selectionSnapshot",
+      "items.stock.applyDelta",
+      "items.stock.holdsWholeItemStock",
+      "items.variationStockRows",
+      "items.variations.codeForValue",
+      "items.variations.node",
+      "machines.rows.byAssetOrName",
+      "orders.items.demand",
+      "orders.lines.customVariationValues",
+      "pipelines.templates.row",
+      "production.runs.inputCountForBarcode",
+      "production.runs.latestInputForBarcode",
+      "production.runs.orderItemIds",
+      "production.runs.row",
+      "production.runs.stages",
+      "units.rows.get"
+    ],
+    "units": [
+      "inventory.units.usageCounts",
+      "items.units.usageCounts",
+      "orders.units.usageCounts"
+    ],
+    "challans": [
+      "clients.rows.get",
+      "inventory.movements.applyCore",
+      "inventory.movements.forChallan",
+      "inventory.movements.producedLotCodeForRun",
+      "inventory.movements.recordChallanReversal",
+      "inventory.movements.recordForChallan",
+      "inventory.receipts.mintFromChallanLine",
+      "inventory.receipts.mintReconcileLot",
+      "inventory.receipts.retire",
+      "inventory.receipts.usageForChallan",
+      "items.ensureForReconcile",
+      "items.groups.ensureReconcilePrimary",
+      "items.groups.ensureReconcileSub",
+      "items.rows.get",
+      "items.selectionSnapshot",
+      "items.stock.applyDelta",
+      "items.stock.assertLeaf",
+      "orders.lifecycle.move",
+      "orders.lines.idsForOrderNo",
+      "orders.rows.byIds",
+      "orders.rows.forOrderNo",
+      "orders.rows.get",
+      "production.challanLines.runInputs",
+      "production.output.row",
+      "production.output.source",
+      "production.runs.inputsForRuns",
+      "production.runs.stageTotals",
+      "production.runs.summariesForOrderItems",
+      "units.ensureKilogram",
+      "units.rows.get",
+      "vendors.rows.get"
+    ],
+    "orders": [
+      "clients.rows.get",
+      "inventory.movements.applyCore",
+      "items.resolveSelection",
+      "production.runs.allWithOrderItem",
+      "production.runs.dissolve",
+      "production.runs.forOrderItems",
+      "production.runs.inputs",
+      "production.runs.linksForOrderItem",
+      "production.runs.unlinkOrderItem"
+    ],
+    "dies": [
+      "clients.exists",
+      "production.dies.assignedToActiveRun"
+    ],
+    "machines": [
+      "items.groups.name",
+      "production.machines.assignedToActiveRun"
+    ],
+    "pipelines": [
+      "production.templates.runCount"
+    ],
+    "jobs": [
+      "inventory.materials.linkOf",
+      "inventory.materials.rowByBarcode",
+      "inventory.movements.applyCore",
+      "inventory.movements.issuedToWorkerQty",
+      "items.bom.lines",
+      "people.employees.idByBarcode"
+    ]
+  }
+}

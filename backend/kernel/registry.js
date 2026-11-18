@@ -77,6 +77,11 @@ const MODULES = {
       'report_groups', 'invoice_headers', 'invoice_lines',
       'piece_barcodes', 'reconciliation_conversion_overrides', 'reconciliation_waste_audit',
     ],
+    // Declared reads: see the note on production's.
+    reads: {
+      order_items: 'the reconciliation report joins every issued challan line to its order line, in one statement',
+      inventory_movements: 'the waste audit finds which reception an older material came in on, by joining the ledger to its own challans',
+    },
     evacuated: true,
   },
   production: {
@@ -90,7 +95,18 @@ const MODULES = {
     tables: [
       'production_runs', 'pipeline_runs', 'run_barcode_inputs', 'production_scrap',
       'stage_reconciliations', 'order_pipeline_assignments',
+      // Which machine a run's stage is on. Claimed 2026-11-18.
+      'run_machine_assignments',
     ],
+    // Tables of other modules this one still reads directly, and why. A
+    // declared read is a known debt, counted apart from the undeclared ones by
+    // test/module-borders.test.js. It goes when the owner can keep a copy
+    // up to date (events) or answer the whole question itself.
+    reads: {
+      // Finished output for a challan is searched by item name and leaves out
+      // archived items, inside one filtered, limited query.
+      items: 'the completed-output list filters and searches on the item, in one query',
+    },
     evacuated: true,
   },
   jobs: {
@@ -110,6 +126,16 @@ const MODULES = {
     // the gate maps does not change.
     pathSegments: ['action-center', 'trash', 'delete-requests'],
     tables: ['delete_requests', 'deleted_records'],
+    // Declared reads: see the note on production's. The integrity scan is the
+    // one place whose job is to look across modules; each of these is a
+    // LEFT JOIN that finds a reference to a record that is gone.
+    reads: Object.fromEntries(
+      ['items', 'groups', 'units', 'order_items', 'clients', 'sub_contractors',
+        'delivery_challans', 'vendors', 'inventory_movements'].map((table) => [
+        table,
+        'the integrity scan joins across modules to find references to records that no longer exist',
+      ]),
+    ),
     evacuated: true,
   },
   // Masters sub-entities (grouped under "Masters" in the UI tree):
@@ -136,6 +162,7 @@ const MODULES = {
     tables: [
       'clients', 'sub_contractors', 'party_contacts',
       'portal_users', 'portal_carts', 'client_portal_catalog',
+      'portal_invites',
     ],
     evacuated: true,
   },
@@ -160,16 +187,28 @@ const MODULES = {
       'item_variation_dimensions', 'item_property_schema', 'item_unit_conversions',
       'item_bom_lines', 'variation_stock', 'user_favorite_items',
       'item_deal_contacts', 'item_sheet_properties',
+      // Claimed 2026-11-18; nobody declared them. item_dies and item_machines
+      // are the part's own record of its tools (the legacy pair entity_links
+      // did not replace); material_types is the Material input type's master.
+      'item_dies', 'item_machines', 'item_attachments', 'item_pipeline_baselines',
+      'material_types',
     ],
+    // Declared reads: see the note on production's.
+    reads: {
+      order_items: 'a group\'s overview and its cover pictures rank items by how often they are ordered, inside the ranking query',
+    },
     evacuated: true,
   },
   units: {
     label: 'Units',
     group: 'Masters',
-    pathSegments: ['units'],
+    // `unit-groups` (the families) was answered by no module's gate until
+    // 2026-11-18: any signed-in user could read it and the legacy write gate
+    // decided writes.
+    pathSegments: ['units', 'unit-groups'],
     recordSource: { table: 'units', idCol: 'id', label: 'name' },
     trackTables: { units: 'Unit' },
-    tables: ['units', 'unit_groups'],
+    tables: ['units', 'unit_groups', 'unit_conversion_points'],
     evacuated: true,
   },
   process_routes: {
@@ -216,6 +255,67 @@ const MODULES = {
     evacuated: true,
   },
 };
+
+// ---------------------------------------------------------------------------
+// Table ownership beyond the fifteen modules.
+//
+// Every table has exactly one owner: a module above, the kernel, or a module
+// that has code and tables but is not registered yet. TABLE_OWNERS is the one
+// map the border meter (test/module-borders.test.js) and the territory meter
+// read. A table missing from it is a failure, not a default.
+// ---------------------------------------------------------------------------
+
+// Identity, sessions, permissions, assets, config, sync and replay
+// infrastructure, search telemetry, and the records that are polymorphic by
+// construction (links, variation trees, the activity log, the custody ledger),
+// which no single business module can own.
+const KERNEL_TABLES = [
+  'users', 'auth_sessions', 'auth_events',
+  'role_permissions', 'user_permission_overrides', 'user_permission_templates',
+  'permission_templates', 'permission_template_permissions', 'user_record_permissions',
+  'company_profiles', 'uploaded_assets', 'asset_upload_sessions',
+  'sandbox_activated_machines', 'sandbox_client_configs', 'sandbox_client_pins',
+  'sandbox_client_users', 'sandbox_replays', 'sandbox_sync_states',
+  'search_history', 'search_clicks', 'entity_activity_log',
+  'entity_links',
+  'entity_variation_nodes', 'entity_variation_versions',
+  // Claimed 2026-11-18. The append-only custody ledger and the change log every
+  // table's triggers write to; the older audit log; a phone's photo requests;
+  // per-user settings; the two migration ledgers.
+  'barcode_ledger', 'changelog', 'global_audit_logs', 'photo_requests',
+  'user_preferences', 'schema_migrations', '_migrations',
+];
+
+// Code and tables, but no entry in MODULES yet (no permission keys, no place in
+// the permission screens). Listed so their tables have an owner; registering
+// them properly is its own change.
+const UNREGISTERED_MODULE_TABLES = {
+  payroll: [
+    'attendance_records', 'leave_types', 'leave_balances', 'leave_requests',
+    'payroll_components', 'payroll_runs', 'payroll_run_details', 'payslips',
+    'employee_salary_structures', 'employee_salary_structure_lines',
+    'statutory_config',
+  ],
+};
+
+// Created by old migration files (001, 005) and named by no code at all. They
+// are given the owner they would have had, so a fresh database has no unowned
+// table; they are candidates for removal, not for use.
+const UNUSED_TABLE_OWNERS = {
+  orders: 'orders',
+  order_material_allocations: 'orders',
+  delivery_challan_orders: 'challans',
+  portal_messages: 'clients',
+};
+
+const TABLE_OWNERS = { ...UNUSED_TABLE_OWNERS };
+for (const [moduleKey, manifest] of Object.entries(MODULES)) {
+  for (const table of manifest.tables || []) TABLE_OWNERS[table] = moduleKey;
+}
+for (const [moduleKey, tables] of Object.entries(UNREGISTERED_MODULE_TABLES)) {
+  for (const table of tables) TABLE_OWNERS[table] = moduleKey;
+}
+for (const table of KERNEL_TABLES) TABLE_OWNERS[table] = 'kernel';
 
 // Path segments the central CRUD gate deliberately skips — auth, account
 // management, Track, generic asset/upload, and infrastructure paths keep their
@@ -438,6 +538,10 @@ const TRACK_ENTITY_LABELS = Object.assign(
 
 module.exports = {
   MODULES,
+  KERNEL_TABLES,
+  UNREGISTERED_MODULE_TABLES,
+  UNUSED_TABLE_OWNERS,
+  TABLE_OWNERS,
   CRUD_MODULES,
   CRUD_OPS,
   OP_LABELS,

@@ -17,7 +17,12 @@
 // they are this module's write surface for the rest of the server.
 // ---------------------------------------------------------------------------
 
-function createJobsService({ get, all, run, inventory }) {
+function createJobsService({ get, all, run, inventory, desk }) {
+  /// An item's bill of materials is the items module's; the item and variation
+  /// a material stands for is inventory's. Both are asked for.
+  const bomLinesOf = async (itemId) => (await desk.ask('items.bom.lines', { itemId })).value;
+  const materialLinkOf = async (barcode) => (await desk.ask('inventory.materials.linkOf', { barcode })).link;
+
   /// Everything the job board draws, in one read.
   async function listAll() {
     const jobs = await all('SELECT * FROM freelancer_jobs');
@@ -40,12 +45,10 @@ function createJobsService({ get, all, run, inventory }) {
       const barcode = `SET-${job.run_id}-${job.node_id}`;
       const material = await inventory.getMaterialRowByBarcode(barcode);
       if (!material) continue;
-      const alreadyIssued = await get(
-        `SELECT COALESCE(SUM(qty), 0) AS qty FROM inventory_movements
-          WHERE material_barcode = ? AND movement_type = 'issue'
-            AND reason_code = 'issued_to_worker' AND reference_id = ?`,
-        [barcode, String(jobId)],
-      );
+      const alreadyIssued = await desk.ask('inventory.movements.issuedToWorkerQty', {
+        barcode,
+        referenceId: jobId,
+      });
       if (Number(alreadyIssued?.qty || 0) > 0) continue;
       const qty = Math.min(
         Number(job.quantity || 0),
@@ -101,12 +104,9 @@ function createJobsService({ get, all, run, inventory }) {
     );
     const newJobId = result.lastID;
 
-    const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
+    const bomLines = await bomLinesOf(itemId);
     for (const line of bomLines) {
-      const mat = await get(
-        'SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?',
-        [line.material_barcode],
-      );
+      const mat = await materialLinkOf(line.material_barcode);
       if (mat && mat.linked_item_id) {
         const reqQty = (line.quantity_per_unit * quantity) * (1 + (line.wastage_percent / 100));
         await run(
@@ -221,14 +221,11 @@ function createJobsService({ get, all, run, inventory }) {
 
     if (jobId !== null) {
       // Populate tasks from BOM
-      const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
+      const bomLines = await bomLinesOf(itemId);
       for (const line of bomLines) {
         // We map the material barcode back to an item if needed, but tasks schema requires item_id.
         // Since item_bom_lines has material_barcode, let's find the linked item.
-        const mat = await get(
-          'SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?',
-          [line.material_barcode],
-        );
+        const mat = await materialLinkOf(line.material_barcode);
         if (mat && mat.linked_item_id) {
           const reqQty = (line.quantity_per_unit * qty) * (1 + (line.wastage_percent / 100));
           await run(

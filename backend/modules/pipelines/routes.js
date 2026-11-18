@@ -21,26 +21,31 @@
 // where they are. Do not "fix" that here; it is a behaviour, and the root
 // set's own tests pin it.
 //
-// Handlers are the ones that lived in server.js, moved whole.
+// Both sets ask the module's operations (./operations.js) at the kernel desk.
+// The second set's operations ask what its own guards ask: any signed-in user
+// to read, `config.write` to change.
 // ---------------------------------------------------------------------------
+
+const { httpKit } = require('../../kernel/desk-kit');
 
 module.exports = function registerPipelineRoutes(ctx) {
   const {
     app,
+    desk,
     requirePermission,
     trackCreate,
     trackUpdate,
     trackDelete,
-    pipelines,
-    production,
   } = ctx;
+  const { ask, refuse } = httpKit(desk);
 
   // --- /api/production/pipeline-templates -----------------------------------
 
   app.get('/api/production/pipeline-templates', requirePermission('config.read'), async (req, res) => {
     try {
-      const templates = await pipelines.apiListTemplates(req.query.factoryId);
-      res.json({ success: true, templates, error: null });
+      const result = await ask(req, 'pipelines.templates.list', { factoryId: req.query.factoryId });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, templates: result.templates, error: null });
     } catch (error) {
       res.status(500).json({ success: false, templates: [], error: error.message });
     }
@@ -48,9 +53,10 @@ module.exports = function registerPipelineRoutes(ctx) {
 
   app.post('/api/production/pipeline-templates', requirePermission('config.write'), async (req, res) => {
     try {
-      const row = await pipelines.apiSaveTemplate(req.body);
-      trackCreate('pipeline_templates', row.id, row, req);
-      res.json({ success: true, template: pipelines.rowToTemplate(row), error: null });
+      const result = await ask(req, 'pipelines.templates.save', { data: req.body });
+      if (!result.ok) return refuse(res, result);
+      trackCreate('pipeline_templates', result.row.id, result.row, req);
+      res.json({ success: true, template: result.template, error: null });
     } catch (error) {
       res.status(500).json({ success: false, template: null, error: error.message });
     }
@@ -59,12 +65,10 @@ module.exports = function registerPipelineRoutes(ctx) {
   app.put('/api/production/pipeline-templates/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = req.params.id;
-      const saved = await pipelines.apiUpdateTemplate(id, req.body);
-      if (saved.refusal) {
-        return res.status(saved.refusal.status).json(saved.refusal.body);
-      }
-      trackUpdate('pipeline_templates', id, saved.existing, saved.row, req);
-      res.json({ success: true, template: pipelines.rowToTemplate(saved.row), error: null });
+      const result = await ask(req, 'pipelines.templates.update', { id, data: req.body });
+      if (!result.ok) return refuse(res, result);
+      trackUpdate('pipeline_templates', id, result.before, result.row, req);
+      res.json({ success: true, template: result.template, error: null });
     } catch (error) {
       res.status(500).json({ success: false, template: null, error: error.message });
     }
@@ -73,11 +77,9 @@ module.exports = function registerPipelineRoutes(ctx) {
   app.delete('/api/production/pipeline-templates/:id', requirePermission('config.write'), async (req, res) => {
     try {
       const id = req.params.id;
-      if ((await production.templateRunCount(id)) > 0) {
-        return res.status(400).json({ success: false, error: 'Cannot delete pipeline template: there are ongoing or historical runs using it.' });
-      }
-      const before = await pipelines.deleteTemplateRow(id);
-      trackDelete('pipeline_templates', id, before, req);
+      const result = await ask(req, 'pipelines.templates.delete', { id });
+      if (!result.ok) return refuse(res, result);
+      trackDelete('pipeline_templates', id, result.before, req);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -88,7 +90,9 @@ module.exports = function registerPipelineRoutes(ctx) {
 
   app.get('/templates', requirePermission('config.read'), async (req, res) => {
     try {
-      res.json({ success: true, templates: await pipelines.rootListTemplates() });
+      const result = await ask(req, 'pipelines.legacyTemplates.list');
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, templates: result.templates });
     } catch (error) {
       res.status(500).json({ success: false, templates: [], error: error.message });
     }
@@ -96,12 +100,9 @@ module.exports = function registerPipelineRoutes(ctx) {
 
   app.post('/templates', async (req, res) => {
     try {
-      const made = await pipelines.rootCreateTemplate(req.body || {});
-      if (made.refusal) {
-        res.status(made.refusal.status).json(made.refusal.body);
-        return;
-      }
-      res.status(201).json({ success: true, template: pipelines.rowToTemplate(made.row) });
+      const result = await ask(req, 'pipelines.legacyTemplates.create', { data: req.body || {} });
+      if (!result.ok) return refuse(res, result);
+      res.status(201).json({ success: true, template: result.template });
     } catch (error) {
       res.status(500).json({ success: false, template: null, error: error.message });
     }
@@ -109,12 +110,12 @@ module.exports = function registerPipelineRoutes(ctx) {
 
   app.put('/templates/:id', async (req, res) => {
     try {
-      const saved = await pipelines.rootUpdateTemplate(req.params.id, req.body || {});
-      if (saved.refusal) {
-        res.status(saved.refusal.status).json(saved.refusal.body);
-        return;
-      }
-      res.json({ success: true, template: pipelines.rowToTemplate(saved.row) });
+      const result = await ask(req, 'pipelines.legacyTemplates.update', {
+        id: req.params.id,
+        data: req.body || {},
+      });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, template: result.template });
     } catch (error) {
       res.status(500).json({ success: false, template: null, error: error.message });
     }
@@ -122,16 +123,9 @@ module.exports = function registerPipelineRoutes(ctx) {
 
   app.get('/templates/:id', requirePermission('config.read'), async (req, res) => {
     try {
-      const row = await pipelines.getTemplateRow(req.params.id);
-      if (!row) {
-        res.status(404).json({
-          success: false,
-          template: null,
-          error: 'Template not found.',
-        });
-        return;
-      }
-      res.json({ success: true, template: pipelines.rowToTemplate(row) });
+      const result = await ask(req, 'pipelines.legacyTemplates.get', { id: req.params.id });
+      if (!result.ok) return refuse(res, result);
+      res.json({ success: true, template: result.template });
     } catch (error) {
       res.status(500).json({ success: false, template: null, error: error.message });
     }
@@ -139,12 +133,8 @@ module.exports = function registerPipelineRoutes(ctx) {
 
   app.delete('/templates/:id', async (req, res) => {
     try {
-      const existing = await pipelines.getTemplateRow(req.params.id);
-      if (!existing) {
-        res.status(404).json({ success: false, error: 'Template not found.' });
-        return;
-      }
-      await pipelines.deleteTemplateRow(req.params.id);
+      const result = await ask(req, 'pipelines.legacyTemplates.delete', { id: req.params.id });
+      if (!result.ok) return refuse(res, result);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

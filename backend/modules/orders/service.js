@@ -12,7 +12,7 @@ const path = require('path');
 //
 //   resolveOrderVariationSelection   which variation of the item the line is for
 //                                    (an items helper; it stays in server.js)
-//   getClientRowById                 the client a line is for (clients service)
+//   desk                             the client a line is for (clients.rows.get)
 //   normalizeUploadType, buildS3ObjectKey, presignS3Url, assertS3ObjectExists
 //                                    the shared upload machinery
 //   parseJson
@@ -35,7 +35,7 @@ function createOrdersService({
   run,
   parseJson,
   resolveOrderVariationSelection,
-  getClientRowById,
+  desk,
   normalizeUploadType,
   buildS3ObjectKey,
   presignS3Url,
@@ -808,7 +808,7 @@ function createOrdersService({
       error.statusCode = 400;
       throw error;
     }
-    const client = await getClientRowById(normalizedClientId);
+    const client = (await desk.ask('clients.rows.get', { id: normalizedClientId })).row;
     if (!client || client.is_archived) {
       const error = new Error('Selected client is not available.');
       error.statusCode = 400;

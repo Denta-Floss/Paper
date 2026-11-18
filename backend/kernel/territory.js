@@ -28,23 +28,10 @@ const KERNEL_SEGMENTS = new Set([
 // territory no manifest claims yet. They stay in the unclaimed report until a
 // module declares them.
 
-// Tables owned by the kernel (identity, sessions, permissions, assets, config,
-// sync/replay infrastructure, search telemetry, activity log).
-const KERNEL_TABLES = new Set([
-  'users', 'auth_sessions', 'auth_events',
-  'role_permissions', 'user_permission_overrides', 'user_permission_templates',
-  'permission_templates', 'permission_template_permissions', 'user_record_permissions',
-  'company_profiles', 'uploaded_assets', 'asset_upload_sessions',
-  'sandbox_activated_machines', 'sandbox_client_configs', 'sandbox_client_pins',
-  'sandbox_client_users', 'sandbox_replays', 'sandbox_sync_states',
-  'search_history', 'search_clicks', 'entity_activity_log',
-  // The generic link graph. Polymorphic and cross-module by construction, so
-  // no business module can own it — the same reasoning that puts
-  // uploaded_assets here.
-  'entity_links',
-  // The generic variation tree, polymorphic for the same reason.
-  'entity_variation_nodes', 'entity_variation_versions',
-]);
+// Tables owned by the kernel. The list lives in registry.js with the rest of
+// table ownership. Payroll's tables have an owner there too, but payroll is not
+// a registered module, so here they still count as unclaimed.
+const KERNEL_TABLES = new Set(registry.KERNEL_TABLES);
 
 function collectExpressRoutes(app) {
   const routes = [];

@@ -26,7 +26,7 @@ const {
 // something other than a 500.
 // ---------------------------------------------------------------------------
 
-function createDieService({ get, all, run, parseJson, resolveLinks, writeLink }) {
+function createDieService({ get, all, run, parseJson, resolveLinks, writeLink, desk }) {
   /// Free text in a JSON column, read as the one value it plainly is.
   ///
   /// `produced_part_numbers` is declared as JSON, but real rows in a live
@@ -103,6 +103,12 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink })
     });
   }
 
+  /// The die a pipeline node names: nodes carry a tool code.
+  const getDieRowByToolCode = (toolCode) => get('SELECT * FROM dies WHERE tool_code = ?', [toolCode]);
+
+  /// Deletes the row and nothing else: an approved delete request.
+  const removeDieRow = (id) => run('DELETE FROM dies WHERE id = ?', [id]);
+
   async function listDies() {
     const rows = await all('SELECT * FROM dies ORDER BY created_at DESC');
     return diesWithClients(rows);
@@ -155,8 +161,8 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink })
     } = body || {};
 
     if (clientId !== undefined && clientId !== null && clientId !== '') {
-      const client = await get('SELECT id FROM clients WHERE id = ?', [Number(clientId)]);
-      if (!client) {
+      const { exists } = await desk.ask('clients.exists', { id: clientId });
+      if (!exists) {
         return { refusal: { status: 400, body: { success: false, die: null, error: 'That client does not exist.' } } };
       }
     }
@@ -373,7 +379,7 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink })
     return before;
   }
 
-  return { rowToDieDto, listDies, getDie, saveDie, deleteDie };
+  return { rowToDieDto, getDieRowByToolCode, removeDieRow, listDies, getDie, saveDie, deleteDie };
 }
 
 module.exports = { createDieService };
