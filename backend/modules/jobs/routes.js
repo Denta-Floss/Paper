@@ -9,6 +9,7 @@
 //   POST   /api/freelancer-jobs/batches         hand jobs to a worker
 //   PUT    /api/freelancer-jobs/:id             move a job's status
 //   DELETE /api/freelancer-jobs/:id             remove a job and its tasks
+//   GET    /api/freelancer-jobs/portal-token    the token for a worker's card
 //   GET    /api/freelancer-portal/data          one worker's card, by token
 //
 // Handlers are the ones that lived in server.js, moved whole. The worker's
@@ -34,6 +35,9 @@ module.exports = function registerJobsRoutes(ctx) {
 
   app.post('/api/freelancer-jobs', requirePermission('config.write'),
     send('jobs.create', (req) => ({ query: req.query, data: req.body })));
+
+  app.get('/api/freelancer-jobs/portal-token', requirePermission('config.read'),
+    send('jobs.portalToken', (req) => ({ query: req.query, data: req.body })));
 
   app.put('/api/freelancer-jobs/:id', requirePermission('config.write'),
     send('jobs.update', (req) => ({ id: req.params.id, query: req.query, data: req.body })));

@@ -5,7 +5,7 @@
 //
 //   offered to users
 //     jobs.list · jobs.create · jobs.update · jobs.delete
-//     jobs.batches.create · jobs.portalData
+//     jobs.batches.create · jobs.portalToken · jobs.portalData
 //
 //   internal — asked by production (./asks.js, reached through ./client.js)
 //     jobs.syncAssemblyJob · jobs.propagateAssemblyRejection
@@ -61,6 +61,13 @@ module.exports = function jobOperations({ work, service }) {
       summary: 'Remove a job and its tasks.',
       input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
       run: (input, ctx) => runMoved(work.deleteJob, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
+    },
+
+    'jobs.portalToken': {
+      access: 'signedIn',
+      summary: 'The token for a worker’s printed card, signed by this server.',
+      input: { fields: { query: loose, data: loose } },
+      run: (input, ctx) => runMoved(work.portalToken, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'jobs.portalData': {

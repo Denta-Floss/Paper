@@ -12,6 +12,7 @@ import 'package:core_erp/shared/widgets/exact_item_variation_select_field.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/jobs_repository.dart';
 import '../../domain/freelancer_job.dart';
 import '../../../production/widgets/output_item_picker_dialog.dart';
 import '../providers/jobs_provider.dart';
@@ -329,11 +330,11 @@ class _JobsScreenState extends State<JobsScreen> {
     _printBatch(batch, freelancers, jobs);
   }
 
-  void _printBatch(
+  Future<void> _printBatch(
     FreelancerJobBatch batch,
     List<EmployeeDefinition> freelancers,
     List<FreelancerJob> jobs,
-  ) {
+  ) async {
     final freelancer = _firstWhereOrNull(
       freelancers,
       (value) => value.id == batch.freelancerId,
@@ -345,7 +346,21 @@ class _JobsScreenState extends State<JobsScreen> {
     final batchJobs = jobs
         .where((job) => job.batchId == batch.id)
         .toList(growable: false);
-    JobCardPrinter.printJobCard(freelancer, batch.batchNumber, batchJobs);
+    try {
+      final token = await context.read<JobsRepository>().portalToken(
+        JobCardPrinter.barcodeOf(freelancer),
+      );
+      await JobCardPrinter.printJobCard(
+        freelancer,
+        batch.batchNumber,
+        batchJobs,
+        token: token,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showMessage('Could not print the job card: $error', isError: true);
+      }
+    }
   }
 
   void _showJobDetails(FreelancerJob job, List<FreelancerJobTask> tasks) {

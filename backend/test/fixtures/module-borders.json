@@ -1,11 +1,11 @@
 {
   "summary": {
-    "total": 56,
+    "total": 51,
     "declaredReads": 13,
     "moduleReadsModule": 13,
     "moduleWritesModule": 0,
     "moduleTouchesKernelTable": 8,
-    "kernelServiceTouchesModuleTable": 22
+    "kernelServiceTouchesModuleTable": 17
   },
   "crossings": [
     "accounts reads clients.clients",
@@ -28,11 +28,6 @@
     "challans reads kernel.uploaded_assets",
     "challans reads orders.order_items (declared)",
     "challans writes kernel.uploaded_assets",
-    "control_plane writes dies.dies",
-    "control_plane writes inventory.materials",
-    "control_plane writes machines.machines",
-    "control_plane writes pipelines.pipeline_templates",
-    "control_plane writes production.run_barcode_inputs",
     "inventory reads kernel.uploaded_assets",
     "items reads kernel.entity_links",
     "items reads orders.order_items (declared)",

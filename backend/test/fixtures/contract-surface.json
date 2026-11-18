@@ -5162,6 +5162,26 @@
       "usedBy": []
     },
     {
+      "name": "jobs.portalToken",
+      "module": "jobs",
+      "permission": null,
+      "access": "signedIn",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The token for a worker’s printed card, signed by this server.",
+      "input": {
+        "query": {
+          "type": "any"
+        },
+        "data": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": []
+    },
+    {
       "name": "jobs.propagateAssemblyRejection",
       "module": "jobs",
       "permission": null,

@@ -237,6 +237,25 @@ test('clients: the portal login, catalogue, cart and order', async (t) => {
   assert.equal(login.body.user.client_id, client.id);
   const portalUserId = login.body.user.id;
 
+  // The password is stored as a salted hash, never as typed.
+  const stored = await ctx.backend.get('SELECT password_hash FROM portal_users WHERE id = ?', [portalUserId]);
+  assert.match(stored.password_hash, /^pbkdf2\$/);
+  assert.ok(!stored.password_hash.includes('pw-2'));
+
+  // One stored as plain text by an older version is hashed before it is
+  // checked, and still signs in with the same password.
+  await ctx.backend.run('UPDATE portal_users SET password_hash = ? WHERE id = ?', ['old-plain', portalUserId]);
+  assert.equal((await api(ctx, 'POST', '/api/portal/login', { email: 'buyer@pi.test', password: 'wrong' })).status, 401);
+  const upgraded = await ctx.backend.get('SELECT password_hash FROM portal_users WHERE id = ?', [portalUserId]);
+  assert.match(upgraded.password_hash, /^pbkdf2\$/, 'hashed even though the login failed');
+  assert.equal((await api(ctx, 'POST', '/api/portal/login', { email: 'buyer@pi.test', password: 'old-plain' })).status, 200);
+  // The stored hash itself is not a password.
+  assert.equal((await api(ctx, 'POST', '/api/portal/login', { email: 'buyer@pi.test', password: upgraded.password_hash })).status, 401);
+
+  // There is no built-in account, and an empty password matches nobody.
+  assert.equal((await api(ctx, 'POST', '/api/portal/login', { email: 'test@example.com', password: 'password' })).status, 401);
+  assert.equal((await api(ctx, 'POST', '/api/portal/login', { email: 'buyer@pi.test' })).status, 401);
+
   const set = await api(ctx, 'POST', `/api/clients/${client.id}/portal-catalog`, { itemIds: [itemId] });
   assert.equal(set.status, 200);
   const got = await api(ctx, 'GET', `/api/clients/${client.id}/portal-catalog`);

@@ -8,23 +8,42 @@
 // Each answers a result and knows nothing of HTTP; they are published at the
 // kernel desk as clients.portal.* (./operations.js).
 //
-// As it was, and not changed here:
-//   - a portal password is stored and compared as plain text, and a fixed
-//     test account (test@example.com) signs in on any server;
-//   - a catalogue item that has variations cannot be ordered: the portal
-//     sends no variation selection and the order line requires one.
+// A portal password is stored only as a salted hash (the same one staff
+// passwords use, handed in as hashPassword and verifyPassword). Passwords
+// stored before that as plain text are hashed in place when the server starts
+// and again before any login is checked, so none is ever compared as text.
+// There is no built-in account: only a buyer a client was given signs in.
+//
+// As it was, and not changed here: a catalogue item that has variations cannot
+// be ordered. The portal sends no variation selection and the order line
+// requires one.
 //
 // Placing an order owns one transaction (header, every line, the cart clear).
 // The header and the lines are the orders module's, asked for at the desk;
 // the line save is told not to open a transaction of its own.
 // ---------------------------------------------------------------------------
 
-function createPortalService({ get, all, run, desk }) {
+function createPortalService({ get, all, run, desk, hashPassword, verifyPassword }) {
   const no = (status, error) => ({ ok: false, status, error });
+
+  /// Hashes, in place, every stored password that is still plain text. Safe to
+  /// call any number of times; answers how many it changed.
+  async function hashStoredPlainPasswords() {
+    const rows = await all(
+      "SELECT id, password_hash FROM portal_users WHERE password_hash IS NOT NULL AND password_hash NOT LIKE 'pbkdf2$%'",
+    );
+    for (const row of rows) {
+      await run('UPDATE portal_users SET password_hash = ? WHERE id = ?', [
+        hashPassword(row.password_hash),
+        row.id,
+      ]);
+    }
+    return rows.length;
+  }
 
   async function setCredentials(clientId, { email, password } = {}) {
     if (!email || !password) return no(400, 'Email and password required');
-    const hash = password; // Should hash password in production
+    const hash = hashPassword(password);
 
     // UPSERT portal_users for this client
     const existing = await get('SELECT id FROM portal_users WHERE client_id = ?', [clientId]);
@@ -59,15 +78,11 @@ function createPortalService({ get, all, run, desk }) {
   }
 
   async function login({ email, password } = {}) {
-    // Check real portal users first
+    if (!email || !password) return no(401, 'Invalid credentials');
+    await hashStoredPlainPasswords();
     const user = await get('SELECT * FROM portal_users WHERE email = ? AND is_active = 1', [email]);
-    if (user && user.password_hash === password) { // simple string match for now
+    if (user && verifyPassword(password, user.password_hash)) {
       return { ok: true, user: { id: user.id, email: user.email, client_id: user.client_id } };
-    }
-
-    // Fallback to mock
-    if (email === 'test@example.com' && password === 'password') {
-      return { ok: true, user: { id: 1, name: 'Test Client User', client_id: 1 } };
     }
     return no(401, 'Invalid credentials');
   }
@@ -142,7 +157,16 @@ function createPortalService({ get, all, run, desk }) {
     }
   }
 
-  return { setCredentials, catalogItemIds, replaceCatalog, login, catalog, addToCart, placeOrder };
+  return {
+    setCredentials,
+    hashStoredPlainPasswords,
+    catalogItemIds,
+    replaceCatalog,
+    login,
+    catalog,
+    addToCart,
+    placeOrder,
+  };
 }
 
 module.exports = { createPortalService };

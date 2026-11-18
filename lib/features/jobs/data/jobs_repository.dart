@@ -100,6 +100,24 @@ class JobsRepository {
     }
   }
 
+  /// The token for a worker's printed card. The server signs it; the app
+  /// holds no key and cannot make one.
+  Future<String> portalToken(String barcodeId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/freelancer-jobs/portal-token').replace(
+        queryParameters: {'barcodeId': barcodeId},
+      ),
+      headers: {'Content-Type': 'application/json'},
+    );
+    if (response.statusCode == 200) {
+      final token = jsonDecode(response.body)['token'];
+      if (token is String && token.isNotEmpty) return token;
+    }
+    throw JobsApiException(
+      'Failed to prepare the job card: ${_parseError(response.body)}',
+    );
+  }
+
   String _parseError(String body) {
     try {
       final decoded = jsonDecode(body);

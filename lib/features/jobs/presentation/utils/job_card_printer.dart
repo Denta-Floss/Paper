@@ -1,42 +1,31 @@
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:core_erp/features/departments/domain/employee_definition.dart';
 import '../../domain/freelancer_job.dart';
 
 class JobCardPrinter {
-  static const String _secretKey = 'my-very-secret-key-32charslong!!';
   static const String _portalBaseUrl = String.fromEnvironment(
     'PAPER_PORTAL_BASE_URL',
     defaultValue: 'http://localhost:8080',
   );
 
-  static String generateEncryptedToken(String barcodeId) {
-    final key = encrypt.Key.fromUtf8(_secretKey);
-    final iv = encrypt.IV.fromLength(16);
-    final encrypter = encrypt.Encrypter(
-      encrypt.AES(key, mode: encrypt.AESMode.cbc),
-    );
+  /// The worker's own barcode, which the card's token is asked for by.
+  static String barcodeOf(EmployeeDefinition freelancer) =>
+      freelancer.barcodeId.isNotEmpty
+      ? freelancer.barcodeId
+      : freelancer.id.toString();
 
-    final encrypted = encrypter.encrypt(barcodeId, iv: iv);
-
-    // Format: iv_hex:encrypted_hex
-    return '${iv.bytes.map((e) => e.toRadixString(16).padLeft(2, '0')).join()}:${encrypted.bytes.map((e) => e.toRadixString(16).padLeft(2, '0')).join()}';
-  }
-
+  /// [token] comes from the server (JobsRepository.portalToken), which signs
+  /// it. It used to be made here with a key written in this file.
   static Future<void> printJobCard(
     EmployeeDefinition freelancer,
     String batchNumber,
-    List<FreelancerJob> jobs,
-  ) async {
+    List<FreelancerJob> jobs, {
+    required String token,
+  }) async {
     final doc = pw.Document();
 
-    final token = generateEncryptedToken(
-      freelancer.barcodeId.isNotEmpty
-          ? freelancer.barcodeId
-          : freelancer.id.toString(),
-    );
     final portalRoot = _portalBaseUrl.replaceFirst(RegExp(r'/$'), '');
     final portalUrl =
         '$portalRoot/#/freelancer-portal?token=${Uri.encodeQueryComponent(token)}';

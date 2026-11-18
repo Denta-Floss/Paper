@@ -242,57 +242,6 @@
   },
   "error": "Authentication required."
  },
- "anonymous GET /api/sandbox-dashboard/client/:clientId": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "activatedMachines": [],
-   "activationPin": "null",
-   "clientId": "string",
-   "config": "null",
-   "success": "boolean",
-   "syncState": "null",
-   "syncUpdatedAt": "null",
-   "users": []
-  }
- },
- "anonymous GET /api/sandbox-dashboard/client/:clientId/replays": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "replays": [],
-   "success": "boolean"
-  }
- },
- "anonymous GET /api/sandbox-dashboard/clients": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "clients": [],
-   "success": "boolean"
-  }
- },
- "anonymous GET /api/sandbox-dashboard/feature-registry": {
-  "status": 200,
-  "type": "application/json",
-  "shape": [
-   {
-    "category": "string",
-    "description": "string",
-    "displayName": "string",
-    "key": "string"
-   }
-  ]
- },
- "anonymous GET /api/sandbox-dashboard/replay/:id": {
-  "status": 404,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Replay not found"
- },
  "anonymous GET /api/scan/:code": {
   "status": 401,
   "type": "application/json",
@@ -445,11 +394,6 @@
    "success": "boolean"
   },
   "error": "Authentication required."
- },
- "anonymous GET /dashboard": {
-  "status": 200,
-  "type": "text/html",
-  "shape": null
  },
  "anonymous GET /sandbox-config/:clientId": {
   "status": 200,
@@ -716,15 +660,6 @@
   },
   "error": "Invalid email or password."
  },
- "anonymous POST /api/build/global": {
-  "status": 500,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "GITHUB_TOKEN is not set in environment variables."
- },
  "anonymous POST /api/favorites": {
   "status": 401,
   "type": "application/json",
@@ -859,24 +794,6 @@
    "success": "boolean"
   },
   "error": "Authentication required."
- },
- "anonymous POST /api/sandbox-dashboard/client/:clientId/config": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing configuration"
- },
- "anonymous POST /api/sandbox-dashboard/client/:clientId/users": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing user details"
  },
  "anonymous POST /api/sandbox-sync/:clientId": {
   "status": 400,
@@ -1021,13 +938,6 @@
    "success": "boolean"
   },
   "error": "Authentication required."
- },
- "anonymous DELETE /api/sandbox-dashboard/client/:clientId/user/:email": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "success": "boolean"
-  }
  },
  "anonymous DELETE /api/unit-groups/:id": {
   "status": 401,
@@ -1349,57 +1259,6 @@
    "success": "boolean"
   }
  },
- "owner GET /api/sandbox-dashboard/client/:clientId": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "activatedMachines": [],
-   "activationPin": "null",
-   "clientId": "string",
-   "config": "null",
-   "success": "boolean",
-   "syncState": "null",
-   "syncUpdatedAt": "null",
-   "users": []
-  }
- },
- "owner GET /api/sandbox-dashboard/client/:clientId/replays": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "replays": [],
-   "success": "boolean"
-  }
- },
- "owner GET /api/sandbox-dashboard/clients": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "clients": [],
-   "success": "boolean"
-  }
- },
- "owner GET /api/sandbox-dashboard/feature-registry": {
-  "status": 200,
-  "type": "application/json",
-  "shape": [
-   {
-    "category": "string",
-    "description": "string",
-    "displayName": "string",
-    "key": "string"
-   }
-  ]
- },
- "owner GET /api/sandbox-dashboard/replay/:id": {
-  "status": 404,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Replay not found"
- },
  "owner GET /api/scan/:code": {
   "status": 404,
   "type": "application/json",
@@ -1578,11 +1437,6 @@
    "success": "boolean"
   },
   "error": "User not found."
- },
- "owner GET /dashboard": {
-  "status": 200,
-  "type": "text/html",
-  "shape": null
  },
  "owner GET /sandbox-config/:clientId": {
   "status": 200,
@@ -1865,15 +1719,6 @@
   },
   "error": "Invalid email or password."
  },
- "owner POST /api/build/global": {
-  "status": 500,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "GITHUB_TOKEN is not set in environment variables."
- },
  "owner POST /api/favorites": {
   "status": 400,
   "type": "application/json",
@@ -2009,24 +1854,6 @@
    "success": "boolean"
   },
   "error": "Photo request not found."
- },
- "owner POST /api/sandbox-dashboard/client/:clientId/config": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing configuration"
- },
- "owner POST /api/sandbox-dashboard/client/:clientId/users": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing user details"
  },
  "owner POST /api/sandbox-sync/:clientId": {
   "status": 400,
@@ -2165,13 +1992,6 @@
    "success": "boolean"
   },
   "error": "Photo request not found."
- },
- "owner DELETE /api/sandbox-dashboard/client/:clientId/user/:email": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "success": "boolean"
-  }
  },
  "owner DELETE /api/unit-groups/:id": {
   "status": 200,

@@ -1,27 +1,19 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// Control plane: what the vendor's side talks to. Per-client configuration
-// and feature flags, activation, build and update feeds, session replay, and
-// the sandbox dashboard that manages them.
+// Control plane: what an installed app talks to. Per-client configuration and
+// feature flags, activation, the update feed, state sync and session replay.
 //
-//   POST   /dev/seed-manufacturing-demo
+// The sandbox dashboard that managed these (its page, its routes for rewriting
+// a client's flags and users, the build trigger and the demo seeder) was
+// removed on 2026-11-18: every one of them worked without a login.
+//
 //   GET    /sandbox-config/:clientId
 //   GET    /api/appcast/:clientId.xml
-//   GET    /api/sandbox-dashboard/feature-registry
 //   POST   /api/sandbox-sync/:clientId
 //   POST   /api/session-replay/:clientId
-//   GET    /api/sandbox-dashboard/clients
-//   GET    /api/sandbox-dashboard/client/:clientId
-//   POST   /api/sandbox-dashboard/client/:clientId/config
 //   POST   /api/activation/activate
-//   POST   /api/sandbox-dashboard/client/:clientId/users
-//   DELETE /api/sandbox-dashboard/client/:clientId/user/:email
 //   DELETE /api/activate/:clientId/:fingerprint
-//   POST   /api/build/global
-//   GET    /api/sandbox-dashboard/client/:clientId/replays
-//   GET    /api/sandbox-dashboard/replay/:id
-//   GET    /dashboard
 //
 // URLs, guards and the order routes are matched in are exactly as they were in
 // server.js: each group below is registered into a router that holds the place
@@ -30,65 +22,8 @@
 // is handed in by name.
 // ---------------------------------------------------------------------------
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 
-// `serverDir` is the backend's own directory (where server.js is): files these
-// handlers read or write are found from there, not from this module's folder.
-function registerControlPlaneRoutes(app, {
-  all,
-  createRunFromTemplate,
-  get,
-  run,
-  serverDir,
-}) {
-  app.post('/dev/seed-manufacturing-demo', async (req, res) => {
-    try {
-      const demoBarcode = `DEMO-MAT-${Date.now()}`;
-      const demoMachine = `MCH-DEMO-${Date.now()}`;
-      const demoDie = `DIE-DEMO-${Date.now()}`;
-    
-      await run(`
-        INSERT INTO machines (
-          asset_id, name, primary_photo_url, status, created_at, updated_at
-        ) VALUES (?, ?, ?, 'active', datetime('now'), datetime('now'))
-      `, [demoMachine, 'Demo Power Press', '/public/power_press.png']);
-
-      await run(`
-        INSERT INTO dies (
-          tool_code, produced_part_numbers, photo_urls, compatible_machine_group_ids, status, ownership, created_at, updated_at
-        ) VALUES (?, '[]', ?, '[]', 'active', 'owned', datetime('now'), datetime('now'))
-      `, [demoDie, JSON.stringify(['/public/demo_die.png'])]);
-    
-      await run(`
-        INSERT INTO materials (
-          barcode, type, name, unit, kind, created_at, updated_at
-        ) VALUES (?, 'raw_material', 'Demo PVC Resin', 'kg', 'single', datetime('now'), datetime('now'))
-      `, [demoBarcode]);
-    
-      const templateId = `tpl-demo-${Date.now()}`;
-      const nodes = [
-        { id: 'node-1', type: 'operation', machineId: demoMachine, dieId: demoDie }
-      ];
-      await run(`
-        INSERT INTO pipeline_templates (
-          id, name, version, status, stage_labels_json, lane_labels_json, nodes_json, flows_json
-        ) VALUES (?, 'Demo Power Press Pipeline', 1, 'published', '["Pressing", "Inspection"]', '[]', ?, '[]')
-      `, [templateId, JSON.stringify(nodes)]);
-    
-      const pipelineRun = await createRunFromTemplate(templateId, 'Demo Production Run', null, null, 'inventory');
-    
-      await run(`
-        INSERT INTO run_barcode_inputs (
-          id, run_id, node_id, barcode, material_payload_json, scanned_at
-        ) VALUES (?, ?, 'node-1', ?, '{}', datetime('now'))
-      `, [`input-${Date.now()}`, pipelineRun.id, demoBarcode]);
-    
-      res.json({ success: true, barcode: demoBarcode });
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
+function registerControlPlaneRoutes(app, { get, run }) {
 
   // Public configuration fetch endpoint (polled by clients at startup/update check)
   app.get('/sandbox-config/:clientId', async (req, res) => {
@@ -213,21 +148,6 @@ function registerControlPlaneRoutes(app, {
     }
   });
 
-  // Serve the centralized feature registry definition
-  app.get('/api/sandbox-dashboard/feature-registry', (req, res) => {
-    try {
-      const registryPath = path.join(serverDir, 'feature_registry.json');
-      if (fs.existsSync(registryPath)) {
-        const data = fs.readFileSync(registryPath, 'utf8');
-        res.setHeader('Content-Type', 'application/json');
-        return res.send(data);
-      }
-      return res.json([]);
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
   // Client SQLite database sync endpoint
   app.post('/api/sandbox-sync/:clientId', async (req, res) => {
     try {
@@ -311,81 +231,6 @@ function registerControlPlaneRoutes(app, {
     }
   });
 
-  // Dashboard APIs (for config and observation)
-  app.get('/api/sandbox-dashboard/clients', async (req, res) => {
-    try {
-      const configs = await all('SELECT client_id, updated_at FROM sandbox_client_configs');
-      const syncs = await all('SELECT client_id, updated_at FROM sandbox_sync_states');
-    
-      const clientsMap = {};
-      for (const c of configs) {
-        clientsMap[c.client_id] = { clientId: c.client_id, configUpdatedAt: c.updated_at, syncUpdatedAt: null };
-      }
-      for (const s of syncs) {
-        if (!clientsMap[s.client_id]) {
-          clientsMap[s.client_id] = { clientId: s.client_id, configUpdatedAt: null };
-        }
-        clientsMap[s.client_id].syncUpdatedAt = s.updated_at;
-      }
-      res.json({ success: true, clients: Object.values(clientsMap) });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.get('/api/sandbox-dashboard/client/:clientId', async (req, res) => {
-    try {
-      const clientId = req.params.clientId;
-      const configRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
-      const syncRow = await get('SELECT db_state, updated_at FROM sandbox_sync_states WHERE client_id = ?', [clientId]);
-      const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [clientId]);
-      const machines = await all('SELECT * FROM sandbox_activated_machines WHERE client_id = ?', [clientId]);
-      const users = await all('SELECT * FROM sandbox_client_users WHERE client_id = ?', [clientId]);
-    
-      res.json({
-        success: true,
-        clientId,
-        activationPin: pinRow ? pinRow.activation_pin : null,
-        activatedMachines: machines || [],
-        users: users || [],
-        config: configRow ? JSON.parse(configRow.config_json) : null,
-        syncState: syncRow ? JSON.parse(syncRow.db_state) : null,
-        syncUpdatedAt: syncRow ? syncRow.updated_at : null
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post('/api/sandbox-dashboard/client/:clientId/config', async (req, res) => {
-    try {
-      const clientId = req.params.clientId;
-      const { config } = req.body;
-      if (!config) {
-        return res.status(400).json({ success: false, error: 'Missing configuration' });
-      }
-    
-      await run(`
-        INSERT INTO sandbox_client_configs (client_id, config_json, updated_at)
-        VALUES (?, ?, datetime('now'))
-        ON CONFLICT(client_id) DO UPDATE SET
-          config_json = excluded.config_json,
-          updated_at = excluded.updated_at
-      `, [clientId, JSON.stringify(config)]);
-    
-      // Generate an activation pin if it doesn't exist
-      const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [clientId]);
-      if (!pinRow) {
-        const newPin = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit pin
-        await run('INSERT INTO sandbox_client_pins (client_id, activation_pin, created_at) VALUES (?, ?, datetime("now"))', [clientId, newPin]);
-      }
-    
-      res.json({ success: true, message: 'Configuration saved' });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
   app.post('/api/activation/activate', async (req, res) => {
     try {
       const { client_id, activation_pin, fingerprint } = req.body;
@@ -427,34 +272,6 @@ function registerControlPlaneRoutes(app, {
     }
   });
 
-  app.post('/api/sandbox-dashboard/client/:clientId/users', async (req, res) => {
-    try {
-      const clientId = req.params.clientId;
-      const { email, role } = req.body;
-      if (!email || !role) return res.status(400).json({ success: false, error: 'Missing user details' });
-
-      await run(`
-        INSERT INTO sandbox_client_users (client_id, user_email, role, created_at)
-        VALUES (?, ?, ?, datetime('now'))
-        ON CONFLICT(client_id, user_email) DO UPDATE SET role = excluded.role
-      `, [clientId, email, role]);
-
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.delete('/api/sandbox-dashboard/client/:clientId/user/:email', async (req, res) => {
-    try {
-      const { clientId, email } = req.params;
-      await run('DELETE FROM sandbox_client_users WHERE client_id = ? AND user_email = ?', [clientId, email]);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
   app.delete('/api/activate/:clientId/:fingerprint', async (req, res) => {
     try {
       const clientId = req.params.clientId;
@@ -466,89 +283,6 @@ function registerControlPlaneRoutes(app, {
     }
   });
 
-  app.post('/api/build/global', async (req, res) => {
-    try {
-      // Empty version = fresh build (artifact only). The workflow gates its S3
-      // publish step on a non-empty target_version, so don't default it here.
-      const targetVersion = (req.body.targetVersion || '').trim();
-      const githubToken = process.env.GITHUB_TOKEN;
-      const githubOwner = process.env.GITHUB_OWNER || 'your-github-username';
-      const githubRepo = process.env.GITHUB_REPO || 'core-erp';
-
-      if (!githubToken) {
-        return res.status(500).json({ success: false, error: 'GITHUB_TOKEN is not set in environment variables.' });
-      }
-
-      const url = `https://api.github.com/repos/${githubOwner}/${githubRepo}/actions/workflows/build-desktop.yml/dispatches`;
-    
-      // Using global fetch (Node 18+)
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          'Authorization': `Bearer ${githubToken}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ref: 'main',
-          inputs: {
-            target_version: targetVersion
-          }
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return res.status(response.status).json({ success: false, error: `GitHub API error: ${errorText}` });
-      }
-
-      res.json({
-        success: true,
-        message: targetVersion
-          ? `Global Build v${targetVersion} dispatched successfully!`
-          : 'Fresh build dispatched (no version, not published).',
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.get('/api/sandbox-dashboard/client/:clientId/replays', async (req, res) => {
-    try {
-      const clientId = req.params.clientId;
-      const rows = await all('SELECT id, session_id, created_at, length(events_json) as size FROM sandbox_replays WHERE client_id = ? ORDER BY created_at DESC', [clientId]);
-      res.json({ success: true, replays: rows });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.get('/api/sandbox-dashboard/replay/:id', async (req, res) => {
-    try {
-      const id = req.params.id;
-      const row = await get('SELECT session_id, events_json, created_at FROM sandbox_replays WHERE id = ?', [id]);
-      if (!row) return res.status(404).json({ success: false, error: 'Replay not found' });
-      res.json({
-        success: true,
-        sessionId: row.session_id,
-        events: JSON.parse(row.events_json),
-        createdAt: row.created_at
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  // Serve the beautiful Dashboard UI
-  app.get('/dashboard', (req, res) => {
-    const dashboardPath = path.join(serverDir, 'dashboard.html');
-    if (fs.existsSync(dashboardPath)) {
-      res.sendFile(dashboardPath);
-    } else {
-      res.status(404).send('Dashboard UI file not found');
-    }
-  });
 }
 
 module.exports = {

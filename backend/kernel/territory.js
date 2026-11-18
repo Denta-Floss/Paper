@@ -20,8 +20,8 @@ const KERNEL_SEGMENTS = new Set([
   'kernel',
   // Deployment/ops infrastructure: updater feed, build/activation, factory
   // reset, sandbox fleet sync + replay, SSE events.
-  'admin', 'appcast', 'build', 'activation', 'activate',
-  'sandbox-dashboard', 'sandbox-sync', 'session-replay', 'events',
+  'admin', 'appcast', 'activation', 'activate',
+  'sandbox-sync', 'session-replay', 'events',
 ]);
 // Deliberately NOT kernel: payroll, search, portal, freelancer-jobs,
 // freelancer-portal, mobile, production-scrap, company-profile — business

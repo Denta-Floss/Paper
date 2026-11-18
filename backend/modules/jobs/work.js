@@ -10,9 +10,8 @@
 // ---------------------------------------------------------------------------
 
 const { answer, answerFile } = require('../../kernel/desk-kit');
-const crypto = require('crypto');
 
-function createJobsWork({ run, jobs, desk }) {
+function createJobsWork({ run, jobs, desk, portalTokens }) {
 
   async function listJobs(req) {
     try {
@@ -63,22 +62,28 @@ function createJobsWork({ run, jobs, desk }) {
     }
   }
 
+  /// The token that goes on a worker's printed card, for whoever prints it.
+  async function portalToken(req) {
+    try {
+      const barcodeId = String(req.query.barcodeId || '').trim();
+      if (!barcodeId) return answer(400, { success: false, error: 'barcodeId is required' });
+      return answer(200, { success: true, token: portalTokens.make(barcodeId) });
+    } catch (error) {
+      return answer(500, { success: false, error: error.message });
+    }
+  }
+
   async function portalData(req) {
     try {
       const token = req.query.token;
       if (!token) return answer(400, { success: false, error: 'Missing token' });
 
-      const SECRET = 'my-very-secret-key-32charslong!!';
-      let barcode_id;
-      try {
-        const parts = token.split(':');
-        const iv = Buffer.from(parts[0], 'hex');
-        const encryptedText = Buffer.from(parts[1], 'hex');
-        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(SECRET), iv);
-        let decrypted = decipher.update(encryptedText);
-        decrypted = Buffer.concat([decrypted, decipher.final()]);
-        barcode_id = decrypted.toString();
-      } catch (e) {
+      // The token is made by this server (portalToken below) and signed with
+      // its own secret. Cards printed before that carried the barcode
+      // encrypted with a key that was written in the source; those no longer
+      // open anything, and have to be printed again.
+      const barcode_id = portalTokens.read(token);
+      if (barcode_id === null) {
         return answer(400, { success: false, error: 'Invalid or tampered token' });
       }
 
@@ -98,6 +103,7 @@ function createJobsWork({ run, jobs, desk }) {
     createJob,
     updateJob,
     deleteJob,
+    portalToken,
     portalData,
   };
 }

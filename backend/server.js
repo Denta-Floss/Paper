@@ -2308,12 +2308,11 @@ function currentActor(req) {
 }
 
 async function requireAuth(req, res, next) {
-  // Bypass auth for local development sandbox sync, replays, and dashboard APIs
+  // No login for what an installed app sends before anyone has signed in:
+  // state sync, session replay, activation and its configuration.
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
-      req.path.startsWith('/sandbox-dashboard') ||
       req.path.startsWith('/activation') ||
-      req.path.startsWith('/build') ||
       req.path.startsWith('/config')) {
     return next();
   }
@@ -2587,12 +2586,10 @@ function requireApiWritePermission(req, res, next) {
   if (req._moduleGated) {
     return next();
   }
-  // Bypass write check for local development sandbox sync, replays, and dashboard configs
+  // The same paths skip the write check.
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
-      req.path.startsWith('/sandbox-dashboard') ||
       req.path.startsWith('/activation') ||
-      req.path.startsWith('/build') ||
       req.path.startsWith('/config')) {
     return next();
   }
@@ -15780,6 +15777,7 @@ desk.register('jobs', {
       run,
       jobs: jobsService,
       desk: desk.as('jobs'),
+      portalTokens: require('./modules/jobs/portal-tokens').createPortalTokens({ secret: JWT_SECRET }),
     }),
   }),
 });
@@ -15833,16 +15831,19 @@ registerDieRoutes({
 
 // The client master and its sub-contractors, then the portal. `io` is declared
 // further down this file, hence the getter.
+const clientPortalService = require('./modules/clients/portal').createPortalService({
+  get,
+  all,
+  run,
+  desk: desk.as('clients'),
+  hashPassword,
+  verifyPassword,
+});
 desk.register('clients', {
   operations: require('./modules/clients/operations')({
     service: clientsService,
     contacts: partyContacts.createClientContactService({ get, all, run }),
-    portal: require('./modules/clients/portal').createPortalService({
-      get,
-      all,
-      run,
-      desk: desk.as('clients'),
-    }),
+    portal: clientPortalService,
     get,
     all,
     partyContacts,
@@ -16343,13 +16344,7 @@ registerSettingsRoutesAfterErrorHandler(settingsAfterErrorHandlerRouter, {
   requireAuth,
   getIo: () => io,
 });
-registerControlPlaneRoutes(controlPlaneRouter, {
-  all,
-  createRunFromTemplate,
-  get,
-  run,
-  serverDir: __dirname,
-});
+registerControlPlaneRoutes(controlPlaneRouter, { get, run });
 registerPayrollRoutes(payrollRouter, {
   all,
   get,
@@ -16435,6 +16430,10 @@ function startServer() {
         await runMigrations();
         console.log('Initializing database schema...');
         await initDb();
+        // Portal passwords stored as plain text by older versions are hashed
+        // before the server takes a request.
+        const rehashed = await clientPortalService.hashStoredPlainPasswords();
+        if (rehashed) console.log(`Hashed ${rehashed} portal password(s) that were stored as plain text.`);
         dbReady = true;
         console.log('Database schema ready.');
         console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);

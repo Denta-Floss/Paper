@@ -59,15 +59,21 @@ function api(ctx, method, route, body) {
   }).then(async (r) => ({ status: r.status, body: await r.json() }));
 }
 
-// The worker's card link is the employee's barcode, AES-encrypted. This is the
-// key the server uses today; it is in server.js as a literal, which is a
-// finding of its own, and this line moves with it when that is fixed.
-function portalToken(barcodeId) {
+// What a card used to carry: the barcode encrypted with a key that was written
+// in the source, so anyone with the code could make one. The server no longer
+// accepts these; it signs the token itself (GET /api/freelancer-jobs/portal-token).
+function oldForgeableToken(barcodeId) {
   const secret = 'my-very-secret-key-32charslong!!';
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(secret), iv);
   const encrypted = Buffer.concat([cipher.update(barcodeId), cipher.final()]);
   return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+async function portalToken(ctx, barcodeId) {
+  const res = await api(ctx, 'GET', `/api/freelancer-jobs/portal-token?barcodeId=${encodeURIComponent(barcodeId)}`);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return res.body.token;
 }
 
 async function firstItemId(ctx) {
@@ -154,7 +160,7 @@ test('jobs: the worker portal refuses a missing or tampered token', async (t) =>
   assert.equal((await bad.json()).error, 'Invalid or tampered token');
 
   const stranger = await fetch(
-    `${ctx.baseUrl}/api/freelancer-portal/data?token=${portalToken('NOBODY-HAS-THIS')}`,
+    `${ctx.baseUrl}/api/freelancer-portal/data?token=${encodeURIComponent(await portalToken(ctx, 'NOBODY-HAS-THIS'))}`,
     { headers: ctx.headers },
   );
   assert.equal(stranger.status, 404);
@@ -187,7 +193,7 @@ test('jobs: the worker portal shows only that worker\'s batches, jobs and tasks'
   await api(ctx, 'POST', '/api/freelancer-jobs/batches', { freelancer_id: theirs.lastID, job_ids: [jobB.id] });
 
   const res = await fetch(
-    `${ctx.baseUrl}/api/freelancer-portal/data?token=${portalToken('EMP-JOBS-A')}`,
+    `${ctx.baseUrl}/api/freelancer-portal/data?token=${encodeURIComponent(await portalToken(ctx, 'EMP-JOBS-A'))}`,
     { headers: ctx.headers },
   );
   assert.equal(res.status, 200);
@@ -195,5 +201,20 @@ test('jobs: the worker portal shows only that worker\'s batches, jobs and tasks'
   assert.equal(body.success, true);
   assert.equal(body.batches.length, 1);
   assert.equal(body.batches[0].freelancer_id, mine.lastID);
+
+  // A token made with the key that used to be in the source opens nothing,
+  // and neither does this worker's token edited to name the other worker.
+  const card = (token) => fetch(
+    `${ctx.baseUrl}/api/freelancer-portal/data?token=${encodeURIComponent(token)}`,
+    { headers: ctx.headers },
+  );
+  assert.equal((await card(oldForgeableToken('EMP-JOBS-A'))).status, 400);
+  const own = await portalToken(ctx, 'EMP-JOBS-A');
+  const [version, , signature] = own.split('.');
+  const edited = [version, Buffer.from('EMP-JOBS-B').toString('base64url'), signature].join('.');
+  assert.equal((await card(edited)).status, 400);
+  // A token names its worker and is stable, so a reprinted card is the same card.
+  assert.equal(own, await portalToken(ctx, 'EMP-JOBS-A'));
+  assert.equal((await api(ctx, 'GET', '/api/freelancer-jobs/portal-token')).status, 400);
   assert.deepEqual(body.jobs.map((j) => j.id), [jobA.id]);
 });
