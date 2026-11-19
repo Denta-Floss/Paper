@@ -5,7 +5,7 @@ It is edited with every change, so the plan, what is done, how the work went and
 what was found along the way are all here and nowhere else. If a conversation is
 lost, start from this file.
 
-Last updated: 2026-11-18 (sandbox dashboard removed; portal passwords hashed; freelancer tokens signed by the server). Committed on `refactor/evacuate-masters`.
+Last updated: 2026-11-19 (P0 done: main fast-forwarded and pushed; the packages P1-P8 are listed under "Next").
 
 ## 1. The plan
 
@@ -58,15 +58,40 @@ separate processes first would only move the tangle onto the network. So:
 | 2026-11-18 | One database file until stage 2 is finished; a database per service only after. |
 | 2026-11-18 | The terminal program (`bin/paper.js`) is removed. The desk stays. |
 | 2026-11-18 | Calls between modules stay inside one process until stage 3, so operations that share a transaction (challan issue, order delete) keep working. |
-| 2026-11-19 | Contracts are enforced for every operation. `PAPER_CONTRACTS_MODE=report` turns enforcement off on a running installation without a code change. |
-| 2026-11-19 | A contract says what a field is and what is plainly required; it does not repeat a master's own rules, which keep answering in their own words. |
+| 2026-11-18 | Contracts are enforced for every operation. `PAPER_CONTRACTS_MODE=report` turns enforcement off on a running installation without a code change. |
+| 2026-11-18 | A contract says what a field is and what is plainly required; it does not repeat a master's own rules, which keep answering in their own words. |
+
+### Decisions taken on 2026-11-19
+
+- The rest of the sandbox control plane goes: `/sandbox-config`, `/api/sandbox-sync`,
+  `/api/session-replay`, `/api/activation/*`, and the update feed that read the
+  sandbox config. The desktop app stops calling them and loses its activation gate.
+  socket.io stays (the mobile app depends on it) but requires the login token.
+- The freelancer portal keeps requiring a login; the card link is a shortcut for a
+  signed-in worker, not a credential on its own.
+- Contracts: every field typed, including the fields of bodies handed whole to a
+  service; required only where the code already refuses.
+- `main` is fast-forwarded to this work and pushed, which deploys staging.
 
 ### Waiting for a decision
 
-- The unauthenticated routes and the open socket (see bug B7). Closing the
-  dashboard routes changes how the vendor dashboard is used.
 - Stage 3 itself: which modules a real client needs split, and whether any
   module ever needs its own machine.
+
+### Staging watch list
+
+After the deploy of 2026-11-19, with the app in real use:
+
+- `GET /api/kernel/guard-alerts`: any entry whose route reads
+  `operation <name> (input, enforce)` is a request the app made that a contract
+  refused. Each is either a contract to loosen (and the evidence run to repeat) or
+  a client bug; decide per case and record it here. `PAPER_CONTRACTS_MODE=report`
+  turns enforcement off without a code change if the app is blocked.
+- Job cards printed before the deploy no longer open the freelancer portal and must
+  be reprinted.
+- The server log on first start says `Hashed N portal password(s) that were stored
+  as plain text.` once, and never again.
+- The deploy on the previous `main` (d9ba926) had failed; confirm this one succeeds.
 
 ### Stage 1 — API contracts for every module
 
@@ -121,19 +146,22 @@ the remaining twelve are a known amount of work.
 Stage 1b is done for all 15 modules: every one publishes its operations, its
 routes ask the desk, and no module is handed another's ports. What is left:
 
-1. Tighten the contracts that are still loose (`any` fields and free-form
-   `data` bodies), one module at a time, each time with the same evidence run.
-2. Move the items code that is still in `server.js` into `modules/items`
-   (`saveItem`, `saveGroup`, the variation tree, stock deltas, the usage
-   reads, the reconcile helpers). Everything reaches it through operations and
-   ports, so it can move without any caller changing.
-3. The 13 undeclared reads left: orders' 11 (its reports and the order list
-   read challans, clients, machines, dies, pipelines, units and the movement
-   ledger) and process routes' 2 (items and groups).
-4. Stage 2c and 2d: writes that span modules without a transaction, cascades,
-   and each module creating its own tables.
-5. The 17 crossings in kernel-service folders (search, accounts, the control
-   plane, settings) and the 8 module reads of kernel tables.
+The packages, in order (approved 2026-11-19; P0 is done):
+
+| # | Package | State |
+|---|---|---|
+| P0 | Merge to main and push; `encrypt` package dropped; this doc's dates fixed; staging watch list | done |
+| P1 | Remove the rest of the sandbox control plane (server and desktop app); socket.io requires the login token | |
+| P2 | Tests remove their temporary databases (B24) | |
+| P3 | Typed contracts for every operation, per module, each with an evidence run | |
+| P4 | Orders' 11 and process routes' 2 undeclared reads become asks or declared reads | |
+| P5 | Items logic out of `server.js` into `modules/items` (~2,700 lines, 4 commits) | |
+| P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | |
+| P7 | Writes across modules get transactions (stage 2c); cascades deferred | |
+| P8 | Each module creates its own tables (stage 2d), behind a schema snapshot test | |
+
+Not in these packages: stage 3 (walls), an event bus, and replacing cross-module
+`ON DELETE CASCADE` with explicit calls.
 
 ### Left as they are, on purpose
 
@@ -543,10 +571,10 @@ items are verified before anything is done about them.
 | 2026-11-18 | Units converted: logic moved from `server.js` to `modules/units/master.js` (`server.js` 16,947 → 16,620 lines), 15 operations with typed contracts, routes ask the desk, usage counts asked of inventory, items and orders. Crossings 93 → 87. Bugs B14 to B17 fixed. 412 tests pass. (Mind map change 46.) |
 | 2026-11-18 | Small masters converted: vendors (7 operations), clients with sub-contractors (14), people (9), machines (4), dies (4), pipeline templates (4), plus two more on items. 36 routes ask the desk. Five hand-offs replaced by desk calls: vendor row and client row to challans, client row to orders, employee by badge to jobs, client check to dies. Three foreign reads gone: the portal catalogue's read of items, the die's read of clients, the machine's read of item groups. Crossings 87 → 84; 84 operations in the catalogue. `kernel/desk-kit.js` holds the shared helpers. 416 tests pass. (Mind map change 47.) |
 | 2026-11-18 | The small masters' leftovers: a company's contacts (3 operations), the B2B portal (7), die makers (5), employee logins (3), the older `/templates` set (5). Their work moved out of the handlers into services (`modules/parties/contacts.js`, `modules/clients/portal.js`, `modules/dies/die-makers.js`, `modules/people/operations.js`). The desk gained three access rules for routes that were never behind a module permission. 107 operations in the catalogue; crossings unchanged at 84; 419 tests pass. (Mind map change 48.) |
-| 2026-11-19 | Production converted. The bodies of its 15 handlers (about 900 lines) moved, statement for statement, into `modules/production/work.js`; `routes.js` went from 1,150 lines to 110. 15 operations for users, each asking what its route's guard asked (the `/runs` set: signed in to read, `config.write` to change), and 19 internal ones over `ports.js`. Orders, inventory, challans, machines, dies and pipelines ask the desk instead of being handed production's ports (19 call sites, two `lateBound` proxies gone). Production asks pipelines, machines, items and units for their rows instead of reading their tables; one read of `items` is declared with its reason. Crossings 84 → 81. 144 operations; 423 tests pass. The disk filled during this work (B24). (Mind map change 49.) |
-| 2026-11-19 | Inventory converted. The 22 handlers' bodies moved to `modules/inventory/work.js` (52 answers and 7 Track entries, all accounted for); routes ask the desk and write the Track entries the work noted. What other modules ask of inventory is listed once in `asks.js` (25 functions); `operations.js` publishes each as an internal operation and `client.js` gives a caller an object shaped like the ports that asks the desk. Challans, orders, production and jobs are handed that client, which removed two more `lateBound` proxies. Inventory asks items, orders, challans, pipelines, machines and dies for rows instead of reading eight of their tables. Crossings 81 → 73; 198 operations; 427 tests pass. (Mind map change 50.) |
-| 2026-11-19 | Challans converted, the largest module. The bodies of 42 handlers in four route files moved to `work.js`, `template-work.js`, `invoice-work.js` and `report-work.js` (101 answers; three PDFs now answer with `answerFile`; two handlers that broadcast after answering were reordered). The four route files went from 1,609 lines to 311. 42 operations for users, each asking the key the gate asks on its path, and 11 internal ones from `asks.js`; the vendor master, the party delete check, production and inventory hold a challans client. Challans asks orders, production, items, units, clients and vendors instead of being handed their functions or reading their tables; two report joins are declared. The shared builders moved to `kernel/desk-kit.js`. Crossings 73 → 69; 255 operations; 432 tests pass. (Mind map change 51.) |
-| 2026-11-19 | Items converted at its borders. 43 handlers in four route sets moved (`modules/items/work.js`, and a work function inside `master-data.js`, `material-types.js` and `sheet-properties.js`); `routes.js` went from 998 lines to 125. 43 operations for users and 24 internal. Production, challans, inventory, orders, vendors, search, the party check and the action centre hold `itemsClient(desk)` in place of the ports and of the `saveGroup`, `applyVariationStockDelta`, `getItemSelectionSnapshot`, `resolveOrderVariationSelection` and reconcile helpers `server.js` handed them. An item's read was one statement joining seven tables of four modules; it is the item's row plus what pipelines, clients, orders, challans and inventory answer, and a test runs the old statement beside it and requires the same answer. Crossings 69 → 59; 321 operations; 437 tests pass. Not done: the items logic itself is still in `server.js`. (Mind map change 52.) |
-| 2026-11-19 | Jobs and the action centre converted; all 15 modules now publish their operations. 14 routes moved (a CSV export answers with `answerFile`). The desk can ask for an access rule and a permission together, which approving a delete request needs. Production holds a jobs client. An approved delete request is carried out by the module that owns the record (`vendors.rows.remove`, `machines.rows.remove`, `dies.rows.remove`, `challans.templates.remove`, inventory's and items' own) instead of raw SQL in `server.js`. Jobs asks items for a bill of materials (the port is now real) and inventory for a material's link. The integrity scan's nine cross-module joins are declared. Crossings 59 → 56; 343 operations; 440 tests pass. (Mind map change 53.) |
-| 2026-11-19 | Contracts enforced. Evidence first: the journey (it runs inside the suite against a throwaway local server; the standalone `npm run journey` targets a deployed server and was not run) and all 440 tests in report mode recorded 9 violations in 7 operations, all deliberate missing or empty names, none on a result. Then `defaultMode: 'enforce'` for every operation, with an operator switch back. Two contract rules stricter than the code behind them were loosened; names the services already refuse in their own words are left to the services. Four units routes now answer 400 where they answered 500 for a missing name. A refusal is worded about the field ("name is required"). 442 tests pass. (Mind map change 54.) |
-| 2026-11-18 | Decisions carried out. The sandbox dashboard and the two other login-free tools were removed (13 routes, `dashboard.html`, two login bypasses, the app's call that registered users with it); crossings 56 → 51 because the demo seeder wrote five modules' tables. Portal passwords are hashed and the built-in test account is gone. The freelancer card token is signed by the server; old cards must be reprinted. The job pool's permission is left as it is. 442 tests pass. Note: this log's earlier rows are dated 2026-11-19 by mistake; they were written on 2026-11-18. (Mind map change 55.) |
+| 2026-11-18 | Production converted. The bodies of its 15 handlers (about 900 lines) moved, statement for statement, into `modules/production/work.js`; `routes.js` went from 1,150 lines to 110. 15 operations for users, each asking what its route's guard asked (the `/runs` set: signed in to read, `config.write` to change), and 19 internal ones over `ports.js`. Orders, inventory, challans, machines, dies and pipelines ask the desk instead of being handed production's ports (19 call sites, two `lateBound` proxies gone). Production asks pipelines, machines, items and units for their rows instead of reading their tables; one read of `items` is declared with its reason. Crossings 84 → 81. 144 operations; 423 tests pass. The disk filled during this work (B24). (Mind map change 49.) |
+| 2026-11-18 | Inventory converted. The 22 handlers' bodies moved to `modules/inventory/work.js` (52 answers and 7 Track entries, all accounted for); routes ask the desk and write the Track entries the work noted. What other modules ask of inventory is listed once in `asks.js` (25 functions); `operations.js` publishes each as an internal operation and `client.js` gives a caller an object shaped like the ports that asks the desk. Challans, orders, production and jobs are handed that client, which removed two more `lateBound` proxies. Inventory asks items, orders, challans, pipelines, machines and dies for rows instead of reading eight of their tables. Crossings 81 → 73; 198 operations; 427 tests pass. (Mind map change 50.) |
+| 2026-11-18 | Challans converted, the largest module. The bodies of 42 handlers in four route files moved to `work.js`, `template-work.js`, `invoice-work.js` and `report-work.js` (101 answers; three PDFs now answer with `answerFile`; two handlers that broadcast after answering were reordered). The four route files went from 1,609 lines to 311. 42 operations for users, each asking the key the gate asks on its path, and 11 internal ones from `asks.js`; the vendor master, the party delete check, production and inventory hold a challans client. Challans asks orders, production, items, units, clients and vendors instead of being handed their functions or reading their tables; two report joins are declared. The shared builders moved to `kernel/desk-kit.js`. Crossings 73 → 69; 255 operations; 432 tests pass. (Mind map change 51.) |
+| 2026-11-18 | Items converted at its borders. 43 handlers in four route sets moved (`modules/items/work.js`, and a work function inside `master-data.js`, `material-types.js` and `sheet-properties.js`); `routes.js` went from 998 lines to 125. 43 operations for users and 24 internal. Production, challans, inventory, orders, vendors, search, the party check and the action centre hold `itemsClient(desk)` in place of the ports and of the `saveGroup`, `applyVariationStockDelta`, `getItemSelectionSnapshot`, `resolveOrderVariationSelection` and reconcile helpers `server.js` handed them. An item's read was one statement joining seven tables of four modules; it is the item's row plus what pipelines, clients, orders, challans and inventory answer, and a test runs the old statement beside it and requires the same answer. Crossings 69 → 59; 321 operations; 437 tests pass. Not done: the items logic itself is still in `server.js`. (Mind map change 52.) |
+| 2026-11-18 | Jobs and the action centre converted; all 15 modules now publish their operations. 14 routes moved (a CSV export answers with `answerFile`). The desk can ask for an access rule and a permission together, which approving a delete request needs. Production holds a jobs client. An approved delete request is carried out by the module that owns the record (`vendors.rows.remove`, `machines.rows.remove`, `dies.rows.remove`, `challans.templates.remove`, inventory's and items' own) instead of raw SQL in `server.js`. Jobs asks items for a bill of materials (the port is now real) and inventory for a material's link. The integrity scan's nine cross-module joins are declared. Crossings 59 → 56; 343 operations; 440 tests pass. (Mind map change 53.) |
+| 2026-11-18 | Contracts enforced. Evidence first: the journey (it runs inside the suite against a throwaway local server; the standalone `npm run journey` targets a deployed server and was not run) and all 440 tests in report mode recorded 9 violations in 7 operations, all deliberate missing or empty names, none on a result. Then `defaultMode: 'enforce'` for every operation, with an operator switch back. Two contract rules stricter than the code behind them were loosened; names the services already refuse in their own words are left to the services. Four units routes now answer 400 where they answered 500 for a missing name. A refusal is worded about the field ("name is required"). 442 tests pass. (Mind map change 54.) |
+| 2026-11-18 | Decisions carried out. The sandbox dashboard and the two other login-free tools were removed (13 routes, `dashboard.html`, two login bypasses, the app's call that registered users with it); crossings 56 → 51 because the demo seeder wrote five modules' tables. Portal passwords are hashed and the built-in test account is gone. The freelancer card token is signed by the server; old cards must be reprinted. The job pool's permission is left as it is. 442 tests pass. (Mind map change 55.) |
