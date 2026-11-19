@@ -76,7 +76,7 @@ const listArg = (name) => ({ fields: { [name]: { type: 'array', nullable: true }
 
 /// What other modules ask of production. Each is a function in ./ports.js; the
 /// name here is what a caller declares it uses.
-function internalOperations(ports) {
+function internalOperations(ports, desk) {
   const read = (summary, input, key, ask, output) => ({
     internal: true,
     summary,
@@ -183,7 +183,7 @@ module.exports = function productionOperations({ work, ports, outputRow, desk })
   });
 
   return {
-    ...internalOperations(ports),
+    ...internalOperations(ports, desk),
 
     'production.output.row': {
       internal: true,

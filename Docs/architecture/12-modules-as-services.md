@@ -337,6 +337,10 @@ Traps met so far:
   ensureColumnExists(…)`, a one-line `try { ALTER TABLE … ADD COLUMN }`).
   A table that a rebuild in `initDb` reshapes keeps its statements there,
   with that rebuild; moving its indexes ahead of the rebuild would lose them.
+- The names-used-but-never-declared scan is per file, not per scope. A name
+  declared as one function's parameter hides its absence in another function
+  of the same file (`desk` in production's `internalOperations`, 2026-11-19).
+  Run the full suite to completion before committing, every time.
 - `kernel/desk-kit.js` has the shared pieces: `refusing` (a thrown 4xx becomes
   a result), `fromRefusal` (a service's `{ refusal }` becomes a result) and
   `httpKit` (`ask` and `refuse` for a route file).
