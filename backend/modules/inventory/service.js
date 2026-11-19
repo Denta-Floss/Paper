@@ -196,13 +196,7 @@ function createInventoryService({
   /// none, or when presigning is unavailable — a missing picture must never fail
   /// the set fetch.
   async function inventorySetPhotoUrl(setId) {
-    const asset = await get(
-      `SELECT * FROM uploaded_assets
-        WHERE entity_type = 'inventory_set' AND entity_id = ? AND status = 'uploaded'
-        ORDER BY is_primary DESC, created_at ASC
-        LIMIT 1`,
-      [setId],
-    );
+    const { row: asset } = await desk.ask('assets.primaryFor', { entityType: 'inventory_set', entityId: setId });
     if (!asset) return null;
     const dto = await rowToUploadedAssetDto(asset, true);
     return dto?.readUrl || null;

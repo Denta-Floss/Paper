@@ -5,7 +5,7 @@ It is edited with every change, so the plan, what is done, how the work went and
 what was found along the way are all here and nowhere else. If a conversation is
 lost, start from this file.
 
-Last updated: 2026-11-19 (P5 done: the items logic is out of server.js).
+Last updated: 2026-11-19 (P6 done: no crossing is left but the 26 declared reads).
 
 ## 1. The plan
 
@@ -156,7 +156,7 @@ The packages, in order (approved 2026-11-19; P0 is done):
 | P3 | Typed contracts for every operation, per module, each with an evidence run | done |
 | P4 | Orders' 11 and process routes' 2 undeclared reads become asks or declared reads | done |
 | P5 | Items logic out of `server.js` into `modules/items` (2,700 lines, one move by function name) | done |
-| P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | |
+| P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | done |
 | P7 | Writes across modules get transactions (stage 2c); cascades deferred | |
 | P8 | Each module creates its own tables (stage 2d), behind a schema snapshot test | |
 
@@ -305,6 +305,10 @@ Traps met so far:
   transaction open and the suite hanging.
 - Code that moves into a module folder becomes visible to the border meter.
   The items move exposed eleven foreign reads that had always been there.
+- A kernel folder (accounts, assets, links, search, settings) registers at the
+  desk like a module: it publishes what modules need of its tables and
+  declares what it asks of them. The border meter treats it as `kernel`, so
+  its own tables are never a crossing, and after P6 nothing else is either.
 - `kernel/desk-kit.js` has the shared pieces: `refusing` (a thrown 4xx becomes
   a result), `fromRefusal` (a service's `{ refusal }` becomes a result) and
   `httpKit` (`ask` and `refuse` for a route file).
@@ -348,14 +352,14 @@ Ticked only when a test proves it.
 - [x] `module-borders.test.js` with its starting list of crossings
 - [x] Starting count recorded here: **93** crossings
 
-| Crossings (a module's code naming a table it does not own) | Start | Units | Small masters | Production | Inventory | Challans | Items | Jobs, action centre | P1 | P4 | P5 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| A module reads another module's table, undeclared | 63 | 57 | 54 | 50 | 42 | 36 | 25 | 13 | 13 | 0 | 0 |
-| A module reads another module's table, declared with a reason | 0 | 0 | 0 | 1 | 1 | 3 | 4 | 13 | 13 | 15 | 26 |
-| A module writes another module's table | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| A module touches a kernel table (links, assets, users…) | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
-| A kernel service (search, accounts, settings…) touches a module's table | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 17 | 17 | 17 |
-| **Total** | **93** | **87** | **84** | **81** | **73** | **69** | **59** | **56** | **51** | **40** | **51** |
+| Crossings (a module's code naming a table it does not own) | Start | Units | Small masters | Production | Inventory | Challans | Items | Jobs, action centre | P1 | P4 | P5 | P6 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A module reads another module's table, undeclared | 63 | 57 | 54 | 50 | 42 | 36 | 25 | 13 | 13 | 0 | 0 | **0** |
+| A module reads another module's table, declared with a reason | 0 | 0 | 0 | 1 | 1 | 3 | 4 | 13 | 13 | 15 | 26 | 26 |
+| A module writes another module's table | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| A module touches a kernel table (links, assets, users…) | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | **0** |
+| A kernel service (search, accounts, settings…) touches a module's table | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 17 | 17 | 17 | **0** |
+| **Total** | **93** | **87** | **84** | **81** | **73** | **69** | **59** | **56** | **51** | **40** | **51** | **26** |
 
 The total rose in P5 because the items logic, moved out of `server.js` (which
 the meter never scanned), carries eleven reads of other modules' tables. They
@@ -393,10 +397,13 @@ Declared reads so far:
   client, contractor and people; a group's material; where one item is used)
   became asks.
 
-No module reads another module's table without asking or declaring it;
-`module-borders.test.js` now asserts that count is zero. What is left (40) is
-the 15 declared reads, the 8 module touches of kernel tables and the 17
-kernel-service touches of module tables (P6).
+Every crossing left is a declared read; `module-borders.test.js` asserts that
+undeclared module reads, kernel-service touches of module tables and module
+touches of kernel tables are all zero. The kernel's own services (accounts,
+assets, links) publish operations for their tables; search asks each owner for
+its hits; deleting a login account asks the modules that name a user to forget
+it, inside the account's transaction. `user_favorite_items` is the kernel's: a
+preference of the account.
 
 What the meter cannot see: `server.js` itself, SQL whose table name is built at
 run time, and writes done through a function another module handed over (those
@@ -637,3 +644,4 @@ items are verified before anything is done about them.
 | 2026-11-19 | P3. `kernel/fields.js` holds the words a contract is written in (`text`, `int`, `num`, `flag`, `id`, `key`, `list`, `obj`, `none`, `both`). Every user operation in every module now names its fields with a type: 43 items operations (the item and group payloads reuse `modules/items/contract.js`), 22 inventory, 42 challans (both spellings of every challan, invoice and template field), 15 production, 7 jobs, 8 action centre, and the untyped ids and payloads left in clients, dies, machines, orders, people, pipelines and process routes. Nothing new is `required`: the services keep refusing in their own words. `plainRequest` gives a moved handler `{}` for a missing body. Evidence run first (report mode, 28 violations: 20 were tests sending bad input on purpose; 8 were contract shapes stricter than the code, all loosened). Behaviour change: a non-numeric path id answers 400 instead of 404. A third test in `contract-surface.test.js` fails on any new untyped field and lists the eleven kept on purpose. 442 tests pass. (Mind map change 59.) |
 | 2026-11-19 | P4. Orders' eleven foreign reads and process routes' two became asks or declared reads. New internal operations: `items.unitConversions.factor`, `inventory.movements.consumedByRun` (joins the caller's transaction), `challans.deliveries.byOrderLines`, `challans.sheets.provenance`, `dies.rows.all`, `machines.rows.all`. Orders asks `units.rows.get`, `clients.subContractors.row`, `clients.rows.get` (order headers and the line summary now read their own row and ask for the client's name), `pipelines.templates.row`. Process routes asks `items.rows.get` and `items.groups.row` twice (the group and its parent). The order list's delivered-quantity subquery is declared in the registry. Crossings 51 → 40; undeclared module reads 0, asserted by the border test. 442 tests pass. (Mind map change 60.) |
 | 2026-11-19 | P5. The items logic left `server.js`: 49 functions (2,700 lines) moved by name into `modules/items/variation-tree.js` (pure), `property-keys.js` (pure), `schema-props.js`, `developed-for.js`, `variations.js`, `dto.js`, `reads.js`, `save.js`, `deletes.js`, assembled by `service.js` (`createItemsService(deps)`); `server.js` destructures the same names from it, so seeds, exports and ~20 test files are unchanged; a dead duplicate `normalizePropertyKey` and three dead functions went. Inventory is handed an items client and requires the pure tree walkers; `items.variationTree`, `items.rowById`, `items.resolveLeaf` are new asks. The move exposed eleven foreign reads: the single-row ones became asks (`units.rows.get`, `units.rows.first`, `machines.rows.get`, `dies.rows.get`, `clients.rows.get`, `clients.subContractors.row`, `clients.contacts.byIds`, `pipelines.templates.row`, `inventory.materials.firstForGroup`, and `orders.items.usageRows`, `challans.items.usageRows`, `inventory.items.usageRows` for where an item is used); the list and DTO joins are declared in the registry with their reason (B35). `server.js` 16,707 → 14,019 lines. 359 operations. 442 tests pass. (Mind map change 61.) |
+| 2026-11-19 | P6. Kernel services publish their tables: `modules/accounts/operations.js` (`accounts.users.get`, `.byIds`, `.setMobilePin`), `modules/assets/operations.js` (`assets.forEntity`, `.primaryFor`, `.attachUploaded`, `.sessionEntity`), `modules/links/operations.js` (`links.byRelation`, `.remove`, `.removeRelation`, `.add`). People, challans, inventory and the items section tree ask them. Kernel services ask the owners: deleting an account asks `action_center.users.forget`, `orders.users.forget`, `challans.users.forget` inside its transaction and `clients.rows.byIds` for the user list; search asks `items.search.hits`, `items.search.configurations`, `inventory.materials.search`, `challans.pieceBarcodes.lookup`. `user_favorite_items` reassigned to the kernel. Crossings 51 → 26, all declared; the border test asserts every other count is zero. 378 operations (155 internal, 23 inside the caller's transaction). 442 tests pass. (Mind map change 62.) |

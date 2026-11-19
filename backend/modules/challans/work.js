@@ -753,10 +753,7 @@ function createChallanWork({
       }
       // The session has to be one that was opened for THIS challan; completing
       // someone else's upload through this address would file it under theirs.
-      const session = await get(
-        'SELECT entity_type, entity_id FROM asset_upload_sessions WHERE id = ?',
-        [req.body?.uploadSessionId],
-      );
+      const { row: session } = await desk.ask('assets.sessionEntity', { id: String(req.body?.uploadSessionId || '') });
       if (session && (session.entity_type !== 'delivery_challan' || Number(session.entity_id) !== entityId)) {
         return answer(400, {
           success: false,

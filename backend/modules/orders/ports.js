@@ -51,6 +51,14 @@ function createOrdersPorts({ get, all, run, saveOrder, desk }) {
       return Number(row?.count || 0);
     },
 
+    /// Clears every reference to a login account that is being deleted.
+    async forgetUser(userId) {
+      for (const column of ['created_by_user_id', 'raised_by_user_id', 'cancelled_by_user_id', 'closed_by_user_id']) {
+        await run(`UPDATE procurement_requests SET ${column} = NULL WHERE ${column} = ?`, [userId]);
+      }
+      await run('UPDATE procurement_activity_log SET actor_user_id = NULL WHERE actor_user_id = ?', [userId]);
+    },
+
     /// The order lines for an item, newest first, at most 50.
     itemUsageLines: (itemId) => all(
       'SELECT id, order_no, client_name, status, created_at FROM order_items WHERE item_id = ? ORDER BY created_at DESC LIMIT 50',

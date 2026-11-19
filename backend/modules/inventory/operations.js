@@ -271,6 +271,25 @@ function userOperations({ all, work }) {
       }),
     },
 
+    'inventory.materials.search': {
+      internal: true,
+      summary: 'Materials whose name, barcode or supplier contain every token; at most `limit`.',
+      input: { fields: { tokens: F.list(F.text), limit: F.int } },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async (input) => {
+        const tokens = (input.tokens || []).map(String).filter(Boolean);
+        const conditions = tokens.map(() => '(name LIKE ? OR barcode LIKE ? OR supplier LIKE ?)').join(' AND ');
+        const params = tokens.flatMap((t) => { const l = `%${t}%`; return [l, l, l]; });
+        return {
+          ok: true,
+          rows: await all(
+            `SELECT barcode, name, type, on_hand_qty FROM materials WHERE ${conditions || '1=1'} LIMIT ${Number(input.limit) > 0 ? Number(input.limit) : 50}`,
+            params,
+          ),
+        };
+      },
+    },
+
     'inventory.materials.firstForGroup': {
       internal: true,
       summary: 'The first material that inherits from a group, whose governance the group’s items take their property schema from; or nothing.',

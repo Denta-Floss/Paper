@@ -356,6 +356,18 @@ module.exports = function clientOperations({
 
     // --- internal: asked by other modules ----------------------------------
 
+    'clients.rows.byIds': {
+      internal: true,
+      summary: 'These clients’ rows as stored.',
+      input: { fields: { ids: F.list(F.int) } },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async (input) => {
+        const ids = [...new Set((input.ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+        if (!ids.length) return { ok: true, rows: [] };
+        return { ok: true, rows: await all(`SELECT * FROM clients WHERE id IN (${ids.map(() => '?').join(', ')})`, ids) };
+      },
+    },
+
     'clients.rows.get': {
       internal: true,
       summary: 'A client’s row with its usage count, or nothing.',

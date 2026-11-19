@@ -10,6 +10,7 @@
 
 function createDeletes(deps, api) {
   const inventoryPorts = deps.inventory;
+  const { desk } = deps;
   const { all, markEntityAssetsDeleted, run, trashAndDelete } = deps;
   const purgeEntityLinks = (...args) => deps.purgeEntityLinks()(...args);
   const purgeEntityVariations = (...args) => deps.purgeEntityVariations()(...args);
@@ -40,7 +41,7 @@ function createDeletes(deps, api) {
     // carry the part only in their relation, so the purge below — which matches
     // an item at either END — never touched them, and no reconcile ever runs
     // for this id again. Its deal ticks (056) likewise.
-    await run('DELETE FROM entity_links WHERE relation = ?', [`part_tree:${id}`]);
+    await desk.ask('links.removeRelation', { relation: `part_tree:${id}` });
     await run('DELETE FROM item_deal_contacts WHERE item_id = ?', [id]);
     if (purgeEntityLinks) await purgeEntityLinks('item', id);
     if (purgeEntityVariations) await purgeEntityVariations('item', id);

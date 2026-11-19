@@ -88,7 +88,7 @@ function canonical(aType, aId, bType, bId) {
 /// A section with no records (an in-house part has no client) is passed
 /// through: its children count as nested under its parent, so "Die under an
 /// absent client" is simply the part's dies and links nothing.
-async function reconcileSectionLinks({ get, all, run }, itemId) {
+async function reconcileSectionLinks({ get, all, desk }, itemId) {
   const item = await get(
     'SELECT id, developed_for_client_id, section_tree_json FROM items WHERE id = ?',
     [itemId],
@@ -124,31 +124,27 @@ async function reconcileSectionLinks({ get, all, run }, itemId) {
     }
   }
 
-  const existing = await all(
-    'SELECT id, left_type, left_id, right_type, right_id FROM entity_links WHERE relation = ?',
-    [relation],
-  );
+  // The links are the kernel's; they are asked for, and added or removed one
+  // at a time inside the caller's transaction.
+  const { rows: existing } = await desk.ask('links.byRelation', { relation });
   let removed = 0;
   for (const row of existing) {
     const key = `${row.left_type}|${row.left_id}|${row.right_type}|${row.right_id}`;
     if (desired.has(key)) {
       desired.delete(key);
     } else {
-      await run('DELETE FROM entity_links WHERE id = ?', [row.id]);
+      await desk.ask('links.remove', { id: row.id });
       removed += 1;
     }
   }
   const now = new Date().toISOString();
   let added = 0;
   for (const [left, right] of desired.values()) {
-    const result = await run(
-      `INSERT OR IGNORE INTO entity_links
-         (left_type, left_id, right_type, right_id, relation, metadata, created_at, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
-      [left.type, left.id, right.type, right.id, relation,
-        JSON.stringify({ partId: Number(itemId), source: 'item_sheet_tree' }), now],
-    );
-    added += result?.changes || 0;
+    const { changes } = await desk.ask('links.add', {
+      leftType: left.type, leftId: String(left.id), rightType: right.type, rightId: String(right.id),
+      relation, metadata: JSON.stringify({ partId: Number(itemId), source: 'item_sheet_tree' }), at: now,
+    });
+    added += changes;
   }
   return { added, removed };
 }

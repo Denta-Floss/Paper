@@ -203,11 +203,31 @@ desk.register('vendors', {
 });
 // Search names the item a hit is about; the action centre removes an item or
 // group with what hangs off it.
-desk.register('search', { uses: ['items.describe'] });
+desk.register('people', { uses: ['accounts.users.get', 'accounts.users.byIds', 'accounts.users.setMobilePin'] });
+desk.register('search', {
+  uses: ['items.describe', 'items.search.hits', 'items.search.configurations', 'inventory.materials.search', 'challans.pieceBarcodes.lookup'],
+});
+// The kernel's own services publish what modules need of their tables, and
+// ask the modules that name a user to forget one being deleted.
+desk.register('accounts', {
+  operations: require('./modules/accounts/operations')({ get, all, run }),
+  uses: ['clients.rows.byIds', 'action_center.users.forget', 'orders.users.forget', 'challans.users.forget'],
+});
+desk.register('assets', { operations: require('./modules/assets/operations')({ get, all, run }) });
+desk.register('links', {
+  operations: require('./modules/links/operations')({ all, run }),
+  // Its own section-tree reconcile, run after a legacy link write.
+  uses: ['links.byRelation', 'links.remove', 'links.add'],
+});
 // An item names its default pipeline, who it was developed for and the people
 // of that deal; how much it is used is the sum of what its neighbours say.
 desk.register('items', {
   uses: [
+    // A part's section tree is kept as links.
+    'links.byRelation',
+    'links.remove',
+    'links.removeRelation',
+    'links.add',
     // A material inherits a group's governance; a set lists an item; deleting
     // an item takes it out of every set.
     'inventory.governance.get',
@@ -287,6 +307,7 @@ desk.register('production', {
 });
 desk.register('inventory', {
   uses: [
+    'assets.primaryFor',
     // An item's tree and row, for shaping a set line or a material's variation.
     'items.variationTree',
     'items.rowById',
@@ -331,6 +352,10 @@ desk.register('units', {
 // …and names the vendor a reception came from.
 desk.register('challans', {
   uses: [
+    // A challan's photos and documents.
+    'assets.forEntity',
+    'assets.attachUploaded',
+    'assets.sessionEntity',
     'units.ensureKilogram',
     'vendors.rows.get',
     'clients.rows.get',
@@ -12622,6 +12647,7 @@ const peopleService = createPeopleService({
   all,
   run,
   auth: { deriveDobPin, nextFreeMobilePin },
+  desk: desk.as('people'),
 });
 
 // registerSettingsRoutesAfterErrorHandler: its routes are in modules/settings/routes.js and are registered into this
@@ -12840,6 +12866,7 @@ const linksModule = registerLinksModuleRoutes({
   get,
   all,
   run,
+  desk: desk.as('links'),
   logChange,
   // logChange is replication, not an audit trail — it carries no actor and no
   // words. A link needed both to appear in a sitting, and this context was the
@@ -13019,6 +13046,7 @@ desk.register('people', {
     // The auth kernel, still defined in this file: making an account, its staff
     // login code, and the audit entry.
     auth: { createUserAccount, deriveDobPin, nextFreeMobilePin, logAuthEvent },
+    desk: desk.as('people'),
   }),
 });
 registerPeopleRoutes({
@@ -13102,6 +13130,7 @@ const deleteRequestService = createDeleteRequestService({
 });
 desk.register('action_center', {
   operations: require('./modules/action_center/operations')({
+    run,
     work: require('./modules/action_center/work').createActionCenterWork({
       trash: trashService,
       deleteRequests: deleteRequestService,
@@ -13165,6 +13194,7 @@ registerOrderReportRoutes({
 desk.register('challans', {
   operations: require('./modules/challans/operations')({
     all,
+    run,
     ports: challansPorts,
     removeTemplate: (id) => deleteChallanTemplate(id),
     core: require('./modules/challans/work').createChallanWork({
@@ -13344,6 +13374,7 @@ registerAccountsRoutesBeforeLogin(accountsBeforeLoginRouter, {
 });
 registerAccountsRoutes(accountsRouter, {
   RECORD_OPTION_SOURCES,
+  desk: desk.as('accounts'),
   RECORD_PERMISSION_OPS,
   USER_ROLES,
   all,
@@ -13450,6 +13481,7 @@ registerTrackRoutes(trackRouter, {
 registerSearchRoutes(searchRouter, {
   all,
   get,
+  desk: desk.as('search'),
   itemsPorts: itemsClient(desk.as('search')),
   requirePermission,
   resolveBarcode,

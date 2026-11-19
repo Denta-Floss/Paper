@@ -126,6 +126,7 @@ function registerAccountsRoutesBeforeLogin(app, {
 // handlers read or write are found from there, not from this module's folder.
 function registerAccountsRoutes(app, {
   RECORD_OPTION_SOURCES,
+  desk,
   RECORD_PERMISSION_OPS,
   USER_ROLES,
   all,
@@ -494,15 +495,20 @@ function registerAccountsRoutes(app, {
       const total = Number(countRow?.count || 0);
       const rows = await all(
         `
-        SELECT users.*, clients.name as client_name
+        SELECT users.*
         FROM users
-        LEFT JOIN clients ON users.client_id = clients.id
         ${whereSql}
         ORDER BY users.role ASC, users.name ASC
         LIMIT ? OFFSET ?
         `,
         [...params, limit, offset],
       );
+      // A user's client is the clients module's; its name is asked for.
+      const clientIds = rows.map((row) => row.client_id).filter((id) => id != null);
+      const clientNames = new Map(
+        (await desk.ask('clients.rows.byIds', { ids: clientIds })).rows.map((client) => [client.id, client.name]),
+      );
+      for (const row of rows) row.client_name = row.client_id == null ? null : clientNames.get(row.client_id) ?? null;
       const users = [];
       for (const row of rows) {
         users.push(await safeUserDtoWithPermissions(row));
@@ -1042,16 +1048,12 @@ function registerAccountsRoutes(app, {
         await run('UPDATE auth_events SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
         await run('UPDATE auth_events SET target_user_id = NULL WHERE target_user_id = ?', [targetId]);
         await run('UPDATE global_audit_logs SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
-        await run('UPDATE delete_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = ?', [targetId]);
-        await run('DELETE FROM delete_requests WHERE requested_by_user_id = ?', [targetId]);
+        // The modules that name a user clear the name themselves, inside this
+        // transaction.
+        await desk.ask('action_center.users.forget', { userId: targetId });
         await run('UPDATE users SET created_by_user_id = NULL WHERE created_by_user_id = ?', [targetId]);
-        await run('UPDATE procurement_requests SET created_by_user_id = NULL WHERE created_by_user_id = ?', [targetId]);
-        await run('UPDATE procurement_requests SET raised_by_user_id = NULL WHERE raised_by_user_id = ?', [targetId]);
-        await run('UPDATE procurement_requests SET cancelled_by_user_id = NULL WHERE cancelled_by_user_id = ?', [targetId]);
-        await run('UPDATE procurement_requests SET closed_by_user_id = NULL WHERE closed_by_user_id = ?', [targetId]);
-        await run('UPDATE procurement_activity_log SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
-        await run('UPDATE delivery_challans SET created_by = NULL WHERE created_by = ?', [targetId]);
-        await run('UPDATE delivery_challans SET updated_by = NULL WHERE updated_by = ?', [targetId]);
+        await desk.ask('orders.users.forget', { userId: targetId });
+        await desk.ask('challans.users.forget', { userId: targetId });
         await run('DELETE FROM search_history WHERE user_id = ?', [targetId]);
         await run('DELETE FROM search_clicks WHERE user_id = ?', [targetId]);
       

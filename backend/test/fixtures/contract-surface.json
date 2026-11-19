@@ -1,6 +1,79 @@
 {
   "operations": [
     {
+      "name": "accounts.users.byIds",
+      "module": "accounts",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The same for several accounts at once.",
+      "input": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "people"
+      ]
+    },
+    {
+      "name": "accounts.users.get",
+      "module": "accounts",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A login account’s id, email, role, active flag and staff code; or nothing.",
+      "input": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "people"
+      ]
+    },
+    {
+      "name": "accounts.users.setMobilePin",
+      "module": "accounts",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Set an account’s 4-digit staff login code. People does this from the employee’s date of birth.",
+      "input": {
+        "id": {
+          "type": "integer"
+        },
+        "pin": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "people"
+      ]
+    },
+    {
       "name": "action_center.deleteRequests.approve",
       "module": "action_center",
       "permission": "delete_requests.review",
@@ -233,6 +306,138 @@
       },
       "output": null,
       "usedBy": []
+    },
+    {
+      "name": "action_center.users.forget",
+      "module": "action_center",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A login account is being deleted: its delete requests go, and reviews it made lose their reviewer.",
+      "input": {
+        "userId": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "accounts"
+      ]
+    },
+    {
+      "name": "assets.attachUploaded",
+      "module": "assets",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Record a file that is already in the store as attached to a record. A challan saves its photos this way, inside its own transaction.",
+      "input": {
+        "entityType": {
+          "type": "string"
+        },
+        "entityId": {
+          "type": "integer"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "assets.forEntity",
+      "module": "assets",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The uploaded files attached to a record, oldest first.",
+      "input": {
+        "entityType": {
+          "type": "string"
+        },
+        "entityId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
+      "name": "assets.primaryFor",
+      "module": "assets",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A record’s primary uploaded file, or its oldest when none is marked primary; or nothing.",
+      "input": {
+        "entityType": {
+          "type": "string"
+        },
+        "entityId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
+      "name": "assets.sessionEntity",
+      "module": "assets",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Which record an upload session was opened for; or nothing.",
+      "input": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
     },
     {
       "name": "challans.assets.uploadComplete",
@@ -1395,6 +1600,29 @@
       },
       "output": null,
       "usedBy": []
+    },
+    {
+      "name": "challans.pieceBarcodes.lookup",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What a scanned piece code is: the piece, its challan line and its challan; or nothing. For the barcode lookup.",
+      "input": {
+        "code": {
+          "type": "string"
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "search"
+      ]
     },
     {
       "name": "challans.print",
@@ -2816,6 +3044,24 @@
       "usedBy": []
     },
     {
+      "name": "challans.users.forget",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A login account is being deleted: challans it made or changed keep the rows and lose the name.",
+      "input": {
+        "userId": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "accounts"
+      ]
+    },
+    {
       "name": "challans.vendorPurchaseRows",
       "module": "challans",
       "permission": null,
@@ -3414,6 +3660,32 @@
       },
       "output": null,
       "usedBy": []
+    },
+    {
+      "name": "clients.rows.byIds",
+      "module": "clients",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "These clients’ rows as stored.",
+      "input": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "accounts"
+      ]
     },
     {
       "name": "clients.rows.get",
@@ -4643,6 +4915,35 @@
       },
       "output": null,
       "usedBy": []
+    },
+    {
+      "name": "inventory.materials.search",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Materials whose name, barcode or supplier contain every token; at most `limit`.",
+      "input": {
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "search"
+      ]
     },
     {
       "name": "inventory.materials.setGroupConfig",
@@ -7063,6 +7364,69 @@
       ]
     },
     {
+      "name": "items.search.configurations",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What search needs to name the configurations these items have: their property schema, live variation nodes and stock rows.",
+      "input": {
+        "itemIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": {
+        "props": {
+          "type": "array",
+          "required": true
+        },
+        "nodes": {
+          "type": "array",
+          "required": true
+        },
+        "stockRows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "search"
+      ]
+    },
+    {
+      "name": "items.search.hits",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Items whose name, display name, alias or a variation label contain every token; with group name and stock rows; at most `limit`.",
+      "input": {
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "search"
+      ]
+    },
+    {
       "name": "items.selectionSnapshot",
       "module": "items",
       "permission": null,
@@ -8032,6 +8396,110 @@
       "usedBy": []
     },
     {
+      "name": "links.add",
+      "module": "links",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Add a link under a relation, if it is not there already. Answers how many rows that added (0 or 1).",
+      "input": {
+        "leftType": {
+          "type": "string"
+        },
+        "leftId": {
+          "type": "string"
+        },
+        "rightType": {
+          "type": "string"
+        },
+        "rightId": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "output": {
+        "changes": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        }
+      },
+      "usedBy": [
+        "items",
+        "links"
+      ]
+    },
+    {
+      "name": "links.byRelation",
+      "module": "links",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every link under one relation name.",
+      "input": {
+        "relation": {
+          "type": "string"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "items",
+        "links"
+      ]
+    },
+    {
+      "name": "links.remove",
+      "module": "links",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Remove one link by its id.",
+      "input": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "items",
+        "links"
+      ]
+    },
+    {
+      "name": "links.removeRelation",
+      "module": "links",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "Remove every link under one relation name: a deleted part takes its section tree with it.",
+      "input": {
+        "relation": {
+          "type": "string"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
       "name": "machines.delete",
       "module": "machines",
       "permission": "machines.delete",
@@ -8867,6 +9335,24 @@
       },
       "usedBy": [
         "units"
+      ]
+    },
+    {
+      "name": "orders.users.forget",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A login account is being deleted: procurement requests and their log keep the rows and lose the name.",
+      "input": {
+        "userId": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "accounts"
       ]
     },
     {
@@ -11357,8 +11843,28 @@
       "challans.vendorUsageCounts",
       "items.describe"
     ],
+    "people": [
+      "accounts.users.byIds",
+      "accounts.users.get",
+      "accounts.users.setMobilePin"
+    ],
     "search": [
-      "items.describe"
+      "challans.pieceBarcodes.lookup",
+      "inventory.materials.search",
+      "items.describe",
+      "items.search.configurations",
+      "items.search.hits"
+    ],
+    "accounts": [
+      "action_center.users.forget",
+      "challans.users.forget",
+      "clients.rows.byIds",
+      "orders.users.forget"
+    ],
+    "links": [
+      "links.add",
+      "links.byRelation",
+      "links.remove"
     ],
     "items": [
       "challans.items.lineCount",
@@ -11375,6 +11881,10 @@
       "inventory.sets.membershipForItem",
       "inventory.sets.name",
       "inventory.sets.removeLinesForItem",
+      "links.add",
+      "links.byRelation",
+      "links.remove",
+      "links.removeRelation",
       "machines.rows.get",
       "orders.items.usage",
       "orders.items.usageRows",
@@ -11422,6 +11932,7 @@
       "units.rows.get"
     ],
     "inventory": [
+      "assets.primaryFor",
       "challans.customVariationValueRows",
       "challans.numbersByIds",
       "challans.rows.brief",
@@ -11458,6 +11969,9 @@
       "orders.units.usageCounts"
     ],
     "challans": [
+      "assets.attachUploaded",
+      "assets.forEntity",
+      "assets.sessionEntity",
       "clients.rows.get",
       "inventory.movements.applyCore",
       "inventory.movements.forChallan",

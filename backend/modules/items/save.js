@@ -930,7 +930,7 @@ function createSave(deps, api) {
       // a new die, a different client, a machine taken off. After the commit and
       // never failing the save: the part is written either way.
       try {
-        await sectionTree.reconcileSectionLinks({ get, all, run }, itemId);
+        await sectionTree.reconcileSectionLinks({ get, all, desk }, itemId);
       } catch (error) {
         // Before migration 057 (a seed at first boot) the column is not there.
         if (!/no such (column|table)/.test(String(error?.message || ''))) {

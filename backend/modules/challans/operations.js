@@ -46,14 +46,14 @@ const { runMoved, operationsFromAsks, joinOperations } = require('../../kernel/d
 const ASKS = require('./asks');
 
 
-module.exports = function challanOperations({ all, core, template, invoice, report, ports, removeTemplate }) {
+module.exports = function challanOperations({ all, run, core, template, invoice, report, ports, removeTemplate }) {
   return joinOperations(
     operationsFromAsks('challans', ASKS, ports),
-    userOperations({ all, core, template, invoice, report, removeTemplate }),
+    userOperations({ all, run, core, template, invoice, report, removeTemplate }),
   );
 };
 
-function userOperations({ all, core, template, invoice, report, removeTemplate }) {
+function userOperations({ all, run, core, template, invoice, report, removeTemplate }) {
   return {
     'challans.pieceBarcodes.add': {
       permission: 'challans.create',
@@ -315,6 +315,38 @@ function userOperations({ all, core, template, invoice, report, removeTemplate }
       summary: 'Delete a print template: an approved delete request.',
       input: { fields: { id: { type: 'any', required: true } } },
       run: async (input) => ({ ok: true, value: await removeTemplate(input.id) }),
+    },
+
+    'challans.users.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'A login account is being deleted: challans it made or changed keep the rows and lose the name.',
+      input: { fields: { userId: F.int } },
+      run: async (input) => {
+        await run('UPDATE delivery_challans SET created_by = NULL WHERE created_by = ?', [input.userId]);
+        await run('UPDATE delivery_challans SET updated_by = NULL WHERE updated_by = ?', [input.userId]);
+        return { ok: true };
+      },
+    },
+
+    'challans.pieceBarcodes.lookup': {
+      internal: true,
+      summary: 'What a scanned piece code is: the piece, its challan line and its challan; or nothing. For the barcode lookup.',
+      input: { fields: { code: F.text } },
+      output: { fields: { row: { type: 'object', nullable: true } } },
+      run: async (input) => {
+        const rows = await all(`
+          SELECT pb.*,
+                 ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight AS line_weight, ci.note,
+                 ci.variation_leaf_node_id, ci.variation_path_label,
+                 c.order_no, c.type as challan_type, c.vendor_id, c.vendor_name, c.vendor_gstin
+          FROM piece_barcodes pb
+          JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+          JOIN delivery_challans c ON ci.challan_id = c.id
+          WHERE pb.parent_code = ? OR pb.child_code = ?
+        `, [input.code, input.code]);
+        return { ok: true, row: rows[0] || null };
+      },
     },
 
     'challans.items.usageRows': {

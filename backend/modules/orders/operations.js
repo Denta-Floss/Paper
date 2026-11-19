@@ -303,6 +303,17 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
       },
     },
 
+    'orders.users.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'A login account is being deleted: procurement requests and their log keep the rows and lose the name.',
+      input: { fields: { userId: F.int } },
+      run: async (input) => {
+        await ports.forgetUser(input.userId);
+        return { ok: true };
+      },
+    },
+
     'orders.items.usageRows': {
       internal: true,
       summary: 'Where an item is used in orders: the lines that are for it and the material requirements that name it, newest first, at most 50 each.',

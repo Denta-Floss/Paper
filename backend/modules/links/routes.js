@@ -55,7 +55,7 @@ async function reconcileAfterLegacyWrite(deps, left, right) {
 
 module.exports = function registerLinksModuleRoutes(ctx) {
   const {
-    app, get, all, run, logChange, trackLink, hasPermission, hasRecordPermission,
+    app, get, all, run, desk, logChange, trackLink, hasPermission, hasRecordPermission,
   } = ctx;
 
   /// One side of a link, in the shape `trackLink` wants.
@@ -539,7 +539,7 @@ module.exports = function registerLinksModuleRoutes(ctx) {
         } catch (_) {
           /* the trigger has already recorded it; this is belt and braces */
         }
-        if (inserted > 0) await reconcileAfterLegacyWrite({ get, all, run }, left, right);
+        if (inserted > 0) await reconcileAfterLegacyWrite({ get, all, desk }, left, right);
       }
 
       res.status(201).json({
@@ -595,7 +595,7 @@ module.exports = function registerLinksModuleRoutes(ctx) {
           } catch (_) {
             /* the derived trigger has already recorded it */
           }
-          await reconcileAfterLegacyWrite({ get, all, run }, left, right);
+          await reconcileAfterLegacyWrite({ get, all, desk }, left, right);
         }
       } else {
         const relation = req.query.relation ? String(req.query.relation) : null;

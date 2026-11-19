@@ -44,6 +44,7 @@ module.exports = function peopleOperations({
   get,
   run,
   auth,
+  desk,
 }) {
   const asUser = (ctx) => ({ user: ctx.actor?.user || null });
   const no = (status, error) => ({ ok: false, status, error });
@@ -200,7 +201,7 @@ module.exports = function peopleOperations({
           const dobPin = auth.deriveDobPin(emp.date_of_birth);
           if (dobPin) {
             const pin = await auth.nextFreeMobilePin(dobPin, user.id);
-            await run('UPDATE users SET mobile_pin = ? WHERE id = ?', [pin, user.id]);
+            await desk.ask('accounts.users.setMobilePin', { id: user.id, pin });
           }
           await auth.logAuthEvent({
             eventType: 'user_created',
@@ -230,7 +231,7 @@ module.exports = function peopleOperations({
             return no(400, 'Only in-house employees can be linked to a login.');
           }
           if (!Number.isFinite(userId)) return no(400, 'userId is required.');
-          const user = await get('SELECT id FROM users WHERE id = ?', [userId]);
+          const { row: user } = await desk.ask('accounts.users.get', { id: userId });
           if (!user) return no(404, 'Login account not found.');
           const other = await get('SELECT id FROM employees WHERE user_id = ? AND id != ?', [userId, employeeId]);
           if (other) return no(409, 'That login is already linked to another employee.');

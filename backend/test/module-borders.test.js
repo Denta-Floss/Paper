@@ -214,4 +214,8 @@ test('the places a module touches a table it does not own: none added, and none 
   // Since P4 (2026-11-19): every read of another module's table is either an
   // ask at the desk or declared in the registry with its reason.
   assert.equal(summary.moduleReadsModule, 0, 'a module reads another module\'s table without asking or declaring it');
+  // Since P6 (2026-11-19): kernel services ask the owners, and modules ask the
+  // kernel's services for its tables.
+  assert.equal(summary.kernelServiceTouchesModuleTable, 0, 'a kernel service touches a module\'s table');
+  assert.equal(summary.moduleTouchesKernelTable, 0, 'a module touches a kernel table');
 });

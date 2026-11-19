@@ -472,6 +472,50 @@ function internalOperations({ all, get }) {
       },
     },
 
+    'items.search.hits': {
+      internal: true,
+      summary: 'Items whose name, display name, alias or a variation label contain every token; with group name and stock rows; at most `limit`.',
+      input: { fields: { tokens: F.list(F.text), limit: F.int } },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async (input) => {
+        const tokens = (input.tokens || []).map(String).filter(Boolean);
+        const conditions = tokens.map(() => '(i.name LIKE ? OR i.display_name LIKE ? OR i.alias LIKE ? OR v.variation_path_label LIKE ?)').join(' AND ');
+        const params = tokens.flatMap((t) => { const l = `%${t}%`; return [l, l, l, l]; });
+        return {
+          ok: true,
+          rows: await all(
+            `SELECT i.id, i.name, i.display_name, i.quantity as base_quantity, g.name as category_name,
+                    v.variation_leaf_node_id, v.variation_path_label, v.quantity as var_quantity,
+                    i.naming_format
+             FROM items i
+             LEFT JOIN groups g ON i.group_id = g.id
+             LEFT JOIN variation_stock v ON i.id = v.item_id
+             WHERE ${conditions || '1=1'}
+             LIMIT ${Number(input.limit) > 0 ? Number(input.limit) : 50}`,
+            params,
+          ),
+        };
+      },
+    },
+
+    'items.search.configurations': {
+      internal: true,
+      summary: 'What search needs to name the configurations these items have: their property schema, live variation nodes and stock rows.',
+      input: { fields: { itemIds: F.list(F.int) } },
+      output: { fields: { props: { type: 'array', required: true }, nodes: { type: 'array', required: true }, stockRows: { type: 'array', required: true } } },
+      run: async (input) => {
+        const itemIds = [...new Set((input.itemIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+        if (!itemIds.length) return { ok: true, props: [], nodes: [], stockRows: [] };
+        const qs = itemIds.map(() => '?').join(',');
+        return {
+          ok: true,
+          props: await all(`SELECT item_id, property_key, display_name FROM item_property_schema WHERE item_id IN (${qs}) ORDER BY sort_order ASC`, itemIds),
+          nodes: await all(`SELECT id, item_id, parent_node_id, name, display_name FROM item_variation_nodes WHERE item_id IN (${qs}) AND is_archived = 0 ORDER BY position ASC`, itemIds),
+          stockRows: await all(`SELECT item_id, custom_variation_values_json, variation_path_node_ids_json FROM variation_stock WHERE item_id IN (${qs})`, itemIds),
+        };
+      },
+    },
+
     'items.rows.get': {
       internal: true,
       summary: 'An item’s row as stored, or nothing.',

@@ -193,7 +193,7 @@ const MODULES = {
       'items', 'groups', 'group_item_memberships',
       'item_variation_nodes', 'item_variations', 'item_variation_values',
       'item_variation_dimensions', 'item_property_schema', 'item_unit_conversions',
-      'item_bom_lines', 'variation_stock', 'user_favorite_items',
+      'item_bom_lines', 'variation_stock',
       'item_deal_contacts', 'item_sheet_properties',
       // Claimed 2026-11-18; nobody declared them. item_dies and item_machines
       // are the part's own record of its tools (the legacy pair entity_links
@@ -298,6 +298,9 @@ const KERNEL_TABLES = [
   'permission_templates', 'permission_template_permissions', 'user_record_permissions',
   'company_profiles', 'uploaded_assets', 'asset_upload_sessions',
   'search_history', 'search_clicks', 'entity_activity_log',
+  // A user's favourite items: a preference of the account, read and written
+  // by settings and cleared with the account. Reassigned from items 2026-11-19.
+  'user_favorite_items',
   'entity_links',
   'entity_variation_nodes', 'entity_variation_versions',
   // Claimed 2026-11-18. The append-only custody ledger and the change log every

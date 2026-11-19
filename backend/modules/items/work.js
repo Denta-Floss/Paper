@@ -501,7 +501,7 @@ function createItemsWork({
           new Date().toISOString(),
           id,
         ]);
-        const links = await reconcileSectionLinks({ get, all, run }, id);
+        const links = await reconcileSectionLinks({ get, all, desk }, id);
         await logChange('items', id, 'UPDATE');
         await run('COMMIT');
         const after = await get('SELECT * FROM items WHERE id = ?', [id]);

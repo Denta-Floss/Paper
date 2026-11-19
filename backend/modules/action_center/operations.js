@@ -29,8 +29,20 @@ const OLD_WRITE_GATE = {
   anyPermission: ['config.write', 'inventory.update'],
 };
 
-module.exports = function actionCenterOperations({ work }) {
+module.exports = function actionCenterOperations({ work, run }) {
   return {
+    'action_center.users.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'A login account is being deleted: its delete requests go, and reviews it made lose their reviewer.',
+      input: { fields: { userId: F.int } },
+      run: async (input) => {
+        await run('UPDATE delete_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = ?', [input.userId]);
+        await run('DELETE FROM delete_requests WHERE requested_by_user_id = ?', [input.userId]);
+        return { ok: true };
+      },
+    },
+
     'action_center.trash.list': {
       permission: 'action_center.read',
       summary: 'What is in the trash.',

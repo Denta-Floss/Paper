@@ -298,10 +298,7 @@ function createChallanService({
       orderIds,
     );
   
-    const assetRows = await all(
-      "SELECT * FROM uploaded_assets WHERE entity_type = 'delivery_challan' AND entity_id = ? AND status = 'uploaded' ORDER BY created_at ASC",
-      [row.id]
-    );
+    const { rows: assetRows } = await desk.ask('assets.forEntity', { entityType: 'delivery_challan', entityId: row.id });
     const assets = await Promise.all(assetRows.map(rowToUploadedAssetDto));
 
     const dto = {
@@ -1262,25 +1259,16 @@ function createChallanService({
       if (Array.isArray(genericAssets) && genericAssets.length > 0) {
         for (const asset of genericAssets) {
           if (!asset.objectKey || !asset.fileName || !asset.contentType) continue;
-          await run(
-            `
-            INSERT OR IGNORE INTO uploaded_assets (
-              entity_type, entity_id, file_name, content_type, size_bytes, sha256,
-              object_key, status, is_primary, created_at, uploaded_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', 0, ?, ?)
-            `,
-            [
-              'delivery_challan',
-              challanId,
-              asset.fileName,
-              asset.contentType,
-              asset.sizeBytes || 0,
-              asset.sha256 || '',
-              asset.objectKey,
-              now,
-              now,
-            ]
-          );
+          await desk.ask('assets.attachUploaded', {
+            entityType: 'delivery_challan',
+            entityId: challanId,
+            fileName: asset.fileName,
+            contentType: asset.contentType,
+            sizeBytes: asset.sizeBytes || 0,
+            sha256: asset.sha256 || '',
+            objectKey: asset.objectKey,
+            at: now,
+          });
         }
       }
 

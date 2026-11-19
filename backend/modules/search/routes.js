@@ -20,6 +20,7 @@
 function registerSearchRoutes(app, {
   all,
   get,
+  desk,
   itemsPorts,
   requirePermission,
   resolveBarcode,
@@ -33,37 +34,9 @@ function registerSearchRoutes(app, {
       }
     
       const tokens = q.split(/\s+/).filter(Boolean);
-      const itemConditions = tokens.map(() => '(i.name LIKE ? OR i.display_name LIKE ? OR i.alias LIKE ? OR v.variation_path_label LIKE ?)').join(' AND ');
-      const itemParams = tokens.flatMap(t => {
-        const l = `%${t}%`;
-        return [l, l, l, l];
-      });
-    
-      const items = await all(
-        `SELECT i.id, i.name, i.display_name, i.quantity as base_quantity, g.name as category_name,
-                v.variation_leaf_node_id, v.variation_path_label, v.quantity as var_quantity,
-                i.naming_format
-         FROM items i
-         LEFT JOIN groups g ON i.group_id = g.id
-         LEFT JOIN variation_stock v ON i.id = v.item_id
-         WHERE ${itemConditions || '1=1'}
-         LIMIT 50`,
-        itemParams
-      );
-    
-      const materialConditions = tokens.map(() => '(name LIKE ? OR barcode LIKE ? OR supplier LIKE ?)').join(' AND ');
-      const materialParams = tokens.flatMap(t => {
-        const l = `%${t}%`;
-        return [l, l, l];
-      });
-
-      const materials = await all(
-        `SELECT barcode, name, type, on_hand_qty 
-         FROM materials 
-         WHERE ${materialConditions || '1=1'} 
-         LIMIT 50`,
-        materialParams
-      );
+      // Each owner finds its own hits; search merges and ranks them.
+      const { rows: items } = await desk.ask('items.search.hits', { tokens, limit: 50 });
+      const { rows: materials } = await desk.ask('inventory.materials.search', { tokens, limit: 50 });
 
       const clicks = await all(
         `SELECT entity_type, entity_id, COUNT(*) as click_count 
@@ -81,10 +54,7 @@ function registerSearchRoutes(app, {
       const itemConfigs = {};
       const itemIds = [...new Set(items.map(i => i.id))];
       if (itemIds.length > 0) {
-        const qs = itemIds.map(() => '?').join(',');
-        const props = await all(`SELECT item_id, property_key, display_name FROM item_property_schema WHERE item_id IN (${qs}) ORDER BY sort_order ASC`, itemIds);
-        const allNodes = await all(`SELECT id, item_id, parent_node_id, name, display_name FROM item_variation_nodes WHERE item_id IN (${qs}) AND is_archived = 0 ORDER BY position ASC`, itemIds);
-        const stockRows = await all(`SELECT item_id, custom_variation_values_json, variation_path_node_ids_json FROM variation_stock WHERE item_id IN (${qs})`, itemIds);
+        const { props, nodes: allNodes, stockRows } = await desk.ask('items.search.configurations', { itemIds });
       
         const nodeMap = {};
         allNodes.forEach(n => nodeMap[n.id] = n);
@@ -282,16 +252,7 @@ function registerSearchRoutes(app, {
         return res.status(400).json({ success: false, error: 'Code is required' });
       }
     
-      const row = await get(`
-        SELECT pb.*,
-               ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight AS line_weight, ci.note,
-               ci.variation_leaf_node_id, ci.variation_path_label,
-               c.order_no, c.type as challan_type, c.vendor_id, c.vendor_name, c.vendor_gstin
-        FROM piece_barcodes pb
-        JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
-        JOIN delivery_challans c ON ci.challan_id = c.id
-        WHERE pb.parent_code = ? OR pb.child_code = ?
-      `, [code, code]);
+      const { row } = await desk.ask('challans.pieceBarcodes.lookup', { code });
     
       if (row) {
         const itemDesc = await itemsPorts.describe(row.item_id);

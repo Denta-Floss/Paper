@@ -16,7 +16,17 @@
 // return `{ refusal: {status, body} }` instead of throwing.
 // ---------------------------------------------------------------------------
 
-function createPeopleService({ get, all, run, auth }) {
+function createPeopleService({ get, all, run, auth, desk }) {
+  /// An employee row with its login account's fields, under the names the
+  /// DTO has always read; the account is the kernel's and is asked for.
+  const withLogin = (row, account) => ({
+    ...row,
+    login_email: account ? account.email : null,
+    login_role: account ? account.role : null,
+    login_is_active: account ? account.is_active : null,
+    login_mobile_pin: account ? account.mobile_pin : null,
+  });
+
   function rowToDepartmentDto(row) {
     if (!row) return null;
     return {
@@ -70,13 +80,10 @@ function createPeopleService({ get, all, run, auth }) {
   // Re-fetch an employee joined to its linked login account (for DTOs that need
   // the unified People shape after a write).
   async function getEmployeeWithLogin(id) {
-    return get(
-      `SELECT e.*, u.email AS login_email, u.role AS login_role,
-              u.is_active AS login_is_active, u.mobile_pin AS login_mobile_pin
-         FROM employees e LEFT JOIN users u ON u.id = e.user_id
-        WHERE e.id = ?`,
-      [id],
-    );
+    const row = await get('SELECT e.* FROM employees e WHERE e.id = ?', [id]);
+    if (!row) return row;
+    const account = row.user_id == null ? null : (await desk.ask('accounts.users.get', { id: row.user_id })).row;
+    return withLogin(row, account);
   }
 
   // --- departments ----------------------------------------------------------
@@ -131,18 +138,10 @@ function createPeopleService({ get, all, run, auth }) {
 
   async function listEmployees() {
     // Unified People read: each employee joined to its login account (if any).
-    const rows = await all(
-      `SELECT e.*,
-              u.email AS login_email,
-              u.role AS login_role,
-              u.is_active AS login_is_active,
-              u.mobile_pin AS login_mobile_pin
-         FROM employees e
-         LEFT JOIN users u ON u.id = e.user_id
-        WHERE e.is_archived = 0
-        ORDER BY e.name ASC`,
-    );
-    return rows.map(rowToEmployeeDto);
+    const employees = await all('SELECT e.* FROM employees e WHERE e.is_archived = 0 ORDER BY e.name ASC');
+    const ids = employees.map((row) => row.user_id).filter((id) => id != null);
+    const accounts = new Map((await desk.ask('accounts.users.byIds', { ids })).rows.map((account) => [account.id, account]));
+    return employees.map((row) => rowToEmployeeDto(withLogin(row, row.user_id == null ? null : accounts.get(row.user_id) || null)));
   }
 
   async function createEmployee(body) {
@@ -191,7 +190,7 @@ function createPeopleService({ get, all, run, auth }) {
       const dobPin = auth.deriveDobPin(newDob);
       if (dobPin) {
         const pin = await auth.nextFreeMobilePin(dobPin, existing.user_id);
-        await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [pin, new Date().toISOString(), existing.user_id]);
+        await desk.ask('accounts.users.setMobilePin', { id: existing.user_id, pin, updatedAt: new Date().toISOString() });
       }
     }
     const afterRow = await get('SELECT * FROM employees WHERE id = ?', [id]);
