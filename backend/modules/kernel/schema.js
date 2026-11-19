@@ -29,7 +29,7 @@
 
 const { ensureColumnExists: ensureColumn } = require('../../kernel/schema-kit');
 
-async function createSchema({ run, all }) {
+async function createSchema({ run, all, get }) {
   const ensureColumnExists = (table, column, definition) => ensureColumn({ run, all }, table, column, definition);
   await run(`
     CREATE TABLE IF NOT EXISTS global_audit_logs (
@@ -199,6 +199,8 @@ async function createSchema({ run, all }) {
     )
   `);
 
+  // Per-user UI preferences (e.g. which sections the item editor shows). Kept
+  // per user on purpose — this is a personal form layout, not a policy.
   await run(`
     CREATE TABLE IF NOT EXISTS user_preferences (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -280,6 +282,9 @@ async function createSchema({ run, all }) {
     )
   `);
 
+  // A database made before company documents has these tables without the
+  // column, and CREATE TABLE IF NOT EXISTS never adds one. photo_requests comes
+  // from migration 062, so it may not exist yet in a bare initDb.
   await ensureColumnExists('uploaded_assets', 'document_title', 'TEXT');
 
   await ensureColumnExists('asset_upload_sessions', 'document_title', 'TEXT');
@@ -288,6 +293,8 @@ async function createSchema({ run, all }) {
     'CREATE INDEX IF NOT EXISTS idx_asset_upload_sessions_entity ON asset_upload_sessions(entity_type, entity_id)',
   );
 
+  // Track: generic per-entity activity log powering the "Track" tab on masters
+  // and a person's People profile. Written by trackCreate/Update/Delete.
   await run(`
     CREATE TABLE IF NOT EXISTS entity_activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,6 +321,7 @@ async function createSchema({ run, all }) {
 
   await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_sitting ON entity_activity_log(sitting_id, created_at)');
 
+  // Per-record (row-level) permission grants for an individual user.
   await run(`
     CREATE TABLE IF NOT EXISTS user_record_permissions (
       user_id INTEGER NOT NULL,
@@ -348,6 +356,34 @@ async function createSchema({ run, all }) {
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
 
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
+
+  // --- Tables whose shape an older file may need rebuilt (moved 2026-11-19,
+  // B37). Their rebuild, CREATE, columns and indexes run here in the order
+  // they stood in initDb; triggers, data backfills and seeds stay there.
+  try { await run("ALTER TABLE auth_sessions ADD COLUMN client_platform TEXT DEFAULT 'desktop'"); } catch (e) {}
+  await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)');
+
+  // A part's photos in their order, each with a small copy for lists, and
+  // when it was removed (the sweep deletes the objects a day later).
+  for (const [column, type] of [
+    ['position', 'INTEGER'],
+    ['thumb_key', 'TEXT'],
+    ['width', 'INTEGER'],
+    ['height', 'INTEGER'],
+    ['deleted_at', 'TEXT'],
+  ]) {
+    await ensureColumnExists('uploaded_assets', column, type);
+    if (column !== 'position' && column !== 'deleted_at') {
+      await ensureColumnExists('asset_upload_sessions', column, type);
+    }
+  }
+  if ((await all('PRAGMA table_info(photo_requests)')).length) {
+    await ensureColumnExists('photo_requests', 'document_title', 'TEXT');
+  }
+
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary)',
+  );
 }
 
 module.exports = { createSchema };

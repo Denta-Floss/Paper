@@ -171,6 +171,9 @@ async function createSchema({ run, all }) {
 
   await run('CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)');
 
+  // --- Column migrations for order_activity_log on pre-existing databases ---
+  // The CREATE TABLE above is skipped if the table already exists. These
+  // ensureColumnExists calls add any missing columns added in later versions.
   await ensureColumnExists('order_activity_log', 'activity_type', "TEXT NOT NULL DEFAULT ''");
 
   await ensureColumnExists('order_activity_log', 'actor_user_id', 'INTEGER');
@@ -215,6 +218,9 @@ async function createSchema({ run, all }) {
 
   await ensureColumnExists('order_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
 
+  // Which set this line was expanded from, snapshotted at order time. Dead
+  // labels, never a live reference: editing the set must not reach back and
+  // change what was agreed. See saveOrder / _addLinesFromSet.
   await ensureColumnExists('order_items', 'source_set_id', 'INTEGER');
 
   await ensureColumnExists('order_items', 'source_set_name', "TEXT NOT NULL DEFAULT ''");

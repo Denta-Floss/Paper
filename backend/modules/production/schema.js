@@ -62,6 +62,7 @@ async function createSchema({ run, all }) {
 
   await ensureColumnExists('pipeline_runs', 'batches_json', "TEXT DEFAULT '[]'");
 
+  // Machine queue popup metadata: who scheduled the run and its batch weight.
   await ensureColumnExists('pipeline_runs', 'created_by', 'TEXT');
 
   await ensureColumnExists('pipeline_runs', 'weight_kg', 'REAL DEFAULT 0');
@@ -124,6 +125,10 @@ async function createSchema({ run, all }) {
     )
   `);
 
+  // Per-sheet consumption lineage: when the scanned code is a per-sheet vendor
+  // tag (piece_barcodes) rather than a SKU (materials), record which sheet it
+  // was so a run traces back to the exact original vendor sheet. Denormalized
+  // (piece_parent_code, not an FK) because piece_barcodes rows are regenerated.
   await ensureColumnExists('run_barcode_inputs', 'source_kind', "TEXT DEFAULT 'sku'");
 
   await ensureColumnExists('run_barcode_inputs', 'piece_parent_code', 'TEXT');

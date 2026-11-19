@@ -23,7 +23,7 @@
 
 const { ensureColumnExists: ensureColumn } = require('../../kernel/schema-kit');
 
-async function createSchema({ run, all }) {
+async function createSchema({ run, all, get }) {
   const ensureColumnExists = (table, column, definition) => ensureColumn({ run, all }, table, column, definition);
   await run(`
     CREATE TABLE IF NOT EXISTS delivery_challans (
@@ -203,6 +203,8 @@ async function createSchema({ run, all }) {
 
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
 
+  // order_item_id is joined on by the fulfilment rollup and the delivered
+  // totals, and was previously unindexed.
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_order_item_id ON delivery_challan_items(order_item_id)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
@@ -393,14 +395,24 @@ async function createSchema({ run, all }) {
 
   await ensureColumnExists('delivery_challans', 'purpose', "TEXT NOT NULL DEFAULT 'trading'");
 
+  // Internal challans — free-text purpose (production consumption / transfers).
   await ensureColumnExists('delivery_challans', 'internal_purpose', "TEXT NOT NULL DEFAULT ''");
 
+  // Reconciliation of an internal-use challan: JSON breakdown of each consumed
+  // line settled across scrap/leftover/lost/rejection/finished-goods. Empty
+  // until the mobile In-use reconciliation flow settles the challan.
   await ensureColumnExists('delivery_challans', 'reconciliation_json', "TEXT NOT NULL DEFAULT ''");
 
+  // Structured internal-challan subtype (e.g. 'vendor_return') — replaces
+  // string-matching the free-text internal_purpose.
   await ensureColumnExists('delivery_challans', 'internal_subtype', "TEXT NOT NULL DEFAULT ''");
 
+  // Vendor-return challans carry the scanned sheet tag codes so issuing can mark
+  // those piece_barcodes returned (and reject a double return).
   await ensureColumnExists('delivery_challans', 'returned_sheet_codes_json', "TEXT NOT NULL DEFAULT '[]'");
 
+  // The reception a vendor return sends stock back from, when the return was
+  // made by cancelling a partly used reception.
   await ensureColumnExists('delivery_challans', 'source_reception_challan_id', 'INTEGER');
 
   await ensureColumnExists('delivery_challan_items', 'material_barcode', "TEXT DEFAULT ''");
@@ -431,6 +443,8 @@ async function createSchema({ run, all }) {
 
   await ensureColumnExists('delivery_challan_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
 
+  // Per-sheet weight breakdown for purchase intake: JSON array of numbers, one
+  // per received sheet, summing to the line weight (total-in = total-out).
   await ensureColumnExists('delivery_challan_items', 'sheet_weights_json', "TEXT NOT NULL DEFAULT '[]'");
 
   await run(`
@@ -539,6 +553,29 @@ async function createSchema({ run, all }) {
   await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
 
   await ensureColumnExists('delivery_challan_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
+
+  // --- Tables whose shape an older file may need rebuilt (moved 2026-11-19,
+  // B37). Their rebuild, CREATE, columns and indexes run here in the order
+  // they stood in initDb; triggers, data backfills and seeds stay there.
+  await run(`
+    CREATE TABLE IF NOT EXISTS piece_barcodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_item_id INTEGER NOT NULL REFERENCES delivery_challan_items(id) ON DELETE CASCADE,
+      parent_code TEXT UNIQUE NOT NULL,
+      child_code TEXT NOT NULL,
+      weight REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_parent_code ON piece_barcodes(parent_code)');
+  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_child_code ON piece_barcodes(child_code)');
+  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_challan_item_id ON piece_barcodes(challan_item_id)');
+  // Per-sheet weight printed on each barcode tag (added after initial release).
+  await ensureColumnExists('piece_barcodes', 'weight', 'REAL NOT NULL DEFAULT 0');
+  // Vendor-return tracking: stamped when the sheet is returned to its vendor so a
+  // sheet cannot be returned twice.
+  await ensureColumnExists('piece_barcodes', 'returned_at', 'TEXT');
+  await ensureColumnExists('piece_barcodes', 'returned_challan_id', 'INTEGER');
 }
 
 module.exports = { createSchema };

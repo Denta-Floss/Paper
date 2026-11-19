@@ -47,6 +47,8 @@ async function createSchema({ run, all }) {
 
   await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
 
+  // Bootstrap parity with migrations/026-units-families.sql — fresh DBs (tests,
+  // new deployments seeding before first boot) must match migrated DBs.
   await ensureColumnExists('unit_groups', 'dimension', 'TEXT');
 
   await ensureColumnExists('unit_groups', 'base_unit_id', 'INTEGER');
@@ -55,6 +57,7 @@ async function createSchema({ run, all }) {
 
   await ensureColumnExists('units', 'precision', 'INTEGER');
 
+  // Bootstrap parity with migrations/051-units-contract-ladders.sql
   await ensureColumnExists('unit_groups', 'code', 'TEXT');
 
   await ensureColumnExists('unit_groups', 'integral_only', 'INTEGER NOT NULL DEFAULT 0');

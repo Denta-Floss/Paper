@@ -48,6 +48,18 @@ async function createSchema({ run, all }) {
       FOREIGN KEY (department_id) REFERENCES departments (id) ON DELETE CASCADE
     )
   `);
+
+  // Columns an older file may lack (moved from initDb 2026-11-19).
+  try {
+    await run(`ALTER TABLE employees ADD COLUMN aadhar_number TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN aadhar_photo_url TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN pan_number TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN pan_photo_url TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN address TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN employee_photo_url TEXT DEFAULT ''`);
+  } catch (e) {
+    // Columns might already exist
+  }
 }
 
 module.exports = { createSchema };

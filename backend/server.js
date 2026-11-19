@@ -1979,7 +1979,6 @@ function rowToEntityActivityDto(row) {
   };
 }
 
-
 /// The kind of device a request comes from: 'mobile' for the phone app (which
 /// sends X-Client-Platform: mobile/ios/android), 'desktop' for everything else.
 function clientPlatformOf(req) {
@@ -2950,7 +2949,6 @@ const {
 } = require('./modules/items/variation-tree');
 const { normalizePropertyKey, normalizeGroupPropertyDraft, normalizeDiscardedPropertyKeys } = require('./modules/items/property-keys');
 
-
 /// A record going away takes its photos with it — marked, never erased
 /// (erasing them orphaned the stored objects). Marked 'record_deleted', not
 /// 'deleted': the record can come back from the trash, and its photos with
@@ -3460,17 +3458,20 @@ const SCHEMA_ORDER = [
   './modules/units/schema',
   './modules/items/schema',
   './modules/clients/schema',
+  './modules/vendors/schema',
+  './modules/machines/schema',
   './modules/dies/schema',
+  './modules/pipelines/schema',
   './modules/orders/schema',
   './modules/production/schema',
   './modules/inventory/schema',
   './modules/challans/schema',
+  './modules/jobs/schema',
   './modules/action_center/schema',
   './modules/people/schema',
 ];
 
 async function initDb() {
-
 
   await enableForeignKeys();
 
@@ -3534,355 +3535,16 @@ async function initDb() {
     await require(schema).createSchema({ run, all, get });
   }
 
-
-  // Migration for clients and vendors
-  try { await run("ALTER TABLE clients ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
-  try { await run("ALTER TABLE clients ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
-  try { await run("ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
-  try { await run("ALTER TABLE vendors ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
-  try { await run("ALTER TABLE items ADD COLUMN default_pipeline_id TEXT DEFAULT NULL"); } catch(e){}
-  try { await run("ALTER TABLE items ADD COLUMN base_item_id INTEGER REFERENCES items(id) ON DELETE CASCADE"); } catch(e){}
-
-  // Migration for groups table to remove unit_id NOT NULL constraint
-  try {
-    // 1. Recover from a half-migrated state if a previous run crashed
-    const tables = await all("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('groups', 'groups_old_migration')");
-    const hasGroups = tables.some(t => t.name === 'groups');
-    const hasOldGroups = tables.some(t => t.name === 'groups_old_migration');
-
-    if (hasOldGroups) {
-      if (hasGroups) {
-        // The migration finished creating 'groups' but crashed before dropping 'groups_old_migration'
-        await run('DROP TABLE groups_old_migration');
-        console.log('Cleaned up lingering groups_old_migration table from previous run.');
-      } else {
-        // The migration renamed 'groups' to 'groups_old_migration' but crashed before creating the new 'groups'
-        await run('ALTER TABLE groups_old_migration RENAME TO groups');
-        console.log('Recovered groups table from an interrupted migration run.');
-      }
-    }
-
-    // 2. Perform the actual migration
-    const tableInfo = await all("PRAGMA table_info(groups)");
-    const unitIdCol = tableInfo.find(c => c.name === 'unit_id');
-    if (unitIdCol && unitIdCol.notnull === 1) {
-      console.log('Migrating groups table to remove NOT NULL constraint on unit_id...');
-      await run('PRAGMA foreign_keys = OFF');
-      // legacy_alter_table = ON stops the RENAME from rewriting other tables'
-      // FK references to `groups` into `groups_old_migration` (which would
-      // dangle once the temp table is dropped).
-      await run('PRAGMA legacy_alter_table = ON');
-      await run('BEGIN TRANSACTION');
-      await run('ALTER TABLE groups RENAME TO groups_old_migration');
-      await run(`
-        CREATE TABLE groups (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          group_type TEXT NOT NULL DEFAULT 'item',
-          parent_group_id INTEGER REFERENCES groups(id),
-          unit_id INTEGER REFERENCES units(id),
-          is_archived INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        )
-      `);
-      await run('INSERT INTO groups (id, name, parent_group_id, unit_id, is_archived, created_at, updated_at) SELECT id, name, parent_group_id, unit_id, is_archived, created_at, updated_at FROM groups_old_migration');
-      await run('DROP TABLE groups_old_migration');
-      await run('COMMIT');
-      await run('PRAGMA legacy_alter_table = OFF');
-      await run('PRAGMA foreign_keys = ON');
-      console.log('Successfully migrated groups table.');
-    }
-  } catch (err) {
-    await run('ROLLBACK').catch(() => {});
-    await run('PRAGMA legacy_alter_table = OFF').catch(() => {});
-    await run('PRAGMA foreign_keys = ON');
-    console.error('Migration failed:', err);
-  }
-
   // Re-run the repair: heals any references this run's migration may have left
   // dangling (older DBs broken before the legacy_alter_table guard), so the
   // fix takes effect immediately instead of after the next restart.
   await repairGroupsOldMigrationRefs();
-
-  try { await run("ALTER TABLE auth_sessions ADD COLUMN client_platform TEXT DEFAULT 'desktop'"); } catch (e) {}
-  await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)');
-
-  // An item's stock. With variations it is kept per variation leaf. An item with
-  // none keeps one figure for the whole item, under leaf 0, which is why the
-  // leaf is not a foreign key: 0 names no node. A real leaf is checked on the
-  // way in by assertValidStockVariationLeaf (the only write path), and a
-  // trigger below removes a leaf's stock rows when the leaf is deleted.
-  const variationStockColumns = `
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE CHECK (item_id > 0),
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0 CHECK (variation_leaf_node_id >= 0),
-      quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
-      location_id TEXT DEFAULT 'MAIN',
-      variation_path_label TEXT DEFAULT '',
-      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
-      custom_variation_values_json TEXT DEFAULT '{}',
-      updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(item_id, variation_leaf_node_id, location_id)`;
-  await run(`CREATE TABLE IF NOT EXISTS variation_stock (${variationStockColumns})`);
-  // A database made before whole-item stock still has the table that refuses
-  // leaf 0. A CHECK cannot be altered in SQLite, so the table is rebuilt once
-  // and its rows carried over. Nothing references this table.
-  const oldStockTable = await get(
-    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'variation_stock'",
-  );
-  // Two older shapes refuse leaf 0, and a database can have either: a CHECK that
-  // the leaf is above zero, or the leaf as a foreign key into
-  // item_variation_nodes (0 names no node). Some databases have only the second.
-  const oldStockSql = String(oldStockTable?.sql || '');
-  const leafColumn = (oldStockSql.match(/variation_leaf_node_id[^,]*/i) || [''])[0];
-  if (/>\s*0/.test(leafColumn) || /REFERENCES\s+item_variation_nodes/i.test(leafColumn)) {
-    const have = new Set((await all('PRAGMA table_info(variation_stock)')).map((c) => c.name));
-    const carried = [
-      'id', 'item_id', 'variation_leaf_node_id', 'quantity', 'location_id',
-      'variation_path_label', 'variation_path_node_ids_json', 'custom_variation_values_json', 'updated_at',
-    ].filter((name) => have.has(name)).join(', ');
-    // Dropped first, and created again further down with the table's other
-    // triggers.
-    await run('DROP TRIGGER IF EXISTS trg_variation_stock_leaf_gone');
-    // Rows are parked in a plain copy, the table is dropped and made again
-    // under its own name, and the rows are put back. No rename: SQLite checks
-    // every trigger in the schema on a rename, and on a database still being
-    // built (an empty one, part-way through this function) some of them name
-    // tables that do not exist yet.
-    // One transaction: either the table is the new one with every row in it,
-    // or nothing happened. A stop half-way must not leave the rows parked in a
-    // table nothing reads.
-    await run('BEGIN IMMEDIATE');
-    try {
-      await run('DROP TABLE IF EXISTS variation_stock_parked');
-      await run(`CREATE TABLE variation_stock_parked AS SELECT ${carried} FROM variation_stock`);
-      await run('DROP TABLE variation_stock');
-      await run(`CREATE TABLE variation_stock (${variationStockColumns})`);
-      await run(`INSERT INTO variation_stock (${carried}) SELECT ${carried} FROM variation_stock_parked`);
-      await run('DROP TABLE variation_stock_parked');
-      await run('COMMIT');
-    } catch (error) {
-      await run('ROLLBACK').catch(() => {});
-      throw error;
-    }
-    console.log('Rebuilt variation_stock: an item with no variations can now hold stock.');
-  }
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS inventory_stock_positions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_barcode TEXT NOT NULL,
-      location_id TEXT NOT NULL DEFAULT 'MAIN',
-      lot_code TEXT NOT NULL DEFAULT '',
-      unit_id INTEGER,
-      on_hand_qty REAL NOT NULL DEFAULT 0,
-      reserved_qty REAL NOT NULL DEFAULT 0,
-      damaged_qty REAL NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL,
-      UNIQUE(material_barcode, location_id, lot_code)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      group_type TEXT NOT NULL DEFAULT 'item',
-      group_structure TEXT NOT NULL DEFAULT 'hierarchical',
-      description TEXT NOT NULL DEFAULT '',
-      parent_group_id INTEGER REFERENCES groups(id),
-      unit_id INTEGER REFERENCES units(id),
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS clients (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      alias TEXT DEFAULT '',
-      gst_number TEXT DEFAULT '',
-      address TEXT DEFAULT '',
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS vendors (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      alias TEXT DEFAULT '',
-      gst_number TEXT DEFAULT '',
-      address TEXT DEFAULT '',
-      contact_name TEXT DEFAULT '',
-      phone TEXT DEFAULT '',
-      email TEXT DEFAULT '',
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  try {
-    await run(`ALTER TABLE employees ADD COLUMN aadhar_number TEXT DEFAULT ''`);
-    await run(`ALTER TABLE employees ADD COLUMN aadhar_photo_url TEXT DEFAULT ''`);
-    await run(`ALTER TABLE employees ADD COLUMN pan_number TEXT DEFAULT ''`);
-    await run(`ALTER TABLE employees ADD COLUMN pan_photo_url TEXT DEFAULT ''`);
-    await run(`ALTER TABLE employees ADD COLUMN address TEXT DEFAULT ''`);
-    await run(`ALTER TABLE employees ADD COLUMN employee_photo_url TEXT DEFAULT ''`);
-  } catch (e) {
-    // Columns might already exist
-  }
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS freelancer_job_batches (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      freelancer_id INTEGER REFERENCES employees(id),
-      batch_number TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'assigned',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS freelancer_jobs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      batch_id INTEGER REFERENCES freelancer_job_batches(id) ON DELETE SET NULL,
-      item_id INTEGER REFERENCES items(id),
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      quantity INTEGER NOT NULL DEFAULT 1,
-      status TEXT NOT NULL DEFAULT 'pending',
-      payout_balance REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN batch_id INTEGER REFERENCES freelancer_job_batches(id) ON DELETE SET NULL"); } catch(e){}
-  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1"); } catch(e){}
-
-  // Origin of an auto-created Assembly job. Both NULL for jobs raised by hand,
-  // so the partial index below only constrains the generated ones.
-  // run_id is TEXT to match pipeline_runs.id, which is a TEXT primary key.
-  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN run_id TEXT REFERENCES pipeline_runs(id) ON DELETE CASCADE"); } catch(e){}
-  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN node_id TEXT"); } catch(e){}
-  // What the assembler rejected off this job. On an assembly step the pieces
-  // that come off the line are not scrap — nothing was machined — they are
-  // rejections, and the count belongs on the worker's job card.
-  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN rejected_quantity REAL NOT NULL DEFAULT 0"); } catch(e){}
-  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN rejection_note TEXT NOT NULL DEFAULT ''"); } catch(e){}
-
-  // One job per (run, assembly node) — the status of a node can be re-set any
-  // number of times and must not fan out into duplicate jobs.
-  try {
-    await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_freelancer_jobs_run_node
-               ON freelancer_jobs (run_id, node_id)
-               WHERE run_id IS NOT NULL AND node_id IS NOT NULL`);
-  } catch(e){}
-
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS freelancer_job_tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id INTEGER NOT NULL REFERENCES freelancer_jobs(id) ON DELETE CASCADE,
-      item_id INTEGER NOT NULL REFERENCES items(id),
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      required_quantity REAL NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      alias TEXT DEFAULT '',
-      short_code TEXT DEFAULT '',
-      display_name TEXT NOT NULL,
-      quantity REAL NOT NULL DEFAULT 0,
-      group_id INTEGER NOT NULL REFERENCES groups(id),
-      unit_id INTEGER NOT NULL REFERENCES units(id),
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      default_pipeline_id TEXT DEFAULT NULL,
-      base_item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  // Per-user UI preferences (e.g. which sections the item editor shows). Kept
-  // per user on purpose — this is a personal form layout, not a policy.
-
-  // Extra named files on an item master, beyond the photo and the CAD file.
-  // Same rule as cad_file_key: the permanent object key is stored, never a
-  // presigned URL.
-
-  // order_item_id is joined on by the fulfilment rollup and the delivered
-  // totals, and was previously unindexed.
-
-
-
-  // A database made before company documents has these tables without the
-  // column, and CREATE TABLE IF NOT EXISTS never adds one. photo_requests comes
-  // from migration 062, so it may not exist yet in a bare initDb.
-  // A part's photos in their order, each with a small copy for lists, and
-  // when it was removed (the sweep deletes the objects a day later).
-  for (const [column, type] of [
-    ['position', 'INTEGER'],
-    ['thumb_key', 'TEXT'],
-    ['width', 'INTEGER'],
-    ['height', 'INTEGER'],
-    ['deleted_at', 'TEXT'],
-  ]) {
-    await ensureColumnExists('uploaded_assets', column, type);
-    if (column !== 'position' && column !== 'deleted_at') {
-      await ensureColumnExists('asset_upload_sessions', column, type);
-    }
-  }
-  if ((await all('PRAGMA table_info(photo_requests)')).length) {
-    await ensureColumnExists('photo_requests', 'document_title', 'TEXT');
-  }
-
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary)',
-  );
-
-  // Track: generic per-entity activity log powering the "Track" tab on masters
-  // and a person's People profile. Written by trackCreate/Update/Delete.
-
-  // Per-record (row-level) permission grants for an individual user.
 
   // --- Column migrations for order_activity_log on pre-existing databases ---
   // The CREATE TABLE above is skipped if the table already exists. These
   // ensureColumnExists calls add any missing columns added in later versions.
   
   await migrateOrderActivityLogCompatibilityColumns();
-
-  await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
-  // Enhancement 2: combination groups (flat variant sets) + optional description.
-  await ensureColumnExists('groups', 'group_structure', "TEXT NOT NULL DEFAULT 'hierarchical'");
-  await ensureColumnExists('groups', 'description', "TEXT NOT NULL DEFAULT ''");
-  // Per-group override of the item-form section layout (JSON). NULL means the
-  // creating user's own default applies.
-  await ensureColumnExists('groups', 'item_form_sections', 'TEXT DEFAULT NULL');
-
-  await ensureColumnExists('items', 'photo_url', 'TEXT DEFAULT NULL');
-  // Single CAD / drawing file attached to the item master. The S3 object key is
-  // stored — never a presigned URL, which would expire — so the attachment lives
-  // until someone clears it; read URLs are minted on demand. The original file
-  // name is kept alongside so the UI can label it instead of showing the key.
-  await ensureColumnExists('items', 'cad_file_key', 'TEXT DEFAULT NULL');
-  await ensureColumnExists('items', 'cad_file_name', "TEXT DEFAULT ''");
-  // The client this item was developed for, so it can be listed under them.
-  await ensureColumnExists('items', 'developed_for_client_id', 'INTEGER');
 
   // Internal challans — free-text purpose (production consumption / transfers).
   // Reconciliation of an internal-use challan: JSON breakdown of each consumed
@@ -3899,31 +3561,11 @@ async function initDb() {
   // per received sheet, summing to the line weight (total-in = total-out).
   await ensureInventorySetLineNullableLeafReference();
 
-  // Foreign key indexes for production scaling on materials
-
-  // Indexes for health dashboard and inventory status filtering
-
-  // Inventory Sets indexes
-
   // A set can now also be *produced* rather than defined: an assembly step
   // clips parts together and mints a temporary set into inventory, the same way
   // a run mints a temporary item. These columns carry where it came from so the
   // Sets tab can show its origin, and so re-reconciling a stage updates the set
   // it already made instead of minting another.
-  try { await run("ALTER TABLE inventory_sets ADD COLUMN origin_run_id TEXT"); } catch(e){}
-  try { await run("ALTER TABLE inventory_sets ADD COLUMN origin_node_id TEXT"); } catch(e){}
-  try { await run("ALTER TABLE inventory_sets ADD COLUMN source_set_id INTEGER REFERENCES inventory_sets(id)"); } catch(e){}
-  try { await run("ALTER TABLE inventory_sets ADD COLUMN produced_at TEXT"); } catch(e){}
-  try { await run("ALTER TABLE inventory_sets ADD COLUMN is_temporary INTEGER NOT NULL DEFAULT 0"); } catch(e){}
-  // A produced set carries a materials row so it holds stock and keeps a ledger
-  // like any other inventory line: in from production, out when it is issued.
-  try { await run("ALTER TABLE materials ADD COLUMN linked_set_id INTEGER REFERENCES inventory_sets(id)"); } catch(e){}
-  try {
-    await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sets_origin
-               ON inventory_sets (origin_run_id, origin_node_id)
-               WHERE origin_run_id IS NOT NULL AND origin_node_id IS NOT NULL`);
-  } catch(e){}
-  await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)');
 
   await run(`
     UPDATE order_items
@@ -3949,26 +3591,6 @@ async function initDb() {
     WHERE unit_id IS NOT NULL
       AND (TRIM(COALESCE(unit_symbol, '')) = '' OR TRIM(unit_symbol) = 'Pieces')
   `);
-
-  await ensureColumnExists('items', 'quantity', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('items', 'naming_format', "TEXT NOT NULL DEFAULT ''");
-  // Whether this item can be ordered as a purchase (reception) line on the
-  // mobile Purchase-challan flow. Curated per item in the desktop item editor.
-  await ensureColumnExists('items', 'available_for_purchase', 'INTEGER NOT NULL DEFAULT 0');
-  // Per-item sample baseline (migrations/029). Separate from the pipeline
-  // template's copy, which every item on that template would otherwise share.
-  await ensureColumnExists('items', 'pen_paper_baseline_json', 'TEXT');
-  await ensureColumnExists('items', 'blank_width_mm', 'REAL DEFAULT 0');
-  await ensureColumnExists('items', 'blank_height_mm', 'REAL DEFAULT 0');
-  // The number a part was issued and the code derived from it (migrations/045).
-  // NULL part_no means never stamped; '' part_code means no code, which the
-  // unique index deliberately ignores.
-  await ensureColumnExists('items', 'part_no', 'INTEGER');
-  await ensureColumnExists('items', 'part_code', "TEXT NOT NULL DEFAULT ''");
-  // Bootstrap parity with migration 035: a value node under a Material property
-  // points at the material type it stands for, so the id travels with the
-  // selection instead of only its name.
-  // Allowed range for 'Numeric' properties (migrations/028). NULL = unbounded.
 
   // Bootstrap parity with migrations/026-units-families.sql — fresh DBs (tests,
   // new deployments seeding before first boot) must match migrated DBs.
@@ -4013,61 +3635,16 @@ async function initDb() {
       SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must not be negative');
     END
   `);
-  await ensureColumnExists('variation_stock', 'variation_path_label', "TEXT DEFAULT ''");
-  await ensureColumnExists('variation_stock', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
-  await ensureColumnExists('variation_stock', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
-  await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
-  await ensureColumnExists('inventory_stock_positions', 'location_id', "TEXT NOT NULL DEFAULT 'MAIN'");
-  await ensureColumnExists('inventory_stock_positions', 'lot_code', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('inventory_stock_positions', 'unit_id', 'INTEGER');
-  await ensureColumnExists('inventory_stock_positions', 'reserved_qty', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('inventory_stock_positions', 'damaged_qty', 'REAL NOT NULL DEFAULT 0');
   await backfillInventoryMovementQuantitySemantics();
-  await ensureColumnExists('vendors', 'alias', "TEXT DEFAULT ''");
-  await ensureColumnExists('vendors', 'gst_number', "TEXT DEFAULT ''");
-  await ensureColumnExists('vendors', 'address', "TEXT DEFAULT ''");
-  await ensureColumnExists('vendors', 'contact_name', "TEXT DEFAULT ''");
-  await ensureColumnExists('vendors', 'phone', "TEXT DEFAULT ''");
-  await ensureColumnExists('vendors', 'email', "TEXT DEFAULT ''");
-  await ensureColumnExists('vendors', 'is_archived', 'INTEGER NOT NULL DEFAULT 0');
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
   await seedRolePermissions();
   await seedPermissionTemplates();
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS pipeline_templates (
-      id TEXT PRIMARY KEY,
-      factory_id TEXT DEFAULT '',
-      shop_floor_id TEXT DEFAULT '',
-      name TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      version INTEGER NOT NULL DEFAULT 1,
-      status TEXT DEFAULT 'draft',
-      stage_labels_json TEXT NOT NULL,
-      lane_labels_json TEXT NOT NULL,
-      nodes_json TEXT NOT NULL,
-      flows_json TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-
-  await ensureColumnExists('pipeline_templates', 'factory_id', "TEXT DEFAULT ''");
-  await ensureColumnExists('pipeline_templates', 'shop_floor_id', "TEXT DEFAULT ''");
-  await ensureColumnExists('pipeline_templates', 'intermediate_naming_convention', "TEXT DEFAULT ''");
-  await ensureColumnExists('pipeline_templates', 'pen_paper_baseline_json', "TEXT DEFAULT '{}'");
 
   // Machine queue popup metadata: who scheduled the run and its batch weight.
   // Real machine↔run-node assignment (replaces name-matching the JSON override)
   // so a machine's pending queue is a first-class, indexable query.
 
   await backfillStageReconciliations();
-
-
-  // Per-sheet consumption lineage: when the scanned code is a per-sheet vendor
-  // tag (piece_barcodes) rather than a SKU (materials), record which sheet it
-  // was so a run traces back to the exact original vendor sheet. Denormalized
-  // (piece_parent_code, not an FK) because piece_barcodes rows are regenerated.
 
   // Customer return / defect events — a sibling entity to orders (a completed
   // order can still have a return). Trigger for the backward QC lineage trace.
@@ -4095,32 +3672,6 @@ async function initDb() {
     await seedTemplatesIfEmpty();
     await ensureDemoDataset();
   }
-  await run(`
-    CREATE TABLE IF NOT EXISTS machines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      asset_id TEXT NOT NULL UNIQUE,
-      barcode TEXT NOT NULL DEFAULT '',
-      primary_photo_url TEXT,
-      group_id INTEGER REFERENCES groups(id),
-      make_model TEXT,
-      serial_number TEXT,
-      location TEXT,
-      installation_date TEXT,
-      status TEXT NOT NULL,
-      report_output_per_hour REAL,
-      setup_minutes REAL,
-      labor_count REAL,
-      power_kw REAL,
-      report_notes TEXT NOT NULL DEFAULT '',
-      custom_properties TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  // Machine barcode: unique system-generated scan code (defaults to asset_id
-  // when unset, minted on create/update below).
-  await ensureColumnExists('machines', 'barcode', "TEXT NOT NULL DEFAULT ''");
 
   await run(`
     UPDATE groups 
@@ -4128,35 +3679,9 @@ async function initDb() {
     WHERE id IN (SELECT DISTINCT group_id FROM machines WHERE group_id IS NOT NULL)
   `);
 
-  await ensureColumnExists('machines', 'report_output_per_hour', 'REAL');
-  await ensureColumnExists('machines', 'setup_minutes', 'REAL');
-  await ensureColumnExists('machines', 'labor_count', 'REAL');
-  await ensureColumnExists('machines', 'power_kw', 'REAL');
-  await ensureColumnExists('machines', 'report_notes', "TEXT NOT NULL DEFAULT ''");
-
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMachinesAndDiesIfEmpty();
   }
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS piece_barcodes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      challan_item_id INTEGER NOT NULL REFERENCES delivery_challan_items(id) ON DELETE CASCADE,
-      parent_code TEXT UNIQUE NOT NULL,
-      child_code TEXT NOT NULL,
-      weight REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_parent_code ON piece_barcodes(parent_code)');
-  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_child_code ON piece_barcodes(child_code)');
-  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_challan_item_id ON piece_barcodes(challan_item_id)');
-  // Per-sheet weight printed on each barcode tag (added after initial release).
-  await ensureColumnExists('piece_barcodes', 'weight', 'REAL NOT NULL DEFAULT 0');
-  // Vendor-return tracking: stamped when the sheet is returned to its vendor so a
-  // sheet cannot be returned twice.
-  await ensureColumnExists('piece_barcodes', 'returned_at', 'TEXT');
-  await ensureColumnExists('piece_barcodes', 'returned_challan_id', 'INTEGER');
 
   await bootstrapSuperAdminIfNeeded();
   // --- Constraint Migration (Triggers for existing tables) ---
@@ -4220,8 +3745,7 @@ async function initDb() {
       END
     `);
     await backfillWholeItemStock();
-  
-    
+
     await run(`
       CREATE TRIGGER IF NOT EXISTS guard_delivery_challan_items_insert
       AFTER INSERT ON delivery_challan_items
@@ -4244,9 +3768,7 @@ async function initDb() {
         END;
       END;
     `);
-  
-  
-  
+
   // Numbered migrations in backend/migrations/ run last, after the inline
   // schema above has created the tables they alter. Nothing ran them before
   // this, which is why payroll and the client portal existed only on
@@ -8238,7 +7760,6 @@ async function seedScenarioItem(data) {
       }
       order_index++;
     }
-    
 
     if (data.conversions) {
       for (const conv of data.conversions) {
@@ -9242,7 +8763,6 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-
 // registerAccountsRoutes: its routes are in modules/accounts/routes.js and are registered into this
 // router further down, where everything they use exists. The router holds
 // their place in the matching order here.
@@ -9346,7 +8866,6 @@ app.use(unitMasterRouter);
 // their place in the matching order here.
 const settingsRouter = express.Router();
 app.use(settingsRouter);
-
 
 function actorFromRequest(req) {
   return {
@@ -9459,8 +8978,6 @@ app.post(
 // their place in the matching order here.
 const assetsRouter = express.Router();
 app.use(assetsRouter);
-
-
 
 // ---------------------------------------------------------------------------
 // The universal resolver: one code in, everything we know about it out.
@@ -9773,9 +9290,6 @@ async function recordLedgerEvent(input = {}) {
   }
 }
 
-
-
-
 // A client's or contractor's documents (uploaded_assets.document_title): named files of any
 // kind, kept beside its photos but never one of them.
 app.get(
@@ -9836,8 +9350,6 @@ app.use('/runs', (req, res, next) => {
   }
   next();
 });
-
-
 
 Sentry.setupExpressErrorHandler(app);
 
@@ -10995,7 +10507,6 @@ app.use(payrollRouter);
 const assetsAfterErrorHandlerRouter = express.Router();
 app.use(assetsAfterErrorHandlerRouter);
 
-
 const guardAlerts = [];
 
 function validateContract(value, contract, path = "root", alerts = []) {
@@ -11057,8 +10568,6 @@ function guardContract(contract) {
 app.get("/api/kernel/guard-alerts", (req, res) => {
   res.json({ success: true, alerts: guardAlerts });
 });
-
-
 
 const { createItemsPorts } = require('./modules/items/ports');
 const itemsPorts = createItemsPorts({

@@ -22,7 +22,7 @@
 
 const { ensureColumnExists: ensureColumn } = require('../../kernel/schema-kit');
 
-async function createSchema({ run, all }) {
+async function createSchema({ run, all, get }) {
   const ensureColumnExists = (table, column, definition) => ensureColumn({ run, all }, table, column, definition);
   await run(`
     CREATE TABLE IF NOT EXISTS materials (
@@ -228,12 +228,14 @@ async function createSchema({ run, all }) {
     'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_id ON inventory_set_lines(item_id)',
   );
 
+  // Foreign key indexes for production scaling on materials
   await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_group_id ON materials(linked_group_id)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_item_id ON materials(linked_item_id)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_materials_parent_barcode ON materials(parent_barcode)');
 
+  // Indexes for health dashboard and inventory status filtering
   await run('CREATE INDEX IF NOT EXISTS idx_materials_inventory_state ON materials(inventory_state)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_materials_stock_quantities ON materials(on_hand_qty, available_to_promise_qty, reserved_qty)');
@@ -242,6 +244,7 @@ async function createSchema({ run, all }) {
 
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_alerts_is_open ON inventory_alerts(is_open)');
 
+  // Inventory Sets indexes
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_sets_name ON inventory_sets(name)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
@@ -373,6 +376,50 @@ async function createSchema({ run, all }) {
     'discarded_property_keys_json',
     "TEXT NOT NULL DEFAULT '[]'",
   );
+
+  // --- Tables whose shape an older file may need rebuilt (moved 2026-11-19,
+  // B37). Their rebuild, CREATE, columns and indexes run here in the order
+  // they stood in initDb; triggers, data backfills and seeds stay there.
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_stock_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_barcode TEXT NOT NULL,
+      location_id TEXT NOT NULL DEFAULT 'MAIN',
+      lot_code TEXT NOT NULL DEFAULT '',
+      unit_id INTEGER,
+      on_hand_qty REAL NOT NULL DEFAULT 0,
+      reserved_qty REAL NOT NULL DEFAULT 0,
+      damaged_qty REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      UNIQUE(material_barcode, location_id, lot_code)
+    )
+  `);
+
+  // A set can now also be *produced* rather than defined: an assembly step
+  // clips parts together and mints a temporary set into inventory, the same way
+  // a run mints a temporary item. These columns carry where it came from so the
+  // Sets tab can show its origin, and so re-reconciling a stage updates the set
+  // it already made instead of minting another.
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN origin_run_id TEXT"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN origin_node_id TEXT"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN source_set_id INTEGER REFERENCES inventory_sets(id)"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN produced_at TEXT"); } catch(e){}
+  try { await run("ALTER TABLE inventory_sets ADD COLUMN is_temporary INTEGER NOT NULL DEFAULT 0"); } catch(e){}
+  // A produced set carries a materials row so it holds stock and keeps a ledger
+  // like any other inventory line: in from production, out when it is issued.
+  try { await run("ALTER TABLE materials ADD COLUMN linked_set_id INTEGER REFERENCES inventory_sets(id)"); } catch(e){}
+  try {
+    await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sets_origin
+               ON inventory_sets (origin_run_id, origin_node_id)
+               WHERE origin_run_id IS NOT NULL AND origin_node_id IS NOT NULL`);
+  } catch(e){}
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)');
+
+  await ensureColumnExists('inventory_stock_positions', 'location_id', "TEXT NOT NULL DEFAULT 'MAIN'");
+  await ensureColumnExists('inventory_stock_positions', 'lot_code', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('inventory_stock_positions', 'unit_id', 'INTEGER');
+  await ensureColumnExists('inventory_stock_positions', 'reserved_qty', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('inventory_stock_positions', 'damaged_qty', 'REAL NOT NULL DEFAULT 0');
 }
 
 module.exports = { createSchema };
