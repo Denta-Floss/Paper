@@ -3453,34 +3453,22 @@ async function repairGroupsOldMigrationRefs() {
   }
 }
 
+const SCHEMA_ORDER = [
+  './modules/kernel/schema',
+  './modules/units/schema',
+  './modules/items/schema',
+  './modules/clients/schema',
+  './modules/dies/schema',
+  './modules/orders/schema',
+  './modules/production/schema',
+  './modules/inventory/schema',
+  './modules/challans/schema',
+  './modules/action_center/schema',
+  './modules/people/schema',
+];
+
 async function initDb() {
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS global_audit_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (id > 0),
-      actor_user_id INTEGER REFERENCES users(id),
-      actor_name TEXT,
-      actor_role TEXT,
-      action TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT,
-      details_json TEXT DEFAULT '{}',
-      ip_address TEXT,
-      created_at TEXT NOT NULL
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_global_audit_created ON global_audit_logs(created_at DESC)');
-
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS changelog (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      table_name TEXT NOT NULL,
-      record_id INTEGER NOT NULL,
-      event_type TEXT NOT NULL,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
 
   await enableForeignKeys();
 
@@ -3531,6 +3519,18 @@ async function initDb() {
     console.error('Failed to drop tables referencing legacy orders table:', err);
   }
   await run('DROP TABLE IF EXISTS orders').catch(() => {});
+
+  // Each module creates its own tables (stage 2d, 2026-11-19): the statements
+  // that stood here, moved whole into modules/<name>/schema.js and run in this
+  // order, the kernel's first. They run after the legacy tables that referenced
+  // the old `orders` table are dropped above, as they always did. What follows
+  // below is what still lives here: the rebuilds of tables whose shape changed
+  // (groups, items, variation_stock, inventory_stock_positions, clients,
+  // vendors, machines, pipeline_templates, piece_barcodes, the job tables),
+  // their columns and indexes, the triggers, the backfills and the seeds.
+  for (const schema of SCHEMA_ORDER) {
+    await require(schema).createSchema({ run, all, get });
+  }
 
 
   // Migration for clients and vendors
@@ -3603,247 +3603,8 @@ async function initDb() {
   // fix takes effect immediately instead of after the next restart.
   await repairGroupsOldMigrationRefs();
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS materials (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      barcode TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      grade TEXT,
-      thickness TEXT,
-      supplier TEXT,
-      location TEXT,
-      unit_id INTEGER,
-      unit TEXT,
-      notes TEXT,
-      group_mode TEXT,
-      inheritance_enabled INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      parent_barcode TEXT,
-      number_of_children INTEGER NOT NULL DEFAULT 0,
-      linked_child_barcodes TEXT,
-      scan_count INTEGER NOT NULL DEFAULT 0,
-      linked_group_id INTEGER REFERENCES groups(id),
-      linked_item_id INTEGER REFERENCES items(id),
-      linked_variation_leaf_node_id INTEGER REFERENCES item_variation_nodes(id),
-      custom_variation_values_json TEXT DEFAULT '{}',
-      display_stock TEXT DEFAULT '',
-      created_by TEXT DEFAULT '',
-      workflow_status TEXT DEFAULT 'notStarted',
-      material_class TEXT DEFAULT 'raw_material',
-      inventory_state TEXT DEFAULT 'available',
-      procurement_state TEXT DEFAULT 'not_ordered',
-      traceability_mode TEXT DEFAULT 'bulk',
-      on_hand_qty REAL NOT NULL DEFAULT 0,
-      reserved_qty REAL NOT NULL DEFAULT 0,
-      available_to_promise_qty REAL NOT NULL DEFAULT 0,
-      incoming_qty REAL NOT NULL DEFAULT 0,
-      linked_order_count INTEGER NOT NULL DEFAULT 0,
-      linked_pipeline_count INTEGER NOT NULL DEFAULT 0,
-      pending_alert_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT,
-      last_scanned_at TEXT
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS scan_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      barcode TEXT NOT NULL,
-      scanned_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS material_activity (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      barcode TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      event_label TEXT NOT NULL,
-      event_description TEXT DEFAULT '',
-      actor TEXT DEFAULT '',
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-      first_failed_login_at TEXT,
-      lockout_until TEXT,
-      last_login_at TEXT,
-      last_login_ip TEXT DEFAULT '',
-      created_by_user_id INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS auth_sessions (
-      id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      token_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      last_used_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      revoked_at TEXT,
-      revoked_reason TEXT DEFAULT '',
-      ip_address TEXT DEFAULT '',
-      user_agent TEXT DEFAULT ''
-    )
-  `);
-
   try { await run("ALTER TABLE auth_sessions ADD COLUMN client_platform TEXT DEFAULT 'desktop'"); } catch (e) {}
   await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked ON auth_sessions(revoked_at)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delete_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      entity_label TEXT DEFAULT '',
-      reason TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'pending',
-      requested_by_user_id INTEGER NOT NULL REFERENCES users(id),
-      reviewed_by_user_id INTEGER REFERENCES users(id),
-      reviewed_at TEXT,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS auth_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
-      actor_user_id INTEGER REFERENCES users(id),
-      target_user_id INTEGER REFERENCES users(id),
-      ip_address TEXT DEFAULT '',
-      user_agent TEXT DEFAULT '',
-      metadata_json TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_auth_events_target ON auth_events(target_user_id)');
-  await run(`
-    CREATE TABLE IF NOT EXISTS role_permissions (
-      role TEXT NOT NULL,
-      permission_key TEXT NOT NULL,
-      is_allowed INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(role, permission_key)
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS user_permission_overrides (
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      permission_key TEXT NOT NULL,
-      is_allowed INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(user_id, permission_key)
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user ON user_permission_overrides(user_id)');
-  await run(`
-    CREATE TABLE IF NOT EXISTS permission_templates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      description TEXT DEFAULT '',
-      is_system_default INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS permission_template_permissions (
-      template_id INTEGER NOT NULL REFERENCES permission_templates(id),
-      permission_key TEXT NOT NULL,
-      is_allowed INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(template_id, permission_key)
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS user_permission_templates (
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      template_id INTEGER NOT NULL REFERENCES permission_templates(id),
-      created_at TEXT NOT NULL,
-      PRIMARY KEY(user_id, template_id)
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_user_permission_templates_user ON user_permission_templates(user_id)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS material_group_item_links (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_id INTEGER NOT NULL REFERENCES materials(id),
-      item_id INTEGER NOT NULL REFERENCES items(id),
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(material_id, item_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS material_group_properties (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_id INTEGER NOT NULL REFERENCES materials(id),
-      property_key TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      input_type TEXT NOT NULL DEFAULT 'Text',
-      mandatory INTEGER NOT NULL DEFAULT 0,
-      source_type TEXT NOT NULL DEFAULT 'manual',
-      source_item_ids_json TEXT NOT NULL DEFAULT '[]',
-      state TEXT NOT NULL DEFAULT 'active',
-      override_locked INTEGER NOT NULL DEFAULT 0,
-      has_type_conflict INTEGER NOT NULL DEFAULT 0,
-      coverage_count INTEGER NOT NULL DEFAULT 0,
-      selected_item_count_at_resolution INTEGER NOT NULL DEFAULT 0,
-      resolution_source TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(material_id, property_key)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS material_group_units (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_id INTEGER NOT NULL REFERENCES materials(id),
-      unit_id INTEGER NOT NULL REFERENCES units(id),
-      state TEXT NOT NULL DEFAULT 'active',
-      is_primary INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(material_id, unit_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS material_group_preferences (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_id INTEGER NOT NULL REFERENCES materials(id),
-      common_only_mode INTEGER NOT NULL DEFAULT 1,
-      show_partial_matches INTEGER NOT NULL DEFAULT 1,
-      discarded_property_keys_json TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(material_id)
-    )
-  `);
 
   // An item's stock. With variations it is kept per variation leaf. An item with
   // none keeps one figure for the whole item, under leaf 0, which is why the
@@ -3922,83 +3683,6 @@ async function initDb() {
   `);
 
   await run(`
-    CREATE TABLE IF NOT EXISTS inventory_movements (
-      id TEXT PRIMARY KEY,
-      material_barcode TEXT NOT NULL,
-      movement_type TEXT NOT NULL,
-      qty REAL NOT NULL,
-      primary_qty REAL,
-      uom TEXT,
-      from_location_id TEXT,
-      to_location_id TEXT,
-      item_id INTEGER,
-      variation_leaf_node_id INTEGER,
-      reason_code TEXT,
-      reference_type TEXT,
-      reference_id TEXT,
-      source_challan_id INTEGER,
-      source_challan_type TEXT,
-      source_challan_line_id INTEGER,
-      reverses_movement_id TEXT,
-      actor TEXT DEFAULT '',
-      lot_code TEXT DEFAULT '',
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS inventory_reservations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_barcode TEXT NOT NULL,
-      reference_type TEXT NOT NULL,
-      reference_id TEXT NOT NULL,
-      reserved_qty REAL NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS inventory_alerts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      material_barcode TEXT NOT NULL,
-      alert_type TEXT NOT NULL,
-      severity TEXT NOT NULL DEFAULT 'warning',
-      message TEXT NOT NULL DEFAULT '',
-      is_open INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS unit_groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS units (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      unit_group_id INTEGER REFERENCES unit_groups(id),
-      conversion_factor REAL NOT NULL DEFAULT 1,
-      conversion_base_unit_id INTEGER REFERENCES units(id),
-      notes TEXT DEFAULT '',
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      logo_url TEXT DEFAULT '',
-      photo_url TEXT DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
     CREATE TABLE IF NOT EXISTS groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -4012,20 +3696,6 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS group_item_memberships (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(group_id, item_id)
-    );
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_group_item_memberships_group ON group_item_memberships(group_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_group_item_memberships_item ON group_item_memberships(item_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS clients (
@@ -4053,41 +3723,6 @@ async function initDb() {
       is_archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS departments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      photo_url TEXT DEFAULT '',
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS employees (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      department_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      role TEXT DEFAULT '',
-      phone TEXT DEFAULT '',
-      aadhar_number TEXT DEFAULT '',
-      aadhar_photo_url TEXT DEFAULT '',
-      pan_number TEXT DEFAULT '',
-      pan_photo_url TEXT DEFAULT '',
-      address TEXT DEFAULT '',
-      employee_photo_url TEXT DEFAULT '',
-      employment_type TEXT DEFAULT 'in-house',
-      status TEXT DEFAULT 'active',
-      barcode_id TEXT DEFAULT '',
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (department_id) REFERENCES departments (id) ON DELETE CASCADE
     )
   `);
 
@@ -4164,23 +3799,6 @@ async function initDb() {
   `);
 
   await run(`
-    CREATE TABLE IF NOT EXISTS company_profiles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_name TEXT NOT NULL,
-      mobile TEXT DEFAULT '',
-      business_description TEXT DEFAULT '',
-      address TEXT DEFAULT '',
-      state_code TEXT DEFAULT '',
-      gstin TEXT DEFAULT '',
-      logo_url TEXT DEFAULT '',
-      signature_label TEXT DEFAULT '',
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -4198,634 +3816,21 @@ async function initDb() {
     )
   `);
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS user_favorite_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      variation_path_label TEXT NOT NULL DEFAULT '',
-      variation_path_node_ids TEXT NOT NULL DEFAULT '[]',
-      custom_variation_values TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      UNIQUE(user_id, item_id, variation_leaf_node_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_unit_conversions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      unit_id INTEGER NOT NULL REFERENCES units(id),
-      factor_to_primary REAL NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(item_id, unit_id)
-    )
-  `);
-
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_item_unit_conversions_item_id ON item_unit_conversions(item_id)',
-  );
-
   // Per-user UI preferences (e.g. which sections the item editor shows). Kept
   // per user on purpose — this is a personal form layout, not a policy.
-  await run(`
-    CREATE TABLE IF NOT EXISTS user_preferences (
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      pref_key TEXT NOT NULL,
-      value_json TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (user_id, pref_key)
-    )
-  `);
 
   // Extra named files on an item master, beyond the photo and the CAD file.
   // Same rule as cad_file_key: the permanent object key is stored, never a
   // presigned URL.
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_attachments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      label TEXT NOT NULL DEFAULT '',
-      object_key TEXT NOT NULL,
-      file_name TEXT NOT NULL DEFAULT '',
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_item_attachments_item_id ON item_attachments(item_id)',
-  );
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_machines (
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      machine_id INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (item_id, machine_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_dies (
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      die_id INTEGER NOT NULL REFERENCES dies(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (item_id, die_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_property_schema (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      property_key TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      input_type TEXT NOT NULL DEFAULT 'Text',
-      mandatory INTEGER NOT NULL DEFAULT 0,
-      unit_id INTEGER,
-      unit_symbol TEXT,
-      unit_label TEXT,
-      source_type TEXT NOT NULL DEFAULT 'manual',
-      source_group_id INTEGER,
-      source_group_name TEXT,
-      source_item_ids_json TEXT NOT NULL DEFAULT '[]',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(item_id, property_key)
-    )
-  `);
-
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_item_property_schema_item_id ON item_property_schema(item_id)',
-  );
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_bom_lines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      material_barcode TEXT NOT NULL,
-      material_name TEXT DEFAULT '',
-      quantity_per_unit REAL NOT NULL DEFAULT 1,
-      wastage_percent REAL NOT NULL DEFAULT 0,
-      unit_id INTEGER REFERENCES units(id),
-      unit_symbol TEXT DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(item_id, material_barcode)
-    )
-  `);
-
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_item_bom_lines_item_id ON item_bom_lines(item_id, sort_order ASC, id ASC)',
-  );
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS inventory_sets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS inventory_set_lines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      set_id INTEGER NOT NULL REFERENCES inventory_sets(id) ON DELETE CASCADE,
-      item_id INTEGER NOT NULL REFERENCES items(id),
-      variation_leaf_node_id INTEGER REFERENCES item_variation_nodes(id),
-      quantity INTEGER NOT NULL DEFAULT 1,
-      position INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(set_id, item_id, variation_leaf_node_id)
-    )
-  `);
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)',
-  );
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_id ON inventory_set_lines(item_id)',
-  );
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS search_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER REFERENCES users(id),
-      query TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )
-  `);
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_search_history_user_id ON search_history(user_id)',
-  );
-  await run(`
-    CREATE TABLE IF NOT EXISTS search_clicks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER REFERENCES users(id),
-      query TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      entity_label TEXT,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challans (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL DEFAULT 'delivery',
-      order_id INTEGER REFERENCES order_items(id),
-      order_no TEXT DEFAULT '',
-      challan_no TEXT NOT NULL UNIQUE,
-      date TEXT NOT NULL,
-      location TEXT DEFAULT 'MAIN',
-      customer_name TEXT NOT NULL DEFAULT '',
-      customer_gstin TEXT DEFAULT '',
-      vendor_id INTEGER REFERENCES vendors(id),
-      vendor_name TEXT DEFAULT '',
-      vendor_gstin TEXT DEFAULT '',
-      material_owner_client_id INTEGER REFERENCES clients(id),
-      material_owner_client_name TEXT DEFAULT '',
-      material_owner_gstin TEXT DEFAULT '',
-      source_reference TEXT DEFAULT '',
-      company_profile_snapshot TEXT,
-      template_snapshot_json TEXT,
-      notes TEXT DEFAULT '',
-      maintain_stocks INTEGER NOT NULL DEFAULT 1,
-      used_in_report INTEGER NOT NULL DEFAULT 0,
-      purpose TEXT NOT NULL DEFAULT 'trading',
-      status TEXT NOT NULL DEFAULT 'draft',
-      created_by INTEGER REFERENCES users(id),
-      updated_by INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      order_item_id INTEGER,
-      production_run_id INTEGER,
-      item_id INTEGER,
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      line_no INTEGER NOT NULL DEFAULT 1,
-      particulars TEXT NOT NULL DEFAULT '',
-      hsn_code TEXT DEFAULT '',
-      variation_path_label TEXT DEFAULT '',
-      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
-      custom_variation_values_json TEXT DEFAULT '{}',
-      note TEXT DEFAULT '',
-      quantity_pcs REAL NOT NULL DEFAULT 0,
-      weight REAL NOT NULL DEFAULT 0,
-      sheet_weights_json TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_order_items (
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (challan_id, order_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS report_groups (
-      code TEXT PRIMARY KEY,
-      label TEXT DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_report_groups (
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      report_group_code TEXT NOT NULL REFERENCES report_groups(code) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (challan_id, report_group_code)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      activity_type TEXT NOT NULL,
-      actor_user_id INTEGER,
-      actor_name TEXT,
-      actor_role TEXT,
-      details_json TEXT,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS challan_template_upload_sessions (
-      id TEXT PRIMARY KEY,
-      file_name TEXT NOT NULL,
-      content_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL DEFAULT 0,
-      sha256 TEXT NOT NULL,
-      upload_type TEXT NOT NULL DEFAULT 'CHALLAN_TEMPLATE_BACKGROUND',
-      object_key TEXT NOT NULL,
-      canvas_width INTEGER NOT NULL DEFAULT 0,
-      canvas_height INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'pending',
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      completed_at TEXT
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS challan_templates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      party_type TEXT NOT NULL,
-      party_id INTEGER NOT NULL,
-      challan_type TEXT NOT NULL,
-      background_object_key TEXT NOT NULL,
-      canvas_width INTEGER NOT NULL,
-      canvas_height INTEGER NOT NULL,
-      rotation_degrees REAL NOT NULL DEFAULT 0,
-      global_offset_x_mm REAL NOT NULL DEFAULT 0,
-      global_offset_y_mm REAL NOT NULL DEFAULT 0,
-      stock_size TEXT NOT NULL DEFAULT 'A4',
-      paper_size TEXT NOT NULL DEFAULT 'A4',
-      n_up_layout INTEGER NOT NULL DEFAULT 1,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS challan_template_mappings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      template_id INTEGER NOT NULL REFERENCES challan_templates(id) ON DELETE CASCADE,
-      field_type TEXT NOT NULL DEFAULT 'DYNAMIC',
-      field_key TEXT NOT NULL,
-      field_value TEXT NOT NULL DEFAULT '',
-      asset_object_key TEXT NOT NULL DEFAULT '',
-      asset_width_px INTEGER NOT NULL DEFAULT 0,
-      asset_height_px INTEGER NOT NULL DEFAULT 0,
-      width_mm REAL NOT NULL DEFAULT 80,
-      height_mm REAL NOT NULL DEFAULT 12,
-      image_width_mm REAL NOT NULL DEFAULT 35,
-      image_height_mm REAL NOT NULL DEFAULT 20,
-      lock_aspect_ratio INTEGER NOT NULL DEFAULT 1,
-      x_mm REAL NOT NULL DEFAULT 0,
-      y_mm REAL NOT NULL DEFAULT 0,
-      x_percent REAL NOT NULL,
-      y_percent REAL NOT NULL,
-      font_size REAL NOT NULL DEFAULT 10,
-      font_weight TEXT NOT NULL DEFAULT 'normal',
-      alignment TEXT NOT NULL DEFAULT 'left',
-      text_color TEXT NOT NULL DEFAULT 'black',
-      letter_spacing REAL NOT NULL DEFAULT 0,
-      max_chars INTEGER NOT NULL DEFAULT 0,
-      max_width_mm REAL NOT NULL DEFAULT 80,
-      min_font_size REAL NOT NULL DEFAULT 6,
-      min_rows INTEGER NOT NULL DEFAULT 0,
-      max_rows INTEGER NOT NULL DEFAULT 0,
-      table_height_mm REAL NOT NULL DEFAULT 60,
-      row_height_mm REAL NOT NULL DEFAULT 6,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(template_id, field_key)
-    )
-  `);
-
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
   // order_item_id is joined on by the fulfilment rollup and the delivered
   // totals, and was previously unindexed.
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_order_item_id ON delivery_challan_items(order_item_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_order_items(order_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_challan_template_upload_sessions_sha256 ON challan_template_upload_sessions(sha256)');
-  await run('CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active)');
-  await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS invoice_headers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invoice_no TEXT NOT NULL UNIQUE,
-      client_id INTEGER REFERENCES clients(id),
-      client_name TEXT NOT NULL DEFAULT '',
-      gstin TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'draft',
-      invoice_date TEXT NOT NULL,
-      total_quantity REAL NOT NULL DEFAULT 0,
-      taxable_value REAL NOT NULL DEFAULT 0,
-      cgst_amount REAL NOT NULL DEFAULT 0,
-      sgst_amount REAL NOT NULL DEFAULT 0,
-      total_amount REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS invoice_lines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invoice_id INTEGER NOT NULL REFERENCES invoice_headers(id) ON DELETE CASCADE,
-      order_id INTEGER,
-      challan_id INTEGER REFERENCES delivery_challans(id),
-      challan_item_id INTEGER REFERENCES delivery_challan_items(id),
-      item_id INTEGER,
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      item_name TEXT NOT NULL DEFAULT '',
-      hsn_code TEXT DEFAULT '',
-      quantity REAL NOT NULL DEFAULT 0,
-      unit_price REAL NOT NULL DEFAULT 0,
-      taxable_value REAL NOT NULL DEFAULT 0,
-      cgst_rate REAL NOT NULL DEFAULT 0,
-      sgst_rate REAL NOT NULL DEFAULT 0,
-      cgst_amount REAL NOT NULL DEFAULT 0,
-      sgst_amount REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS reconciliation_conversion_overrides (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL,
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      conversion_ratio REAL NOT NULL DEFAULT 1,
-      from_unit TEXT NOT NULL DEFAULT 'kg',
-      to_unit_label TEXT NOT NULL DEFAULT 'units',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(item_id, variation_leaf_node_id)
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS reconciliation_waste_audit (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id INTEGER,
-      client_name TEXT NOT NULL DEFAULT '',
-      item_id INTEGER,
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      item_name TEXT NOT NULL DEFAULT '',
-      challan_id INTEGER REFERENCES delivery_challans(id),
-      challan_no TEXT DEFAULT '',
-      input_weight_kg REAL NOT NULL DEFAULT 0,
-      shipped_weight_kg REAL NOT NULL DEFAULT 0,
-      waste_weight_kg REAL NOT NULL DEFAULT 0,
-      waste_percentage REAL NOT NULL DEFAULT 0,
-      source TEXT NOT NULL DEFAULT 'report_snapshot',
-      created_at TEXT NOT NULL
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_invoice_lines_challan_item ON invoice_lines(challan_item_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_invoice_lines_order_id ON invoice_lines(order_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_reconciliation_conversion_item ON reconciliation_conversion_overrides(item_id, variation_leaf_node_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_reconciliation_waste_client_item ON reconciliation_waste_audit(client_id, item_id, variation_leaf_node_id)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS production_runs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      run_code TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'completed',
-      completed_at TEXT,
-      item_id INTEGER NOT NULL REFERENCES items(id),
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      variation_path_label TEXT DEFAULT '',
-      output_quantity REAL NOT NULL DEFAULT 0,
-      uom TEXT DEFAULT 'pcs',
-      location TEXT DEFAULT '',
-      source_metadata_json TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_production_runs_status ON production_runs(status, completed_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_production_runs_item ON production_runs(item_id, variation_leaf_node_id)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS deleted_records (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      table_name TEXT NOT NULL,
-      record_id INTEGER NOT NULL,
-      data_json TEXT NOT NULL,
-      deleted_at TEXT NOT NULL,
-      deleted_by TEXT
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS sub_contractors (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      phone TEXT,
-      email TEXT,
-      notes TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_headers (
-      order_no TEXT PRIMARY KEY,
-      client_id INTEGER NOT NULL REFERENCES clients(id),
-      sub_contractor_id INTEGER REFERENCES sub_contractors(id),
-      po_number TEXT DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT ''
-    )
-  `);
 
 
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_no TEXT NOT NULL REFERENCES order_headers(order_no),
-      client_id INTEGER NOT NULL REFERENCES clients(id),
-      sub_contractor_id INTEGER REFERENCES sub_contractors(id),
-      client_name TEXT NOT NULL DEFAULT '',
-      po_number TEXT DEFAULT '',
-      client_code TEXT DEFAULT '',
-      item_id INTEGER NOT NULL REFERENCES items(id),
-      item_name TEXT NOT NULL DEFAULT '',
-      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      variation_path_label TEXT DEFAULT '',
-      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
-      custom_variation_values_json TEXT DEFAULT '{}',
-      quantity INTEGER NOT NULL DEFAULT 0,
-      unit_id INTEGER REFERENCES units(id),
-      unit_name TEXT NOT NULL DEFAULT 'Pieces',
-      unit_symbol TEXT NOT NULL DEFAULT 'Pieces',
-      unit_price REAL NOT NULL DEFAULT 0,
-      total_invoiced_qty REAL NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'notStarted',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT '',
-      start_date TEXT,
-      end_date TEXT,
-      hsn_code TEXT DEFAULT '',
-      taxable_value REAL DEFAULT 0,
-      cgst_rate REAL DEFAULT 0,
-      sgst_rate REAL DEFAULT 0,
-      cgst_amount REAL DEFAULT 0,
-      sgst_amount REAL DEFAULT 0
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS po_documents (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      file_name TEXT NOT NULL,
-      content_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL DEFAULT 0,
-      sha256 TEXT NOT NULL UNIQUE,
-      object_key TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'uploaded',
-      created_at TEXT NOT NULL,
-      uploaded_at TEXT
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS po_upload_sessions (
-      id TEXT PRIMARY KEY,
-      file_name TEXT NOT NULL,
-      content_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL DEFAULT 0,
-      sha256 TEXT NOT NULL,
-      object_key TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      completed_at TEXT
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_po_documents (
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      document_id INTEGER NOT NULL REFERENCES po_documents(id) ON DELETE CASCADE,
-      linked_at TEXT NOT NULL,
-      PRIMARY KEY (order_id, document_id)
-    )
-  `);
-
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_order_po_documents_order_id ON order_po_documents(order_id)',
-  );
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_po_upload_sessions_sha256 ON po_upload_sessions(sha256)',
-  );
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS uploaded_assets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      entity_type TEXT NOT NULL,
-      entity_id INTEGER NOT NULL,
-      file_name TEXT NOT NULL,
-      content_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL DEFAULT 0,
-      sha256 TEXT NOT NULL,
-      object_key TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'uploaded',
-      is_primary INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      uploaded_at TEXT,
-      document_title TEXT,
-      position INTEGER,
-      thumb_key TEXT,
-      width INTEGER,
-      height INTEGER,
-      deleted_at TEXT
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS asset_upload_sessions (
-      id TEXT PRIMARY KEY,
-      entity_type TEXT NOT NULL,
-      entity_id INTEGER NOT NULL,
-      file_name TEXT NOT NULL,
-      content_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL DEFAULT 0,
-      sha256 TEXT NOT NULL,
-      object_key TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      is_primary INTEGER NOT NULL DEFAULT 0,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      completed_at TEXT,
-      document_title TEXT,
-      thumb_key TEXT,
-      width INTEGER,
-      height INTEGER
-    )
-  `);
 
   // A database made before company documents has these tables without the
   // column, and CREATE TABLE IF NOT EXISTS never adds one. photo_requests comes
   // from migration 062, so it may not exist yet in a bare initDb.
-  await ensureColumnExists('uploaded_assets', 'document_title', 'TEXT');
-  await ensureColumnExists('asset_upload_sessions', 'document_title', 'TEXT');
   // A part's photos in their order, each with a small copy for lists, and
   // when it was removed (the sweep deletes the objects a day later).
   for (const [column, type] of [
@@ -4847,161 +3852,15 @@ async function initDb() {
   await run(
     'CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary)',
   );
-  await run(
-    'CREATE INDEX IF NOT EXISTS idx_asset_upload_sessions_entity ON asset_upload_sessions(entity_type, entity_id)',
-  );
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_material_requirements (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      item_id INTEGER,
-      variation_leaf_node_id INTEGER,
-      material_id INTEGER,
-      material_barcode TEXT,
-      material_name TEXT,
-      required_qty REAL NOT NULL DEFAULT 0,
-      allocated_qty REAL NOT NULL DEFAULT 0,
-      consumed_qty REAL NOT NULL DEFAULT 0,
-      shortage_qty REAL NOT NULL DEFAULT 0,
-      unit_id INTEGER,
-      unit_symbol TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_status_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      previous_status TEXT,
-      new_status TEXT NOT NULL,
-      changed_by_user_id INTEGER,
-      changed_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      activity_type TEXT NOT NULL,
-      actor_user_id INTEGER,
-      actor_name TEXT,
-      actor_role TEXT,
-      source TEXT,
-      details_json TEXT,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_order_id ON order_material_requirements(order_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode)');
-  await run('CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challans (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER REFERENCES orders(id),
-      order_no TEXT DEFAULT '',
-      challan_no TEXT NOT NULL UNIQUE,
-      date TEXT NOT NULL,
-      customer_name TEXT NOT NULL DEFAULT '',
-      customer_gstin TEXT DEFAULT '',
-      company_profile_snapshot TEXT,
-      notes TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'draft',
-      created_by INTEGER REFERENCES users(id),
-      updated_by INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      order_item_id INTEGER,
-      item_id INTEGER,
-      line_no INTEGER NOT NULL DEFAULT 1,
-      particulars TEXT NOT NULL DEFAULT '',
-      hsn_code TEXT DEFAULT '',
-      variation_path_label TEXT DEFAULT '',
-      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
-      note TEXT DEFAULT '',
-      custom_variation_values_json TEXT DEFAULT '{}',
-      quantity_pcs TEXT DEFAULT '',
-      weight TEXT DEFAULT '',
-      sheet_weights_json TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      activity_type TEXT NOT NULL,
-      actor_user_id INTEGER,
-      actor_name TEXT,
-      actor_role TEXT,
-      details_json TEXT,
-      created_at TEXT NOT NULL
-    )
-  `);
 
   // Track: generic per-entity activity log powering the "Track" tab on masters
   // and a person's People profile. Written by trackCreate/Update/Delete.
-  await run(`
-    CREATE TABLE IF NOT EXISTS entity_activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      actor_user_id INTEGER,
-      actor_name TEXT,
-      actor_role TEXT,
-      changes_json TEXT,
-      details_json TEXT,
-      created_at TEXT NOT NULL,
-      -- Which opening of a window this change belongs to; see
-      -- migrations/050-activity-sitting.sql. Kept in step with that file by
-      -- hand: this table is defined in both places, and a column added to one
-      -- only is how a fresh database quietly loses it.
-      sitting_id TEXT
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_entity ON entity_activity_log(entity_type, entity_id, created_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_actor ON entity_activity_log(actor_user_id, created_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_sitting ON entity_activity_log(sitting_id, created_at)');
 
   // Per-record (row-level) permission grants for an individual user.
-  await run(`
-    CREATE TABLE IF NOT EXISTS user_record_permissions (
-      user_id INTEGER NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      op TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (user_id, entity_type, entity_id, op)
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_user_record_permissions_user ON user_record_permissions(user_id)');
 
   // --- Column migrations for order_activity_log on pre-existing databases ---
   // The CREATE TABLE above is skipped if the table already exists. These
   // ensureColumnExists calls add any missing columns added in later versions.
-  await ensureColumnExists('order_activity_log', 'activity_type', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('order_activity_log', 'actor_user_id', 'INTEGER');
-  await ensureColumnExists('order_activity_log', 'actor_name', 'TEXT');
-  await ensureColumnExists('order_activity_log', 'actor_role', 'TEXT');
-  await ensureColumnExists('order_activity_log', 'source', 'TEXT');
-  await ensureColumnExists('order_activity_log', 'details_json', 'TEXT');
   
   await migrateOrderActivityLogCompatibilityColumns();
 
@@ -5023,134 +3882,26 @@ async function initDb() {
   // The client this item was developed for, so it can be listed under them.
   await ensureColumnExists('items', 'developed_for_client_id', 'INTEGER');
 
-  await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
-  await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'type', "TEXT NOT NULL DEFAULT 'delivery'");
-  await ensureColumnExists('delivery_challans', 'location', "TEXT DEFAULT 'MAIN'");
-  await ensureColumnExists('delivery_challans', 'vendor_id', 'INTEGER');
-  await ensureColumnExists('delivery_challans', 'vendor_name', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'vendor_gstin', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'material_owner_client_id', 'INTEGER');
-  await ensureColumnExists('delivery_challans', 'material_owner_client_name', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'material_owner_gstin', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'po_number', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'po_date', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
-  await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
-  await ensureColumnExists('delivery_challans', 'used_in_report', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('delivery_challans', 'purpose', "TEXT NOT NULL DEFAULT 'trading'");
   // Internal challans — free-text purpose (production consumption / transfers).
-  await ensureColumnExists('delivery_challans', 'internal_purpose', "TEXT NOT NULL DEFAULT ''");
   // Reconciliation of an internal-use challan: JSON breakdown of each consumed
   // line settled across scrap/leftover/lost/rejection/finished-goods. Empty
   // until the mobile In-use reconciliation flow settles the challan.
-  await ensureColumnExists('delivery_challans', 'reconciliation_json', "TEXT NOT NULL DEFAULT ''");
   // Structured internal-challan subtype (e.g. 'vendor_return') — replaces
   // string-matching the free-text internal_purpose.
-  await ensureColumnExists('delivery_challans', 'internal_subtype', "TEXT NOT NULL DEFAULT ''");
   // Vendor-return challans carry the scanned sheet tag codes so issuing can mark
   // those piece_barcodes returned (and reject a double return).
-  await ensureColumnExists('delivery_challans', 'returned_sheet_codes_json', "TEXT NOT NULL DEFAULT '[]'");
   // The reception a vendor return sends stock back from, when the return was
   // made by cancelling a partly used reception.
-  await ensureColumnExists('delivery_challans', 'source_reception_challan_id', 'INTEGER');
-  await ensureColumnExists('delivery_challan_items', 'material_barcode', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
-  await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
-  await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
-  await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('delivery_challan_items', 'variation_path_label', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challan_items', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
-  await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
   await ensureDeliveryChallanItemNumericColumns();
-  await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
-  await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('delivery_challan_items', 'variation_path_label', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challan_items', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
-  await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
-  await ensureColumnExists('delivery_challan_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
   // Per-sheet weight breakdown for purchase intake: JSON array of numbers, one
   // per received sheet, summing to the line weight (total-in = total-out).
-  await ensureColumnExists('delivery_challan_items', 'sheet_weights_json', "TEXT NOT NULL DEFAULT '[]'");
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_order_items (
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (challan_id, order_id)
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS report_groups (
-      code TEXT PRIMARY KEY,
-      label TEXT DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run(`
-    CREATE TABLE IF NOT EXISTS delivery_challan_report_groups (
-      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
-      report_group_code TEXT NOT NULL REFERENCES report_groups(code) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (challan_id, report_group_code)
-    )
-  `);
   await ensureInventorySetLineNullableLeafReference();
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_vendor_id ON delivery_challans(vendor_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_material_owner ON delivery_challans(material_owner_client_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_type ON delivery_challans(type)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_order_items(order_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code)');
-  await ensureColumnExists('challan_templates', 'rotation_degrees', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_templates', 'global_offset_x_mm', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_templates', 'global_offset_y_mm', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_templates', 'stock_size', "TEXT NOT NULL DEFAULT 'A4'");
-  await ensureColumnExists('challan_templates', 'paper_size', "TEXT NOT NULL DEFAULT 'A4'");
-  await ensureColumnExists('challan_templates', 'n_up_layout', 'INTEGER NOT NULL DEFAULT 1');
-  await ensureColumnExists('challan_templates', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
-  await ensureColumnExists('challan_template_upload_sessions', 'upload_type', "TEXT NOT NULL DEFAULT 'CHALLAN_TEMPLATE_BACKGROUND'");
-  await ensureColumnExists('challan_template_upload_sessions', 'canvas_width', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_upload_sessions', 'canvas_height', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'field_type', "TEXT NOT NULL DEFAULT 'DYNAMIC'");
-  await ensureColumnExists('challan_template_mappings', 'field_value', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('challan_template_mappings', 'asset_object_key', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('challan_template_mappings', 'asset_width_px', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'asset_height_px', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'width_mm', 'REAL NOT NULL DEFAULT 80');
-  await ensureColumnExists('challan_template_mappings', 'height_mm', 'REAL NOT NULL DEFAULT 12');
-  await ensureColumnExists('challan_template_mappings', 'image_width_mm', 'REAL NOT NULL DEFAULT 35');
-  await ensureColumnExists('challan_template_mappings', 'image_height_mm', 'REAL NOT NULL DEFAULT 20');
-  await ensureColumnExists('challan_template_mappings', 'lock_aspect_ratio', 'INTEGER NOT NULL DEFAULT 1');
-  await ensureColumnExists('challan_template_mappings', 'x_mm', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'y_mm', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'text_color', "TEXT NOT NULL DEFAULT 'black'");
-  await ensureColumnExists('challan_template_mappings', 'max_width_mm', 'REAL NOT NULL DEFAULT 80');
-  await ensureColumnExists('challan_template_mappings', 'min_font_size', 'REAL NOT NULL DEFAULT 6');
-  await ensureColumnExists('challan_template_mappings', 'min_rows', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'max_rows', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('challan_template_mappings', 'table_height_mm', 'REAL NOT NULL DEFAULT 60');
-  await run('CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active)');
-  await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
 
   // Foreign key indexes for production scaling on materials
-  await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_group_id ON materials(linked_group_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_item_id ON materials(linked_item_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_materials_parent_barcode ON materials(parent_barcode)');
 
   // Indexes for health dashboard and inventory status filtering
-  await run('CREATE INDEX IF NOT EXISTS idx_materials_inventory_state ON materials(inventory_state)');
-  await run('CREATE INDEX IF NOT EXISTS idx_materials_stock_quantities ON materials(on_hand_qty, available_to_promise_qty, reserved_qty)');
-  await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_health_query ON inventory_movements(movement_type, created_at)');
-  await run('CREATE INDEX IF NOT EXISTS idx_inventory_alerts_is_open ON inventory_alerts(is_open)');
 
   // Inventory Sets indexes
-  await run('CREATE INDEX IF NOT EXISTS idx_inventory_sets_name ON inventory_sets(name)');
 
   // A set can now also be *produced* rather than defined: an assembly step
   // clips parts together and mints a temporary set into inventory, the same way
@@ -5171,25 +3922,7 @@ async function initDb() {
                WHERE origin_run_id IS NOT NULL AND origin_node_id IS NOT NULL`);
   } catch(e){}
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
 
-  await ensureColumnExists('order_items', 'updated_at', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('order_items', 'unit_id', 'INTEGER');
-  await ensureColumnExists('order_items', 'unit_name', "TEXT NOT NULL DEFAULT 'Pieces'");
-  await ensureColumnExists('order_items', 'unit_symbol', "TEXT NOT NULL DEFAULT 'Pieces'");
-  await ensureColumnExists('order_items', 'unit_price', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('order_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
-  await ensureColumnExists(
-    'order_items',
-    'total_invoiced_qty',
-    'REAL NOT NULL DEFAULT 0',
-  );
-  await ensureColumnExists('order_items', 'hsn_code', "TEXT DEFAULT ''");
-  await ensureColumnExists('order_items', 'taxable_value', 'REAL DEFAULT 0');
-  await ensureColumnExists('order_items', 'cgst_rate', 'REAL DEFAULT 0');
-  await ensureColumnExists('order_items', 'sgst_rate', 'REAL DEFAULT 0');
-  await ensureColumnExists('order_items', 'cgst_amount', 'REAL DEFAULT 0');
-  await ensureColumnExists('order_items', 'sgst_amount', 'REAL DEFAULT 0');
   await run(`
     UPDATE order_items
     SET updated_at = CASE
@@ -5215,53 +3948,6 @@ async function initDb() {
       AND (TRIM(COALESCE(unit_symbol, '')) = '' OR TRIM(unit_symbol) = 'Pieces')
   `);
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_variations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      name TEXT NOT NULL DEFAULT '',
-      alias TEXT DEFAULT '',
-      display_name TEXT NOT NULL,
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_variation_dimensions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      position INTEGER NOT NULL DEFAULT 0
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_variation_values (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      variation_id INTEGER NOT NULL REFERENCES item_variations(id) ON DELETE CASCADE,
-      dimension_id INTEGER NOT NULL REFERENCES item_variation_dimensions(id) ON DELETE CASCADE,
-      value TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS item_variation_nodes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-      parent_node_id INTEGER REFERENCES item_variation_nodes(id) ON DELETE CASCADE CHECK (parent_node_id IS NULL OR parent_node_id > 0),
-      kind TEXT NOT NULL,
-      name TEXT NOT NULL,
-      code TEXT NOT NULL DEFAULT '',
-      display_name TEXT NOT NULL DEFAULT '',
-      position INTEGER NOT NULL DEFAULT 0,
-      is_archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
   await ensureColumnExists('items', 'quantity', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('items', 'naming_format', "TEXT NOT NULL DEFAULT ''");
   // Whether this item can be ordered as a purchase (reception) line on the
@@ -5277,55 +3963,17 @@ async function initDb() {
   // unique index deliberately ignores.
   await ensureColumnExists('items', 'part_no', 'INTEGER');
   await ensureColumnExists('items', 'part_code', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('item_unit_conversions', 'factor_to_primary', 'REAL NOT NULL DEFAULT 1');
-  await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
-  await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
-  await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('item_variation_nodes', 'input_type', "TEXT NOT NULL DEFAULT 'Text'");
   // Bootstrap parity with migration 035: a value node under a Material property
   // points at the material type it stands for, so the id travels with the
   // selection instead of only its name.
-  await ensureColumnExists('item_variation_nodes', 'material_type_id', 'INTEGER');
   // Allowed range for 'Numeric' properties (migrations/028). NULL = unbounded.
-  await ensureColumnExists('item_variation_nodes', 'numeric_min', 'REAL');
-  await ensureColumnExists('item_variation_nodes', 'numeric_max', 'REAL');
 
-  await ensureColumnExists('materials', 'unit_id', 'INTEGER');
-  await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
-  await ensureColumnExists('units', 'conversion_factor', 'REAL NOT NULL DEFAULT 1');
-  await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
   // Bootstrap parity with migrations/026-units-families.sql — fresh DBs (tests,
   // new deployments seeding before first boot) must match migrated DBs.
-  await ensureColumnExists('unit_groups', 'dimension', 'TEXT');
-  await ensureColumnExists('unit_groups', 'base_unit_id', 'INTEGER');
-  await ensureColumnExists('units', 'conversion_type', "TEXT NOT NULL DEFAULT 'linear'");
-  await ensureColumnExists('units', 'precision', 'INTEGER');
   // Bootstrap parity with migrations/051-units-contract-ladders.sql
-  await ensureColumnExists('unit_groups', 'code', 'TEXT');
-  await ensureColumnExists('unit_groups', 'integral_only', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('units', 'factor_to_base', 'INTEGER NOT NULL DEFAULT 1');
-  await ensureColumnExists('units', 'is_base', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('units', 'on_ladder', 'INTEGER NOT NULL DEFAULT 1');
-  await ensureColumnExists('units', 'uqc', 'TEXT');
-  await run(`
-    CREATE TABLE IF NOT EXISTS unit_conversion_points (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      unit_id INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
-      point_key TEXT NOT NULL,
-      base_value REAL NOT NULL,
-      UNIQUE(unit_id, point_key)
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_unit_conversion_points_unit_id ON unit_conversion_points(unit_id)');
-  await ensureColumnExists('order_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
   // Which set this line was expanded from, snapshotted at order time. Dead
   // labels, never a live reference: editing the set must not reach back and
   // change what was agreed. See saveOrder / _addLinesFromSet.
-  await ensureColumnExists('order_items', 'source_set_id', 'INTEGER');
-  await ensureColumnExists('order_items', 'source_set_name', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('order_items', 'source_set_multiplier', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('delivery_challan_items', 'factor_to_primary_at_creation', 'REAL NOT NULL DEFAULT 1');
   // Bootstrap parity with migrations/027-stock-leaf-guards.sql: synthetic
   // negative variation ids (typed Gauge/Numeric selections) must never persist
   // as stock identity, no matter which future code path writes the row.
@@ -5363,111 +4011,16 @@ async function initDb() {
       SELECT RAISE(ABORT, 'variation_stock.variation_leaf_node_id must not be negative');
     END
   `);
-  await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
-  await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
-  await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
   await ensureColumnExists('variation_stock', 'variation_path_label', "TEXT DEFAULT ''");
   await ensureColumnExists('variation_stock', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumnExists('variation_stock', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
   await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
-  await run('CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id)');
-  await ensureColumnExists('inventory_movements', 'primary_qty', 'REAL');
-  await ensureColumnExists('inventory_movements', 'uom', 'TEXT');
-  await ensureColumnExists('inventory_movements', 'item_id', 'INTEGER');
-  await ensureColumnExists('inventory_movements', 'variation_leaf_node_id', 'INTEGER');
-  await ensureColumnExists('inventory_movements', 'source_challan_id', 'INTEGER');
-  await ensureColumnExists('inventory_movements', 'source_challan_type', 'TEXT');
-  await ensureColumnExists('inventory_movements', 'source_challan_line_id', 'INTEGER');
-  await ensureColumnExists('inventory_movements', 'reverses_movement_id', 'TEXT');
-  await ensureColumnExists('inventory_movements', 'actor', "TEXT DEFAULT ''");
-  await ensureColumnExists('inventory_movements', 'lot_code', "TEXT DEFAULT ''");
   await ensureColumnExists('inventory_stock_positions', 'location_id', "TEXT NOT NULL DEFAULT 'MAIN'");
   await ensureColumnExists('inventory_stock_positions', 'lot_code', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('inventory_stock_positions', 'unit_id', 'INTEGER');
   await ensureColumnExists('inventory_stock_positions', 'reserved_qty', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('inventory_stock_positions', 'damaged_qty', 'REAL NOT NULL DEFAULT 0');
   await backfillInventoryMovementQuantitySemantics();
-  await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type)');
-  await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
-  await ensureColumnExists('materials', 'group_mode', 'TEXT');
-  await ensureColumnExists(
-    'materials',
-    'inheritance_enabled',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  await ensureColumnExists('materials', 'display_stock', "TEXT DEFAULT ''");
-  await ensureColumnExists('materials', 'created_by', "TEXT DEFAULT ''");
-  await ensureColumnExists('materials', 'workflow_status', "TEXT DEFAULT 'notStarted'");
-  await ensureColumnExists('materials', 'material_class', "TEXT DEFAULT 'raw_material'");
-  await ensureColumnExists('materials', 'inventory_state', "TEXT DEFAULT 'available'");
-  await ensureColumnExists('materials', 'procurement_state', "TEXT DEFAULT 'not_ordered'");
-  await ensureColumnExists('materials', 'traceability_mode', "TEXT DEFAULT 'bulk'");
-  await ensureColumnExists('materials', 'on_hand_qty', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'reserved_qty', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'available_to_promise_qty', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'incoming_qty', 'REAL NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'linked_order_count', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'linked_pipeline_count', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'pending_alert_count', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('materials', 'updated_at', 'TEXT');
-  await ensureColumnExists('materials', 'last_scanned_at', 'TEXT');
-  await ensureColumnExists(
-    'material_group_properties',
-    'coverage_count',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'selected_item_count_at_resolution',
-    'INTEGER NOT NULL DEFAULT 0',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'resolution_source',
-    'TEXT',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'unit_id',
-    'INTEGER',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'unit_symbol',
-    'TEXT',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'unit_label',
-    'TEXT',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'source_group_id',
-    'INTEGER',
-  );
-  await ensureColumnExists(
-    'material_group_properties',
-    'source_group_name',
-    'TEXT',
-  );
-  await ensureColumnExists(
-    'material_group_preferences',
-    'discarded_property_keys_json',
-    "TEXT NOT NULL DEFAULT '[]'",
-  );
-  await ensureColumnExists('users', 'failed_login_attempts', 'INTEGER NOT NULL DEFAULT 0');
-  await ensureColumnExists('users', 'first_failed_login_at', 'TEXT');
-  await ensureColumnExists('users', 'lockout_until', 'TEXT');
-  await ensureColumnExists('users', 'last_login_at', 'TEXT');
-  await ensureColumnExists('users', 'last_login_ip', "TEXT DEFAULT ''");
-  await ensureColumnExists('users', 'mobile_pin', "TEXT");
-  await ensureColumnExists('users', 'client_id', "INTEGER REFERENCES clients(id)");
-  await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mobile_pin ON users(mobile_pin)');
-  await ensureColumnExists('auth_sessions', 'ip_address', "TEXT DEFAULT ''");
-  await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
-  await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
-  await ensureColumnExists('delete_requests', 'reviewed_note', "TEXT DEFAULT ''");
   await ensureColumnExists('vendors', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('vendors', 'gst_number', "TEXT DEFAULT ''");
   await ensureColumnExists('vendors', 'address', "TEXT DEFAULT ''");
@@ -5502,217 +4055,20 @@ async function initDb() {
   await ensureColumnExists('pipeline_templates', 'intermediate_naming_convention', "TEXT DEFAULT ''");
   await ensureColumnExists('pipeline_templates', 'pen_paper_baseline_json', "TEXT DEFAULT '{}'");
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS pipeline_runs (
-      id TEXT PRIMARY KEY,
-      template_id TEXT NOT NULL REFERENCES pipeline_templates(id),
-      template_version INTEGER NOT NULL,
-      name TEXT,
-      status TEXT DEFAULT 'planned',
-      overrides_json TEXT,
-      node_status_json TEXT,
-      started_at TEXT,
-      completed_at TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-
-  await ensureColumnExists('pipeline_runs', 'scrap_routing', "TEXT DEFAULT 'inventory'");
-  await ensureColumnExists('pipeline_runs', 'node_metrics_json', "TEXT DEFAULT '{}'");
-  await ensureColumnExists('pipeline_runs', 'batches_json', "TEXT DEFAULT '[]'");
   // Machine queue popup metadata: who scheduled the run and its batch weight.
-  await ensureColumnExists('pipeline_runs', 'created_by', 'TEXT');
-  await ensureColumnExists('pipeline_runs', 'weight_kg', 'REAL DEFAULT 0');
   // Real machine↔run-node assignment (replaces name-matching the JSON override)
   // so a machine's pending queue is a first-class, indexable query.
-  await run(`
-    CREATE TABLE IF NOT EXISTS run_machine_assignments (
-      run_id TEXT NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
-      node_id TEXT NOT NULL,
-      machine_id INTEGER REFERENCES machines(id),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (run_id, node_id)
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_run_machine_assignments_machine ON run_machine_assignments(machine_id)');
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS stage_reconciliations (
-      run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
-      node_id TEXT NOT NULL,
-      allotted REAL,
-      output REAL,
-      leftover REAL,
-      scrap REAL,
-      good_yield REAL,
-      actual_hours REAL,
-      scrap_item_id INTEGER,
-      scrap_item_name TEXT,
-      leftover_action TEXT,
-      input_time TEXT,
-      output_time TEXT,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (run_id, node_id)
-    )
-  `);
   await backfillStageReconciliations();
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS production_scrap (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      pipeline_run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
-      node_id TEXT NOT NULL,
-      order_no TEXT,
-      material_barcode TEXT NOT NULL,
-      scrap_qty REAL NOT NULL DEFAULT 0,
-      logged_by TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
 
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS run_barcode_inputs (
-      id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
-      node_id TEXT NOT NULL,
-      barcode TEXT NOT NULL,
-      material_id TEXT,
-      material_payload_json TEXT NOT NULL,
-      scanned_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
   // Per-sheet consumption lineage: when the scanned code is a per-sheet vendor
   // tag (piece_barcodes) rather than a SKU (materials), record which sheet it
   // was so a run traces back to the exact original vendor sheet. Denormalized
   // (piece_parent_code, not an FK) because piece_barcodes rows are regenerated.
-  await ensureColumnExists('run_barcode_inputs', 'source_kind', "TEXT DEFAULT 'sku'");
-  await ensureColumnExists('run_barcode_inputs', 'piece_parent_code', 'TEXT');
-  await ensureColumnExists('run_barcode_inputs', 'piece_child_code', 'TEXT');
-  await ensureColumnExists('run_barcode_inputs', 'challan_item_id', 'INTEGER');
-  await ensureColumnExists('run_barcode_inputs', 'consumed_weight', 'REAL DEFAULT 0');
-  await run('CREATE INDEX IF NOT EXISTS idx_run_barcode_inputs_parent ON run_barcode_inputs(piece_parent_code)');
 
   // Customer return / defect events — a sibling entity to orders (a completed
   // order can still have a return). Trigger for the backward QC lineage trace.
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_returns (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      return_no TEXT NOT NULL UNIQUE,
-      order_no TEXT NOT NULL REFERENCES order_headers(order_no),
-      order_item_id INTEGER REFERENCES order_items(id),
-      quantity REAL NOT NULL DEFAULT 0,
-      unit TEXT DEFAULT 'pcs',
-      reason_code TEXT NOT NULL DEFAULT 'defect',
-      defect_description TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open',
-      returned_barcode TEXT DEFAULT '',
-      pipeline_run_id TEXT REFERENCES pipeline_runs(id),
-      logged_by TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_order_returns_order_no ON order_returns(order_no)');
-  await run('CREATE INDEX IF NOT EXISTS idx_order_returns_status ON order_returns(status)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS order_pipeline_assignments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      pipeline_run_id TEXT NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
-      allocated_quantity REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  await run('CREATE INDEX IF NOT EXISTS idx_order_pipeline_assignments_order_id ON order_pipeline_assignments(order_item_id)');
-  await run('CREATE INDEX IF NOT EXISTS idx_order_pipeline_assignments_pipeline_run_id ON order_pipeline_assignments(pipeline_run_id)');
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS procurement_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      request_number TEXT NOT NULL UNIQUE,
-      supplier_name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'draft',
-      expected_date TEXT,
-      notes TEXT DEFAULT '',
-      cancel_reason TEXT,
-      created_by_user_id INTEGER REFERENCES users(id),
-      created_by_name TEXT DEFAULT '',
-      created_by_role TEXT DEFAULT '',
-      raised_by_user_id INTEGER REFERENCES users(id),
-      raised_by_name TEXT DEFAULT '',
-      raised_by_role TEXT DEFAULT '',
-      cancelled_by_user_id INTEGER REFERENCES users(id),
-      cancelled_by_name TEXT DEFAULT '',
-      cancelled_by_role TEXT DEFAULT '',
-      closed_by_user_id INTEGER REFERENCES users(id),
-      closed_by_name TEXT DEFAULT '',
-      closed_by_role TEXT DEFAULT '',
-      raised_at TEXT,
-      cancelled_at TEXT,
-      closed_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS procurement_request_lines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
-      material_barcode TEXT NOT NULL,
-      material_name TEXT DEFAULT '',
-      requested_qty REAL NOT NULL DEFAULT 0,
-      received_qty REAL NOT NULL DEFAULT 0,
-      pending_qty REAL NOT NULL DEFAULT 0,
-      unit_id INTEGER REFERENCES units(id),
-      unit_symbol TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'draft',
-      custom_variation_values_json TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(procurement_request_id, material_barcode)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS procurement_request_line_sources (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
-      procurement_request_line_id INTEGER NOT NULL REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
-      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      requirement_id INTEGER NOT NULL REFERENCES order_material_requirements(id) ON DELETE CASCADE,
-      material_barcode TEXT NOT NULL,
-      linked_qty REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      UNIQUE(procurement_request_line_id, requirement_id)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS procurement_activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
-      procurement_request_line_id INTEGER REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
-      event_type TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      actor_user_id INTEGER REFERENCES users(id),
-      actor_name TEXT DEFAULT '',
-      actor_role TEXT DEFAULT '',
-      metadata_json TEXT DEFAULT '{}',
-      source TEXT DEFAULT 'api',
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run('CREATE INDEX IF NOT EXISTS idx_procurement_requests_status ON procurement_requests(status, updated_at DESC)');
-  await run('CREATE INDEX IF NOT EXISTS idx_procurement_request_lines_request_id ON procurement_request_lines(procurement_request_id, id ASC)');
-  await run('CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_requirement_id ON procurement_request_line_sources(requirement_id, id ASC)');
-  await run('CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_request_id ON procurement_request_line_sources(procurement_request_id, id ASC)');
-  await run('CREATE INDEX IF NOT EXISTS idx_procurement_activity_request_id ON procurement_activity_log(procurement_request_id, created_at DESC)');
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMaterialsIfEmpty();
@@ -5770,37 +4126,11 @@ async function initDb() {
     WHERE id IN (SELECT DISTINCT group_id FROM machines WHERE group_id IS NOT NULL)
   `);
 
-  await run(`
-    CREATE TABLE IF NOT EXISTS dies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tool_code TEXT NOT NULL UNIQUE,
-      produced_part_numbers TEXT NOT NULL DEFAULT '[]',
-      photo_urls TEXT NOT NULL DEFAULT '[]',
-      operational_notes TEXT,
-      compatible_machine_group_ids TEXT NOT NULL DEFAULT '[]',
-      storage_location TEXT,
-      number_of_cavities INTEGER,
-      stroke_count INTEGER NOT NULL DEFAULT 0,
-      max_strokes INTEGER NOT NULL DEFAULT 0,
-      strokes_per_piece REAL,
-      setup_minutes REAL,
-      report_notes TEXT NOT NULL DEFAULT '',
-      physical_specs TEXT NOT NULL DEFAULT '{}',
-      status TEXT NOT NULL,
-      ownership TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
   await ensureColumnExists('machines', 'report_output_per_hour', 'REAL');
   await ensureColumnExists('machines', 'setup_minutes', 'REAL');
   await ensureColumnExists('machines', 'labor_count', 'REAL');
   await ensureColumnExists('machines', 'power_kw', 'REAL');
   await ensureColumnExists('machines', 'report_notes', "TEXT NOT NULL DEFAULT ''");
-  await ensureColumnExists('dies', 'strokes_per_piece', 'REAL');
-  await ensureColumnExists('dies', 'setup_minutes', 'REAL');
-  await ensureColumnExists('dies', 'report_notes', "TEXT NOT NULL DEFAULT ''");
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMachinesAndDiesIfEmpty();
@@ -7058,13 +5388,10 @@ async function backfillInventoryLedgerForMaterials({
   }
 }
 
-async function ensureColumnExists(tableName, columnName, definition) {
-  const columns = await all(`PRAGMA table_info(${tableName})`);
-  const hasColumn = columns.some((column) => column.name === columnName);
-  if (!hasColumn) {
-    console.log(`Migrating ${tableName}: adding ${columnName}`);
-    await run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
-  }
+// The one in kernel/schema-kit.js, bound to this file's database helpers; the
+// modules' schema.js files use the same.
+function ensureColumnExists(tableName, columnName, definition) {
+  return require('./kernel/schema-kit').ensureColumnExists({ run, all }, tableName, columnName, definition);
 }
 
 async function ensureDeliveryChallanItemNumericColumns() {
