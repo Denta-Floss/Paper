@@ -88,6 +88,14 @@ module.exports = function dieOperations({
       },
     },
 
+    'dies.rows.all': {
+      internal: true,
+      summary: 'Every die as stored. For the order reports, which key dies by id and tool code.',
+      input: { fields: {} },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async () => ({ ok: true, rows: await service.allDieRows() }),
+    },
+
     'dies.rows.byToolCode': {
       internal: true,
       summary: 'The die a pipeline node names, by its tool code; or nothing.',

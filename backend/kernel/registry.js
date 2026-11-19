@@ -48,6 +48,14 @@ const MODULES = {
       // What came back against an order. It belonged to no module until now.
       'order_returns',
     ],
+    // Declared reads: see the note on production's. The order list computes
+    // each line's delivered quantity from challans' lines inside the one
+    // paged, filtered query, and its run status from production's runs
+    // through a fragment production hands over as text.
+    reads: {
+      delivery_challan_items: 'the order list sums what was delivered against each line inside its paged, filtered query',
+      delivery_challans: 'the same subquery leaves cancelled challans out',
+    },
     evacuated: true,
   },
   inventory: {

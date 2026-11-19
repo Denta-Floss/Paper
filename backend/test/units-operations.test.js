@@ -154,7 +154,9 @@ test('units keep to what they have declared, and inventory and challans ask them
   assert.equal(typeof row.usage_count, 'number');
 
   assert.equal((await ctx.desk.as('units').call('orders.delete', { id: 1 })).code, 'not_declared');
-  assert.equal((await ctx.desk.as('orders').call('units.rows.get', { id: kg.unitId })).code, 'not_declared');
+  // Orders reads a line's unit since P4 (2026-11-19); clients never has.
+  assert.equal((await ctx.desk.as('orders').call('units.rows.get', { id: kg.unitId })).ok, true);
+  assert.equal((await ctx.desk.as('clients').call('units.rows.get', { id: kg.unitId })).code, 'not_declared');
 });
 
 test('the converter works on a server that has only just started', async (t) => {

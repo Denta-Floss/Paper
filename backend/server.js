@@ -359,6 +359,19 @@ desk.register('challans', {
 desk.register('orders', {
   uses: [
     'clients.rows.get',
+    'clients.subContractors.row',
+    // A line's unit and the item's conversion to its primary unit.
+    'units.rows.get',
+    'items.unitConversions.factor',
+    // Deleting a line puts back the stock its runs consumed.
+    'inventory.movements.consumedByRun',
+    // The reports: what was delivered, on what machines and dies, through
+    // which template, and where a consumed sheet came from.
+    'challans.deliveries.byOrderLines',
+    'challans.sheets.provenance',
+    'machines.rows.all',
+    'dies.rows.all',
+    'pipelines.templates.row',
     // Deleting an order line dissolves its runs, inside one transaction.
     'production.runs.linksForOrderItem',
     'production.runs.dissolve',
@@ -8701,7 +8714,7 @@ const {
   getOrderActivity,
   getOrderStatusHistory,
 } = ordersService;
-const ordersPorts = createOrdersPorts({ get, all, run, saveOrder });
+const ordersPorts = createOrdersPorts({ get, all, run, saveOrder, desk: desk.as('orders') });
 const clientsService = createClientService({ get, all, run, logChange, desk: desk.as('clients') });
 const {
   rowToClientDto,
@@ -15568,8 +15581,10 @@ purgeEntityVariations = variationsModule.purgeVariationsFor;
 // they are handed neither the database nor the service.
 desk.register('process_routes', {
   operations: require('./modules/process_routes/operations')({
-    service: require('./modules/process_routes/service')({ get, all, run }),
+    service: require('./modules/process_routes/service')({ get, all, run, desk: desk.as('process_routes') }),
   }),
+  // A route is named after its part, its group and that group's parent.
+  uses: ['items.rows.get', 'items.groups.row'],
 });
 require('./modules/process_routes/routes')({
   app,

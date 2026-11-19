@@ -103,6 +103,9 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink, d
     });
   }
 
+  /// Every die as stored, for a report that keys them by id and tool code.
+  const allDieRows = () => all('SELECT * FROM dies');
+
   /// The die a pipeline node names: nodes carry a tool code.
   const getDieRowByToolCode = (toolCode) => get('SELECT * FROM dies WHERE tool_code = ?', [toolCode]);
 
@@ -379,7 +382,7 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink, d
     return before;
   }
 
-  return { rowToDieDto, getDieRowByToolCode, removeDieRow, listDies, getDie, saveDie, deleteDie };
+  return { rowToDieDto, getDieRowByToolCode, allDieRows, removeDieRow, listDies, getDie, saveDie, deleteDie };
 }
 
 module.exports = { createDieService };

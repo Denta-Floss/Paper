@@ -328,6 +328,53 @@ function userOperations({ all, core, template, invoice, report, removeTemplate }
       },
     },
 
+    'challans.deliveries.byOrderLines': {
+      internal: true,
+      summary: 'What issued delivery challans delivered against each order line: one row per line and challan, with the pieces and weight summed. For the fulfilment report.',
+      input: { fields: {} },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async () => ({
+        ok: true,
+        rows: await all(`
+          SELECT
+            dci.order_item_id AS order_item_id,
+            dc.id             AS challan_id,
+            dc.challan_no     AS challan_no,
+            dc.date           AS challan_date,
+            dc.status         AS challan_status,
+            dc.customer_name  AS client_name,
+            SUM(dci.quantity_pcs) AS quantity_pcs,
+            SUM(dci.weight)       AS weight
+          FROM delivery_challan_items dci
+          JOIN delivery_challans dc ON dc.id = dci.challan_id
+          WHERE dci.order_item_id IS NOT NULL
+            AND dci.order_item_id > 0
+            AND dc.type = 'delivery'
+            AND dc.status = 'issued'
+          GROUP BY dci.order_item_id, dc.id
+          ORDER BY dci.order_item_id ASC, dc.date ASC, dc.id ASC
+        `),
+      }),
+    },
+
+    'challans.sheets.provenance': {
+      internal: true,
+      summary: 'Where a vendor sheet came from: its piece codes and weight, and the reception challan and vendor it arrived on; or nothing.',
+      input: { fields: { code: F.text } },
+      output: { fields: { row: { type: 'object', nullable: true } } },
+      run: async (input) => {
+        const rows = await all(`
+          SELECT pb.parent_code, pb.child_code, pb.weight,
+                 c.vendor_id, c.vendor_name, c.challan_no AS reception_challan_no, c.date AS reception_date
+          FROM piece_barcodes pb
+          JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+          JOIN delivery_challans c ON ci.challan_id = c.id
+          WHERE pb.parent_code = ? OR pb.child_code = ?
+        `, [input.code, input.code]);
+        return { ok: true, row: rows[0] || null };
+      },
+    },
+
     'challans.rows.brief': {
       internal: true,
       summary: 'The number and type of these challans, as rows of id, challan_no and type.',

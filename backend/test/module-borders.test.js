@@ -211,4 +211,7 @@ test('the places a module touches a table it does not own: none added, and none 
     'crossings were removed (good): record it with UPDATE_BORDER_SNAPSHOT=1 npm test',
   );
   assert.deepEqual(summary, expected.summary);
+  // Since P4 (2026-11-19): every read of another module's table is either an
+  // ask at the desk or declared in the registry with its reason.
+  assert.equal(summary.moduleReadsModule, 0, 'a module reads another module\'s table without asking or declaring it');
 });

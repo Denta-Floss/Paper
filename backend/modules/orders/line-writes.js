@@ -39,7 +39,7 @@ function createOrderLineWrites({ get, all, run, orders, inventoryPorts, desk }) 
 
       // Auto-update client code and name if client changed
       if (updates.clientId && updates.clientId !== existingItem.client_id) {
-        const client = await get('SELECT name, alias FROM clients WHERE id = ?', [updates.clientId]);
+        const { row: client } = await desk.ask('clients.rows.get', { id: updates.clientId });
         if (client) {
           clientName = client.name;
           clientCode = client.alias || client.name.substring(0, 3).toUpperCase();
@@ -108,10 +108,9 @@ function createOrderLineWrites({ get, all, run, orders, inventoryPorts, desk }) 
         const runId = assignment.pipeline_run_id;
 
         // Dissolve unused raw inputs (that were consumed) back to inventory
-        const consumedMovements = await all(
-          "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
-          [runId]
-        );
+        const { rows: consumedMovements } = await desk.ask('inventory.movements.consumedByRun', {
+          pipelineRunId: runId,
+        });
 
         for (const move of consumedMovements) {
           const qty = move.qty;

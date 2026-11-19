@@ -13,7 +13,7 @@
 // pair the B2B portal uses to place an order and are named for that.
 // ---------------------------------------------------------------------------
 
-function createOrdersPorts({ get, all, run, saveOrder }) {
+function createOrdersPorts({ get, all, run, saveOrder, desk }) {
   return {
     /// How many order lines name this client.
     async clientLineCount(clientId) {
@@ -142,14 +142,19 @@ function createOrdersPorts({ get, all, run, saveOrder }) {
 
       /// The line with its order and client: `{ order_item_id, order_no,
       /// client_name }`, or undefined when the line or its order is gone.
-      summary: (orderItemId) => get(
-        `SELECT i.id AS order_item_id, h.order_no, c.name AS client_name
-           FROM order_items i
-           JOIN order_headers h ON i.order_no = h.order_no
-           LEFT JOIN clients c ON h.client_id = c.id
-          WHERE i.id = ?`,
-        [orderItemId],
-      ),
+      async summary(orderItemId) {
+        const line = await get(
+          `SELECT i.id AS order_item_id, h.order_no, h.client_id
+             FROM order_items i
+             JOIN order_headers h ON i.order_no = h.order_no
+            WHERE i.id = ?`,
+          [orderItemId],
+        );
+        if (!line) return undefined;
+        const { client_id: clientId, ...rest } = line;
+        const client = clientId == null ? null : (await desk.ask('clients.rows.get', { id: clientId })).row;
+        return { ...rest, client_name: client ? client.name : null };
+      },
 
       async idsForOrderNo(orderNo) {
         const rows = await all('SELECT id FROM order_items WHERE order_no = ?', [orderNo]);

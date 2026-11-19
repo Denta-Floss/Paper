@@ -705,6 +705,25 @@
       "usedBy": []
     },
     {
+      "name": "challans.deliveries.byOrderLines",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "What issued delivery challans delivered against each order line: one row per line and challan, with the pieces and weight summed. For the fulfilment report.",
+      "input": {},
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
       "name": "challans.get",
       "module": "challans",
       "permission": "challans.read",
@@ -1743,6 +1762,29 @@
       "output": null,
       "usedBy": [
         "production"
+      ]
+    },
+    {
+      "name": "challans.sheets.provenance",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where a vendor sheet came from: its piece codes and weight, and the reception challan and vendor it arrived on; or nothing.",
+      "input": {
+        "code": {
+          "type": "string"
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "orders"
       ]
     },
     {
@@ -3518,7 +3560,8 @@
         }
       },
       "usedBy": [
-        "items"
+        "items",
+        "orders"
       ]
     },
     {
@@ -3917,6 +3960,25 @@
         }
       },
       "usedBy": []
+    },
+    {
+      "name": "dies.rows.all",
+      "module": "dies",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every die as stored. For the order reports, which key dies by id and tool code.",
+      "input": {},
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
     },
     {
       "name": "dies.rows.byToolCode",
@@ -4634,6 +4696,29 @@
         "jobs",
         "orders",
         "production"
+      ]
+    },
+    {
+      "name": "inventory.movements.consumedByRun",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "The ledger rows of stock a pipeline run consumed. Deleting an order line puts them back, inside its own transaction.",
+      "input": {
+        "pipelineRunId": {
+          "type": "string"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
       ]
     },
     {
@@ -6158,7 +6243,8 @@
         }
       },
       "usedBy": [
-        "inventory"
+        "inventory",
+        "process_routes"
       ]
     },
     {
@@ -6832,6 +6918,7 @@
       "usedBy": [
         "challans",
         "inventory",
+        "process_routes",
         "production"
       ]
     },
@@ -7166,6 +7253,32 @@
       "output": null,
       "usedBy": [
         "inventory"
+      ]
+    },
+    {
+      "name": "items.unitConversions.factor",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The factor that takes a quantity in this unit to the item’s primary unit, or null when the item has no such conversion.",
+      "input": {
+        "itemId": {
+          "type": "integer"
+        },
+        "unitId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "factor": {
+          "type": "number",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "orders"
       ]
     },
     {
@@ -7820,6 +7933,25 @@
         }
       },
       "usedBy": []
+    },
+    {
+      "name": "machines.rows.all",
+      "module": "machines",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Every machine as stored. For the order reports, which key machines by id, number and name.",
+      "input": {},
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "orders"
+      ]
     },
     {
       "name": "machines.rows.byAssetOrName",
@@ -9074,6 +9206,7 @@
       "usedBy": [
         "inventory",
         "items",
+        "orders",
         "production"
       ]
     },
@@ -10673,6 +10806,7 @@
         "challans",
         "inventory",
         "items",
+        "orders",
         "production"
       ]
     },
@@ -11139,15 +11273,24 @@
       "vendors.rows.get"
     ],
     "orders": [
+      "challans.deliveries.byOrderLines",
+      "challans.sheets.provenance",
       "clients.rows.get",
+      "clients.subContractors.row",
+      "dies.rows.all",
       "inventory.movements.applyCore",
+      "inventory.movements.consumedByRun",
       "items.resolveSelection",
+      "items.unitConversions.factor",
+      "machines.rows.all",
+      "pipelines.templates.row",
       "production.runs.allWithOrderItem",
       "production.runs.dissolve",
       "production.runs.forOrderItems",
       "production.runs.inputs",
       "production.runs.linksForOrderItem",
-      "production.runs.unlinkOrderItem"
+      "production.runs.unlinkOrderItem",
+      "units.rows.get"
     ],
     "dies": [
       "clients.exists",
@@ -11167,6 +11310,10 @@
       "inventory.movements.issuedToWorkerQty",
       "items.bom.lines",
       "people.employees.idByBarcode"
+    ],
+    "process_routes": [
+      "items.groups.row",
+      "items.rows.get"
     ]
   }
 }

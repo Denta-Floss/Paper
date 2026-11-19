@@ -76,6 +76,14 @@ module.exports = function machineOperations({
       run: async (input) => ({ ok: true, row: await service.getMachineRow(input.id) }),
     },
 
+    'machines.rows.all': {
+      internal: true,
+      summary: 'Every machine as stored. For the order reports, which key machines by id, number and name.',
+      input: { fields: {} },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async () => ({ ok: true, rows: await service.allMachineRows() }),
+    },
+
     'machines.rows.byAssetOrName': {
       internal: true,
       summary: 'The machine a pipeline node names, by its machine number or its name; or nothing.',

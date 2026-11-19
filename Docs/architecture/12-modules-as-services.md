@@ -5,7 +5,7 @@ It is edited with every change, so the plan, what is done, how the work went and
 what was found along the way are all here and nowhere else. If a conversation is
 lost, start from this file.
 
-Last updated: 2026-11-19 (P3 done: every field of every user operation is typed).
+Last updated: 2026-11-19 (P4 done: no module reads another module's table without asking or declaring it).
 
 ## 1. The plan
 
@@ -154,7 +154,7 @@ The packages, in order (approved 2026-11-19; P0 is done):
 | P1 | Remove the rest of the sandbox control plane (server and desktop app); socket.io removed outright, since no client connected to it | done |
 | P2 | Tests remove their temporary databases (B24) | done |
 | P3 | Typed contracts for every operation, per module, each with an evidence run | done |
-| P4 | Orders' 11 and process routes' 2 undeclared reads become asks or declared reads | |
+| P4 | Orders' 11 and process routes' 2 undeclared reads become asks or declared reads | done |
 | P5 | Items logic out of `server.js` into `modules/items` (~2,700 lines, 4 commits) | |
 | P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | |
 | P7 | Writes across modules get transactions (stage 2c); cascades deferred | |
@@ -333,14 +333,14 @@ Ticked only when a test proves it.
 - [x] `module-borders.test.js` with its starting list of crossings
 - [x] Starting count recorded here: **93** crossings
 
-| Crossings (a module's code naming a table it does not own) | Start | Units | Small masters | Production | Inventory | Challans | Items | Jobs, action centre |
-|---|---|---|---|---|---|---|---|---|
-| A module reads another module's table, undeclared | 63 | 57 | 54 | 50 | 42 | 36 | 25 | 13 |
-| A module reads another module's table, declared with a reason | 0 | 0 | 0 | 1 | 1 | 3 | 4 | 13 |
-| A module writes another module's table | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| A module touches a kernel table (links, assets, users…) | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
-| A kernel service (search, accounts, action centre data…) touches a module's table | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 |
-| **Total** | **93** | **87** | **84** | **81** | **73** | **69** | **59** | **56** |
+| Crossings (a module's code naming a table it does not own) | Start | Units | Small masters | Production | Inventory | Challans | Items | Jobs, action centre | P1 | P4 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A module reads another module's table, undeclared | 63 | 57 | 54 | 50 | 42 | 36 | 25 | 13 | 13 | **0** |
+| A module reads another module's table, declared with a reason | 0 | 0 | 0 | 1 | 1 | 3 | 4 | 13 | 13 | 15 |
+| A module writes another module's table | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| A module touches a kernel table (links, assets, users…) | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
+| A kernel service (search, accounts, settings…) touches a module's table | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 17 | 17 |
+| **Total** | **93** | **87** | **84** | **81** | **73** | **69** | **59** | **56** | **51** | **40** |
 
 Declared reads so far:
 
@@ -358,8 +358,15 @@ Declared reads so far:
   nature. For stage 3 each owner will have to answer "what of mine points at
   nothing" itself.
 
-The 13 undeclared module reads left are orders' 11 (its reports and the order
-list) and process routes' 2.
+- orders reads `delivery_challan_items` and `delivery_challans`: the order list
+  sums what was delivered against each line inside its one paged, filtered
+  query (and its run status comes from production through a fragment handed
+  over as text, which the scanner does not see).
+
+No module reads another module's table without asking or declaring it;
+`module-borders.test.js` now asserts that count is zero. What is left (40) is
+the 15 declared reads, the 8 module touches of kernel tables and the 17
+kernel-service touches of module tables (P6).
 
 What the meter cannot see: `server.js` itself, SQL whose table name is built at
 run time, and writes done through a function another module handed over (those
@@ -571,6 +578,7 @@ items are verified before anything is done about them.
 | B31 | Creating or changing a unit or a unit family with no name answered 500, as if the server had failed, because the master threw an error with no status | `modules/units/master.js` (`saveUnit`, `saveUnitGroup`) | The evidence run for enforce mode | Fixed 2026-11-19 by enforcing the contract: the answer is 400 "name is required". **Behaviour change** on four routes, recorded in `remaining-routes-snapshot.json` |
 | B32 | With the sandbox config gone, the desktop auto-updater (`lib/core/services/auto_updater_service.dart`) reads `latest_version` and `appcast_url` from built-in defaults and so never finds an update. It found none before either on an installation without a configured client. Updates need a new feed if they are wanted | `lib/core/services/auto_updater_service.dart` | Removing the control plane (P1) | Open, needs a decision on whether the desktop app should self-update at all |
 | B33 | `/api/mobile/stage-item`, `remove-staged-item`, `lock-inventory` and `challan-generated` only relayed to socket.io, which nothing listened to. They still answer success and now do nothing; the mobile app still calls them | `modules/settings/routes.js` | Removing socket.io (P1) | Open: remove them from the mobile app and the server together |
+| B34 | Both order reports loaded every machine and every die (`SELECT * FROM machines`, `SELECT * FROM dies`) to key them by id and name; they still do, now through `machines.rows.all` and `dies.rows.all`. A report-sized read, fine for a master of tens of rows; noted so nobody asks a module for its whole table for a per-row lookup | `modules/orders/reports.js` | P4 | Open, by design |
 | B19 | The unit DTO reads `unit_group_code` and `unit_group_integral_only`, which the units query never selects, so `unitGroupCode` is always null and `unitGroupIntegralOnly` always false in `GET /api/units` | `modules/units/master.js` (`rowToUnitDto`, `UNIT_ROW_SELECT`) | Moving the units code | Open: kept as it was |
 
 ## 6. Change log
@@ -596,3 +604,4 @@ items are verified before anything is done about them.
 | 2026-11-19 | P1. `modules/control_plane` deleted with its six routes, the six `sandbox_*` tables, their default-config seed in `initDb`, the login bypasses for those paths, `backend/dashboard.html`'s companion `feature_registry.json` and the `config-defaults-sync` drift test. socket.io removed from the server (`socket.io` dependency dropped) and from both apps' pubspecs; every `getIo`/`emit` hand-in and call is gone (items, challans, clients, vendors, orders, settings, party contacts). Desktop app: no activation gate or screen, no `DataSyncService`, no `SessionReplayService` (tap listener and navigator observer), `ConfigService.init` loads the built-in defaults and nothing else. Route surface loses exactly six routes; 441 tests pass. (Mind map change 57.) |
 | 2026-11-19 | P2. `test/helpers/temp-dir.js`: `makeTempDir(prefix)` is `mkdtempSync` plus removal at process exit. The 92 test files that made their own folder were rewritten mechanically to call it (111 fixed-prefix calls, 18 with a `prefix` variable, one aliased import); the now-unused `mkdtempSync` and `tmpdir` imports went with it. A first attempt named the helper `tempDir`, which the files' own `const tempDir = …` shadowed into a temporal-dead-zone error; renamed. `npm test` leaves zero `paper-*` folders. 441 tests pass. (Mind map change 58.) |
 | 2026-11-19 | P3. `kernel/fields.js` holds the words a contract is written in (`text`, `int`, `num`, `flag`, `id`, `key`, `list`, `obj`, `none`, `both`). Every user operation in every module now names its fields with a type: 43 items operations (the item and group payloads reuse `modules/items/contract.js`), 22 inventory, 42 challans (both spellings of every challan, invoice and template field), 15 production, 7 jobs, 8 action centre, and the untyped ids and payloads left in clients, dies, machines, orders, people, pipelines and process routes. Nothing new is `required`: the services keep refusing in their own words. `plainRequest` gives a moved handler `{}` for a missing body. Evidence run first (report mode, 28 violations: 20 were tests sending bad input on purpose; 8 were contract shapes stricter than the code, all loosened). Behaviour change: a non-numeric path id answers 400 instead of 404. A third test in `contract-surface.test.js` fails on any new untyped field and lists the eleven kept on purpose. 442 tests pass. (Mind map change 59.) |
+| 2026-11-19 | P4. Orders' eleven foreign reads and process routes' two became asks or declared reads. New internal operations: `items.unitConversions.factor`, `inventory.movements.consumedByRun` (joins the caller's transaction), `challans.deliveries.byOrderLines`, `challans.sheets.provenance`, `dies.rows.all`, `machines.rows.all`. Orders asks `units.rows.get`, `clients.subContractors.row`, `clients.rows.get` (order headers and the line summary now read their own row and ask for the client's name), `pipelines.templates.row`. Process routes asks `items.rows.get` and `items.groups.row` twice (the group and its parent). The order list's delivered-quantity subquery is declared in the registry. Crossings 51 → 40; undeclared module reads 0, asserted by the border test. 442 tests pass. (Mind map change 60.) |

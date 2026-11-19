@@ -150,7 +150,7 @@ function pipelineName({ group, type, partName, partCode } = {}) {
   return words.length ? `${words.join(' ')} pipeline` : 'pipeline';
 }
 
-module.exports = function createProcessRouteService({ get, all, run }) {
+module.exports = function createProcessRouteService({ get, all, run, desk }) {
   /// Routes still standing on a stage: drafts and active ones. A retired
   /// route is history and keeps its steps whatever happens to the stage.
   const USES = `(SELECT COUNT(DISTINCT s.route_id)
@@ -171,16 +171,20 @@ module.exports = function createProcessRouteService({ get, all, run }) {
   /// group and the Group as that group's parent; a part filed straight under
   /// a Group has no Type.
   async function pipelineNameFor(partId) {
-    const row = await get(
-      `SELECT i.name, i.display_name, i.part_code,
-              g.name AS group_name, p.name AS parent_name
-         FROM items i
-         LEFT JOIN groups g ON g.id = i.group_id
-         LEFT JOIN groups p ON p.id = g.parent_group_id
-        WHERE i.id = ?`,
-      [partId],
-    );
-    if (!row) return pipelineName();
+    // The part, its group and that group's parent are the items module's.
+    const { row: item } = await desk.ask('items.rows.get', { id: partId });
+    if (!item) return pipelineName();
+    const group = item.group_id == null ? null : (await desk.ask('items.groups.row', { id: item.group_id })).row;
+    const parent = group?.parent_group_id == null
+      ? null
+      : (await desk.ask('items.groups.row', { id: group.parent_group_id })).row;
+    const row = {
+      name: item.name,
+      display_name: item.display_name,
+      part_code: item.part_code,
+      group_name: group ? group.name : null,
+      parent_name: parent ? parent.name : null,
+    };
     const typed = row.parent_name != null;
     return pipelineName({
       group: typed ? row.parent_name : row.group_name,
@@ -192,7 +196,7 @@ module.exports = function createProcessRouteService({ get, all, run }) {
 
   /// Whether the part a route would belong to is still there.
   async function partExists(partId) {
-    return Boolean(await get('SELECT 1 FROM items WHERE id = ?', [partId]));
+    return Boolean((await desk.ask('items.rows.get', { id: partId })).row);
   }
 
   async function stepsFor(routeId) {

@@ -46,6 +46,17 @@ module.exports = function registerOrderReportRoutes(ctx) {
   /// An order's runs, newest first, one row per run-and-line link, each with
   /// the `order_item_id` it is for. The lines are this module's; the runs are
   /// asked of production.
+  /// An order's header with its client's name, which is the clients module's
+  /// to answer. `extra` names further header columns a report wants.
+  async function orderHeader(orderNo, extra = []) {
+    const columns = ['h.order_no', 'h.client_id', ...extra.map((column) => `h.${column}`)].join(', ');
+    const header = await get(`SELECT ${columns} FROM order_headers h WHERE h.order_no = ?`, [orderNo]);
+    if (!header) return header;
+    const { client_id: clientId, ...rest } = header;
+    const client = clientId == null ? null : (await desk.ask('clients.rows.get', { id: clientId })).row;
+    return { ...rest, client_name: client ? client.name : null };
+  }
+
   async function runsForOrderNo(orderNo) {
     const lines = await all('SELECT id FROM order_items WHERE order_no = ?', [orderNo]);
     return (await desk.ask('production.runs.forOrderItems', { orderItemIds: lines.map((line) => line.id) })).runs;
@@ -80,25 +91,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
       // challans whose lines carry an order_item_id as though they were
       // deliveries, and counted unissued drafts as goods that had left the
       // building. Issuing is the event that moves stock.
-      const deliveryRows = await all(`
-        SELECT
-          dci.order_item_id AS order_item_id,
-          dc.id             AS challan_id,
-          dc.challan_no     AS challan_no,
-          dc.date           AS challan_date,
-          dc.status         AS challan_status,
-          dc.customer_name  AS client_name,
-          SUM(dci.quantity_pcs) AS quantity_pcs,
-          SUM(dci.weight)       AS weight
-        FROM delivery_challan_items dci
-        JOIN delivery_challans dc ON dc.id = dci.challan_id
-        WHERE dci.order_item_id IS NOT NULL
-          AND dci.order_item_id > 0
-          AND dc.type = 'delivery'
-          AND dc.status = 'issued'
-        GROUP BY dci.order_item_id, dc.id
-        ORDER BY dci.order_item_id ASC, dc.date ASC, dc.id ASC
-      `);
+      const { rows: deliveryRows } = await desk.ask('challans.deliveries.byOrderLines', {});
       const deliveriesByOrderItem = new Map();
       for (const row of deliveryRows) {
         const list = deliveriesByOrderItem.get(row.order_item_id) || [];
@@ -110,10 +103,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
       const templateCache = new Map();
       const terminalNodeFor = async (templateId) => {
         if (templateCache.has(templateId)) return templateCache.get(templateId);
-        const template = await get(
-          'SELECT id, name, nodes_json FROM pipeline_templates WHERE id = ?',
-          [templateId],
-        );
+        const { row: template } = await desk.ask('pipelines.templates.row', { id: templateId });
         const nodes = template ? parseJson(template.nodes_json, []) : [];
         const terminal = nodes
           .slice()
@@ -252,12 +242,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
   app.get('/api/orders/:orderNo/production-report', requirePermission('config.read'), async (req, res) => {
     try {
       const orderNo = req.params.orderNo;
-      const header = await get(`
-        SELECT h.order_no, h.po_number, c.name AS client_name
-        FROM order_headers h
-        LEFT JOIN clients c ON h.client_id = c.id
-        WHERE h.order_no = ?
-      `, [orderNo]);
+      const header = await orderHeader(orderNo, ['po_number']);
       if (!header) {
         return res.status(404).json({ success: false, report: null, error: 'Order not found.' });
       }
@@ -267,7 +252,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
       `, [orderNo]);
       const runRows = await runsForOrderNo(orderNo);
       const itemById = new Map(items.map((item) => [item.id, item]));
-      const machineRows = await all('SELECT * FROM machines');
+      const { rows: machineRows } = await desk.ask('machines.rows.all', {});
       const machineByKey = new Map();
       for (const row of machineRows) {
         const dto = machineRowToDto(row);
@@ -275,7 +260,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
           if (key) machineByKey.set(String(key).trim(), dto);
         });
       }
-      const dieRows = await all('SELECT * FROM dies');
+      const { rows: dieRows } = await desk.ask('dies.rows.all', {});
       const dieByKey = new Map();
       for (const row of dieRows) {
         const dto = dieRowToDto(row);
@@ -288,10 +273,10 @@ module.exports = function registerOrderReportRoutes(ctx) {
       const runs = [];
       for (const runRow of runRows) {
         if (!templateCache.has(runRow.template_id)) {
-          templateCache.set(runRow.template_id, await get(
-            'SELECT id, name, nodes_json FROM pipeline_templates WHERE id = ?',
-            [runRow.template_id],
-          ));
+          templateCache.set(
+            runRow.template_id,
+            (await desk.ask('pipelines.templates.row', { id: runRow.template_id })).row,
+          );
         }
         const template = templateCache.get(runRow.template_id);
         const nodes = template ? parseJson(template.nodes_json, []) : [];
@@ -502,11 +487,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
   app.get('/api/orders/:orderNo/trace', requirePermission('config.read'), async (req, res) => {
     try {
       const orderNo = req.params.orderNo;
-      const header = await get(`
-        SELECT h.order_no, c.name AS client_name
-        FROM order_headers h LEFT JOIN clients c ON h.client_id = c.id
-        WHERE h.order_no = ?
-      `, [orderNo]);
+      const header = await orderHeader(orderNo);
       if (!header) {
         return res.status(404).json({ success: false, trace: null, error: 'Order not found.' });
       }
@@ -515,12 +496,12 @@ module.exports = function registerOrderReportRoutes(ctx) {
       const runRows = await runsForOrderNo(orderNo);
 
       const machineByKey = new Map();
-      for (const row of await all('SELECT * FROM machines')) {
+      for (const row of (await desk.ask('machines.rows.all', {})).rows) {
         const dto = machineRowToDto(row);
         [String(row.id), row.asset_id, row.name].forEach((k) => { if (k) machineByKey.set(String(k).trim(), dto); });
       }
       const dieByKey = new Map();
-      for (const row of await all('SELECT * FROM dies')) {
+      for (const row of (await desk.ask('dies.rows.all', {})).rows) {
         const dto = dieRowToDto(row);
         [String(row.id), row.tool_code].forEach((k) => { if (k) dieByKey.set(String(k).trim(), dto); });
       }
@@ -532,7 +513,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
         if (!templateCache.has(runRow.template_id)) {
           templateCache.set(
             runRow.template_id,
-            await get('SELECT nodes_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]),
+            (await desk.ask('pipelines.templates.row', { id: runRow.template_id })).row,
           );
         }
         const nodes = parseJson(templateCache.get(runRow.template_id)?.nodes_json, []);
@@ -561,14 +542,7 @@ module.exports = function registerOrderReportRoutes(ctx) {
         const sheets = [];
         for (const inp of inputs) {
           if (inp.source_kind === 'sheet' && inp.piece_parent_code) {
-            const sheet = await get(`
-              SELECT pb.parent_code, pb.child_code, pb.weight,
-                     c.vendor_id, c.vendor_name, c.challan_no AS reception_challan_no, c.date AS reception_date
-              FROM piece_barcodes pb
-              JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
-              JOIN delivery_challans c ON ci.challan_id = c.id
-              WHERE pb.parent_code = ? OR pb.child_code = ?
-            `, [inp.piece_parent_code, inp.piece_parent_code]);
+            const { row: sheet } = await desk.ask('challans.sheets.provenance', { code: inp.piece_parent_code });
             sheets.push(sheet ? {
               parentCode: sheet.parent_code,
               childCode: sheet.child_code,

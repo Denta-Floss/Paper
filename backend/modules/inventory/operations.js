@@ -256,6 +256,21 @@ function userOperations({ all, work }) {
       },
     },
 
+    'inventory.movements.consumedByRun': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'The ledger rows of stock a pipeline run consumed. Deleting an order line puts them back, inside its own transaction.',
+      input: { fields: { pipelineRunId: F.text } },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async (input) => ({
+        ok: true,
+        rows: await all(
+          "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
+          [input.pipelineRunId],
+        ),
+      }),
+    },
+
     'inventory.items.usage': {
       internal: true,
       summary: 'How many materials and material-group links name an item.',

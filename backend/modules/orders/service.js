@@ -231,9 +231,7 @@ function createOrdersService({
       };
     }
 
-    const unit = await get('SELECT * FROM units WHERE id = ?', [
-      normalizedUnitId,
-    ]);
+    const { row: unit } = await desk.ask('units.rows.get', { id: normalizedUnitId });
     if (!unit || unit.is_archived) {
       const error = new Error(
         'That unit is no longer active. Pick another unit or restore it in Masters → Units.',
@@ -245,15 +243,11 @@ function createOrdersService({
     let factorToPrimary = 1;
 
     if (requestedUnitId > 0 && requestedUnitId !== itemUnitId) {
-      const conversion = await get(
-        `
-        SELECT factor_to_primary
-        FROM item_unit_conversions
-        WHERE item_id = ? AND unit_id = ?
-        LIMIT 1
-        `,
-        [item.id, requestedUnitId],
-      );
+      const { factor } = await desk.ask('items.unitConversions.factor', {
+        itemId: item.id,
+        unitId: requestedUnitId,
+      });
+      const conversion = factor === null ? null : { factor_to_primary: factor };
       if (!conversion) {
         const error = new Error(
           'This item does not use that unit yet. Add the conversion in the order line, then save again.',
@@ -301,6 +295,8 @@ function createOrdersService({
         END AS effective_status
       FROM (
         SELECT o.*,
+          -- A read of challans' tables inside the one paged, filtered list
+          -- query; declared in kernel/registry.js (orders.reads).
           (SELECT SUM(dci.quantity_pcs) 
            FROM delivery_challan_items dci 
            JOIN delivery_challans dc ON dci.challan_id = dc.id 
@@ -815,7 +811,7 @@ function createOrdersService({
       throw error;
     }
     if (normalizedSubContractorId) {
-      const subContractor = await get('SELECT client_id FROM sub_contractors WHERE id = ?', [normalizedSubContractorId]);
+      const { row: subContractor } = await desk.ask('clients.subContractors.row', { id: normalizedSubContractorId });
       if (!subContractor) {
         const error = new Error('Selected sub-contractor is not available.');
         error.statusCode = 400;

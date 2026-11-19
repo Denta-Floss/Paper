@@ -59,6 +59,9 @@ function createMachineService({ get, all, run, parseJson, desk }) {
   /// The row as stored, or undefined.
   const getMachineRow = (id) => get('SELECT * FROM machines WHERE id = ?', [id]);
 
+  /// Every machine as stored, for a report that keys them by id, number and name.
+  const allMachineRows = () => all('SELECT * FROM machines');
+
   /// The machine a pipeline node names: nodes carry a machine number or a name.
   const getMachineRowByAssetOrName = (key) =>
     get('SELECT * FROM machines WHERE asset_id = ? OR name = ?', [key, key]);
@@ -277,7 +280,7 @@ function createMachineService({ get, all, run, parseJson, desk }) {
     return before;
   }
 
-  return { rowToMachineDto, getMachineRow, getMachineRowByAssetOrName, removeMachineRow, listMachines, getMachine, saveMachine, deleteMachine };
+  return { rowToMachineDto, getMachineRow, getMachineRowByAssetOrName, allMachineRows, removeMachineRow, listMachines, getMachine, saveMachine, deleteMachine };
 }
 
 module.exports = { createMachineService };

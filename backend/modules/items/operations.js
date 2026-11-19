@@ -458,6 +458,20 @@ function internalOperations({ all, get }) {
       }),
     },
 
+    'items.unitConversions.factor': {
+      internal: true,
+      summary: 'The factor that takes a quantity in this unit to the item’s primary unit, or null when the item has no such conversion.',
+      input: { fields: { itemId: F.int, unitId: F.int } },
+      output: { fields: { factor: { type: 'number', nullable: true } } },
+      run: async (input) => {
+        const row = await get(
+          'SELECT factor_to_primary FROM item_unit_conversions WHERE item_id = ? AND unit_id = ? LIMIT 1',
+          [input.itemId, input.unitId],
+        );
+        return { ok: true, factor: row ? Number(row.factor_to_primary) : null };
+      },
+    },
+
     'items.rows.get': {
       internal: true,
       summary: 'An item’s row as stored, or nothing.',
