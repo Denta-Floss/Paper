@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 test('stage reconciliation metrics persist to stage_reconciliations table', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-stage-recon-'));
+  const tempDir = makeTempDir('paper-stage-recon-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];

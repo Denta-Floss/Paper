@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Groups carried no realtime signal at all. A group another user created,
 // renamed, deleted or filled with variants stayed invisible until someone
@@ -36,7 +35,7 @@ function closeServer(server) {
 }
 
 test('group writes reach the changelog the clients read', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-group-rt-'));
+  const tempDir = makeTempDir('paper-group-rt-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'rt@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

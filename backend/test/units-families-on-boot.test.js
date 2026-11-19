@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The unit families are the units contract, not demo data. A database booted
 // without the demo seed used to get migration 051's six family rows with no
@@ -10,7 +9,7 @@ const test = require('node:test');
 // screen could offer a dozen or a gross.
 
 test('a plain boot links the families to their ladders, once', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-units-boot-'));
+  const tempDir = makeTempDir('paper-units-boot-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'units-boot@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'UnitsBoot1234';

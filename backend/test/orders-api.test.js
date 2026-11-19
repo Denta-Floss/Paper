@@ -1,12 +1,11 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 test('orders persistence functions create, list, and update lifecycle', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-orders-api-'));
+  const tempDir = makeTempDir('paper-orders-api-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
   process.env.PAPER_S3_REGION = 'us-east-1';

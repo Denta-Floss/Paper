@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync, readFileSync, existsSync } = require('node:fs');
+const { readFileSync, existsSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Where the in-app marker's marks end up. The app is sandboxed on macOS and
 // cannot write anywhere findable, so the backend keeps the file — which makes
@@ -19,7 +19,7 @@ function listen(app) {
 }
 
 test('marks posted by the app are written, read back and cleared', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-dev-marks-'));
+  const tempDir = makeTempDir('paper-dev-marks-');
   const marksFile = path.join(tempDir, 'marks.jsonl');
   process.env.PAPER_MARKS_FILE = marksFile;
   process.env.DB_PATH = path.join(tempDir, 'paper.db');

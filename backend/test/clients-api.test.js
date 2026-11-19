@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The client master over HTTP, the parts client-archive.test.js and
 // party-contacts.test.js do not reach: the plain save and its refusals, the rule
@@ -28,7 +27,7 @@ function closeServer(server) {
 }
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-clients-'));
+  const tempDir = makeTempDir('paper-clients-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'clients@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

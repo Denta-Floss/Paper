@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The materials side of inventory over HTTP, the routes inventory-sets-api,
 // material-governance and barcode-ledger-events do not reach: child creation,
@@ -29,7 +28,7 @@ function closeServer(server) {
 }
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-'));
+  const tempDir = makeTempDir('paper-inventory-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'inventory@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

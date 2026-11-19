@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Every operation the modules publish at the kernel desk, with its contract,
 // pinned in a fixture: the name, who it is for (a permission, or other modules
@@ -25,7 +24,7 @@ const test = require('node:test');
 const FIXTURE = path.join(__dirname, 'fixtures', 'contract-surface.json');
 
 test('the operations the modules publish, and their contracts, are the ones in the fixture', () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-contract-surface-'));
+  const tempDir = makeTempDir('paper-contract-surface-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'contract-surface@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

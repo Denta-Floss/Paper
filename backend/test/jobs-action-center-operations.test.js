@@ -1,12 +1,11 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { createDesk } = require('../kernel/desk');
 const { jobsClient } = require('../modules/jobs/client');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Jobs and the action centre behind the kernel desk: the last two modules.
 //
@@ -25,7 +24,7 @@ function listen(app) {
 }
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-jobs-ac-ops-'));
+  const tempDir = makeTempDir('paper-jobs-ac-ops-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'last-two@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

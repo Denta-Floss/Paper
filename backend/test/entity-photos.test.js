@@ -1,10 +1,10 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { mkdtempSync, existsSync } = require('node:fs');
+const { existsSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Photos for a company, a person and a part, with no S3 bucket configured.
 // Uploads were S3-only and answered 503 without one; now a folder on this
@@ -34,7 +34,7 @@ const PNG = Buffer.from(
 );
 
 test('a logo and a person\'s photo store and read back without S3', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-photos-'));
+  const tempDir = makeTempDir('paper-photos-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_UPLOAD_DIR = path.join(tempDir, 'uploads');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'photos@paper.local';

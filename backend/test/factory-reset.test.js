@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The nuke: POST /api/admin/factory-reset. Its own temp DB, because the last
 // assertion genuinely wipes everything.
@@ -44,7 +43,7 @@ async function getJson(baseUrl, pathName, token) {
 }
 
 test('factory reset is super_admin only and needs the confirmation phrase', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-factory-reset-'));
+  const tempDir = makeTempDir('paper-factory-reset-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

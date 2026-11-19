@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Units master & conversion: the convert-batch endpoint accepts qualified
 // values ("22G") and unit-id pairs, returning one result per requested
@@ -26,7 +25,7 @@ function closeServer(server) {
 }
 
 test('units convert-batch answers per-conversion results', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-units-conv-'));
+  const tempDir = makeTempDir('paper-units-conv-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'units-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

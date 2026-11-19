@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A combination group is where a family of variants is gathered, and the base
 // item — the one carrying the top-level properties every variant is struck
@@ -32,7 +31,7 @@ function closeServer(server) {
 }
 
 test('a base item with top-level properties can join a combination group', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-combo-base-'));
+  const tempDir = makeTempDir('paper-combo-base-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'combo-base@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

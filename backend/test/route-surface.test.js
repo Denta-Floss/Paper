@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Every "METHOD /path" the server answers, as a sorted list, pinned in a
 // fixture.
@@ -49,7 +48,7 @@ function listRoutes(app) {
 }
 
 test('the set of routes the server answers is the one in the fixture', () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-route-surface-'));
+  const tempDir = makeTempDir('paper-route-surface-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'route-surface@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The generic link graph (modules/links/*): one row per link, read from either
 // end, over both the generic store and the two legacy item link tables.
@@ -30,7 +29,7 @@ function closeServer(server) {
 }
 
 test('links are one row readable from either end', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-entity-links-'));
+  const tempDir = makeTempDir('paper-entity-links-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'links-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -309,7 +308,7 @@ test('links are one row readable from either end', async () => {
 });
 
 test('a link is gated on both masters it spans', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-entity-links-authz-'));
+  const tempDir = makeTempDir('paper-entity-links-authz-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'links-authz@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -482,7 +481,7 @@ test('a link is gated on both masters it spans', async () => {
 });
 
 test('a set is a linkable master, and run output stays out of the picker', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-entity-links-sets-'));
+  const tempDir = makeTempDir('paper-entity-links-sets-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'links-sets@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsLink1234';

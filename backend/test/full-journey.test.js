@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { Journey, printReport } = require('../journey/full-journey');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The whole item-sheet workflow through the API, on a throwaway server with
 // the local photo store — every commit. The same journey runs against a
@@ -20,7 +19,7 @@ function listen(app) {
 }
 
 test('everything a part carries is written, survives a fresh sign-in, and the photos come back', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-journey-'));
+  const tempDir = makeTempDir('paper-journey-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_UPLOAD_DIR = path.join(tempDir, 'uploads');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'journey@paper.local';

@@ -1,10 +1,10 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { mkdtempSync, existsSync } = require('node:fs');
+const { existsSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A part's photos — its views, up to five — against the local store: each
 // photo with its thumbnail, an ordered array to read, one PUT for order and
@@ -34,7 +34,7 @@ const thumbBytes = (n) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 test('a part keeps up to five photos, each with a thumbnail, in an order', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-gallery-'));
+  const tempDir = makeTempDir('paper-gallery-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_UPLOAD_DIR = path.join(tempDir, 'uploads');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'gallery@paper.local';

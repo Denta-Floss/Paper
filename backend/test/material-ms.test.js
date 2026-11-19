@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // "Steel / MS" was one row doing two jobs. On a shop floor it is called MS, so
 // that is what the list says now.
@@ -14,7 +13,7 @@ const test = require('node:test');
 // in place, and this proves the links survive.
 
 async function boot(prefix, email) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = email;
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

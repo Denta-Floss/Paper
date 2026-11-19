@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Integration coverage for the items module routes (modules/items/routes.js)
 // after their verbatim evacuation from server.js — every moved route gets at
@@ -26,7 +25,7 @@ function closeServer(server) {
 }
 
 test('items module routes work end-to-end after evacuation', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-items-module-'));
+  const tempDir = makeTempDir('paper-items-module-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'items-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

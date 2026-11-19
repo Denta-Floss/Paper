@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A sheet plan is worth nothing if it does not survive being closed.
 //
@@ -93,7 +92,7 @@ const SHEET_PLAN = {
 };
 
 test('a sheet plan survives being saved and reopened', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-sheet-plan-'));
+  const tempDir = makeTempDir('paper-sheet-plan-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sheets@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

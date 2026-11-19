@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Your own Account & Access, from the profile: your trail, your sessions and
 // your password are yours, whatever your permissions say about other people's.
@@ -17,7 +16,7 @@ function listen(app) {
 }
 
 test('your own account: trail, sessions and password', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-my-account-'));
+  const tempDir = makeTempDir('paper-my-account-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'me@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

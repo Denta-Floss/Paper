@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Reaching an Assembly node pushes the stage into the freelancer job pool so
 // it can be assigned to workers. A node's status can be re-set any number of
@@ -70,7 +69,7 @@ function templatePayload(id, outputItemId) {
 }
 
 test('an Assembly node raises exactly one job however often its status is re-set', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-assembly-'));
+  const tempDir = makeTempDir('paper-assembly-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -154,7 +153,7 @@ test('an Assembly node raises exactly one job however often its status is re-set
 });
 
 test('a job already assigned to a freelancer is not rewritten when the node is re-set', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-assembly-assigned-'));
+  const tempDir = makeTempDir('paper-assembly-assigned-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly2@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -233,7 +232,7 @@ test('a job already assigned to a freelancer is not rewritten when the node is r
 });
 
 test('a supervisor booking scrap on an assembly stage rejects it on the worker job', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-assembly-reject-'));
+  const tempDir = makeTempDir('paper-assembly-reject-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly3@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -309,7 +308,7 @@ test('a supervisor booking scrap on an assembly stage rejects it on the worker j
 });
 
 test('reconciling an assembly stage mints a temporary set into inventory', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-assembly-set-'));
+  const tempDir = makeTempDir('paper-assembly-set-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly4@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -399,7 +398,7 @@ test('reconciling an assembly stage mints a temporary set into inventory', async
 });
 
 test('a produced set keeps a ledger: in from production, out when issued to a worker', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-assembly-ledger-'));
+  const tempDir = makeTempDir('paper-assembly-ledger-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'assembly5@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { summarise, schemaToDto } = require('../modules/items/group-overview');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The overview answers "what is this group", which the editor never did. The
 // part most worth guarding is where the items come from: a combination group
@@ -74,7 +73,7 @@ test('a missing schema is an empty one, not a crash', () => {
 });
 
 test('the overview reads a real group end-to-end', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-group-overview-'));
+  const tempDir = makeTempDir('paper-group-overview-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'overview@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

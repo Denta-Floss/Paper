@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The client portal's tables take a portal user for a client and a cart line
 // for an item.
@@ -12,7 +11,7 @@ const test = require('node:test');
 // exist. It now builds its own database.
 
 test('a portal user for a client, and an item in their cart', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-portal-tables-'));
+  const tempDir = makeTempDir('paper-portal-tables-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   delete require.cache[require.resolve('../server.js')];
   const backend = require('../server.js');

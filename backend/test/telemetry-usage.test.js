@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The fleet snapshot used to say how *big* a deployment was — orders, items,
 // users. That cannot answer the question that decides what to build next:
@@ -15,7 +14,7 @@ const test = require('node:test');
 // typed into them.
 
 test('the snapshot reports how the software is used, not just how much', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-telemetry-'));
+  const tempDir = makeTempDir('paper-telemetry-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'tele@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -80,7 +79,7 @@ test('telemetry never throws, whatever the schema looks like', async () => {
   // A deployment must not misbehave because a metric could not be computed.
   // The usage block is wrapped for exactly this reason, so an older or partly
   // migrated database still produces a snapshot rather than an exception.
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-telemetry-drop-'));
+  const tempDir = makeTempDir('paper-telemetry-drop-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'tele2@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

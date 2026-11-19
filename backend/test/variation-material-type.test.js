@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A Material variation property names its values from the material master, and
 // each value carries the id of the type it stands for.
@@ -31,7 +30,7 @@ function closeServer(server) {
 }
 
 test('a Material property keeps the material id on each of its values', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-var-material-'));
+  const tempDir = makeTempDir('paper-var-material-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'material@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

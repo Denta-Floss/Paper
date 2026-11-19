@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 function loadFreshBackend() {
   const backendPath = require.resolve('../server.js');
@@ -12,7 +11,7 @@ function loadFreshBackend() {
 }
 
 test('inventory sets can be created, merged, listed, rejected, and deleted', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-'));
+  const tempDir = makeTempDir('paper-inventory-sets-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-owner@paper.local';
@@ -133,7 +132,7 @@ test('inventory sets can be created, merged, listed, rejected, and deleted', asy
 });
 
 test('inventory sets reject mixed valid and invalid lines without partial save', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-strict-'));
+  const tempDir = makeTempDir('paper-inventory-sets-strict-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-strict@paper.local';
@@ -198,7 +197,7 @@ test('inventory sets reject mixed valid and invalid lines without partial save',
 });
 
 test('inventory sets allow base items with no variation leaf', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-base-'));
+  const tempDir = makeTempDir('paper-inventory-sets-base-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-base@paper.local';
@@ -262,7 +261,7 @@ test('inventory sets allow base items with no variation leaf', async () => {
 });
 
 test('a set can be filed under a group, re-filed, and cleared', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-group-'));
+  const tempDir = makeTempDir('paper-inventory-sets-group-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-group@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsGroup1234';
@@ -389,7 +388,7 @@ test('a set can be filed under a group, re-filed, and cleared', async () => {
 });
 
 test('a set rejects a missing or archived group and survives its group being deleted', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-group-edge-'));
+  const tempDir = makeTempDir('paper-inventory-sets-group-edge-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-edge@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsEdge1234';
@@ -479,7 +478,7 @@ test('a set rejects a missing or archived group and survives its group being del
 });
 
 test('filing a set needs inventory.update alone, not items.update', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-perm-'));
+  const tempDir = makeTempDir('paper-inventory-sets-perm-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-perm@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsPerm1234';
@@ -556,7 +555,7 @@ async function setLinkCount(backend, setId) {
 }
 
 test('a set save carries the version it was opened at', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-inventory-sets-version-'));
+  const tempDir = makeTempDir('paper-inventory-sets-version-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'sets-version@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'SetsVersion1234';

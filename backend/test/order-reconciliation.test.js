@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The statement belongs on the order: the order is the only thing that knows
 // what was asked for and how much of it has been met, and a delivery challan is
@@ -38,7 +37,7 @@ function closeServer(server) {
 }
 
 test('an order can account for what it consumed, made and shipped', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-order-recon-'));
+  const tempDir = makeTempDir('paper-order-recon-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'recon@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -202,7 +201,7 @@ test('an order can account for what it consumed, made and shipped', async () => 
 });
 
 test('an order says what it could not trace rather than reporting zero', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-order-recon-gap-'));
+  const tempDir = makeTempDir('paper-order-recon-gap-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'recon2@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -296,7 +295,7 @@ test('an order says what it could not trace rather than reporting zero', async (
 });
 
 test('an unknown order is a 404, not an empty statement', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-order-recon-404-'));
+  const tempDir = makeTempDir('paper-order-recon-404-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'recon3@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The challan routes nothing else reaches over HTTP: update, cancel and its
 // options, report groups, print, delete, piece barcodes, the order's challan
@@ -29,7 +28,7 @@ function closeServer(server) {
 }
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challans-routes-'));
+  const tempDir = makeTempDir('paper-challans-routes-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'challans@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -331,7 +330,7 @@ test('invoices: an edit replaces the lines and recomputes the totals', async (t)
 
 test('a challan photo uploads end to end, and only through its own challan', async (t) => {
   const crypto = require('node:crypto');
-  const uploadDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-uploads-'));
+  const uploadDir = makeTempDir('paper-challan-uploads-');
   process.env.PAPER_UPLOAD_DIR = uploadDir;
   delete process.env.PAPER_S3_BUCKET_NAME;
   delete process.env.S3_BUCKET;

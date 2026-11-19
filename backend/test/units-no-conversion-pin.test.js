@@ -1,15 +1,14 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Pins the state of the units module in Phase 2:
 // Standard families and integer factor ladders per `.claude/skills/units/SKILL.md`.
 // Conversion ladders are real, base units are integer 1, and no fractional factors exist.
 
 test('seeded workspace has standard families and conversion ladders (Phase 2)', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-units-pin-'));
+  const tempDir = makeTempDir('paper-units-pin-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'units-pin@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

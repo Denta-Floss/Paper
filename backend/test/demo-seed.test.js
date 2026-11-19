@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 test('demo dataset is rich enough for app walkthroughs', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-demo-seed-'));
+  const tempDir = makeTempDir('paper-demo-seed-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
 

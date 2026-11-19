@@ -1,13 +1,12 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const barcodes = require('../kernel/barcodes');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The custody ledger is only worth having if the events actually fire. Three
 // existed (INWARD_RECEIVED, DISPATCH_PACKED, ISSUED_TO_PIPELINE) and the trail
@@ -33,7 +32,7 @@ function closeServer(server) {
 }
 
 async function boot(prefix, email) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = email;
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

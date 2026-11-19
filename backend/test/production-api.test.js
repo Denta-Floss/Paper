@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The production module's routes, pinned before they left server.js: runs
 // (list, create, get, delete), node status through to a completed run, batches,
@@ -13,7 +12,7 @@ const test = require('node:test');
 // jobs-api.test.js.
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-production-api-'));
+  const tempDir = makeTempDir('paper-production-api-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'production@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

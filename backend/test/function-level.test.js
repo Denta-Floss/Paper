@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A module at function level: its work asked for by name at the kernel desk,
 // with no request anywhere. Two things are pinned here.
@@ -32,7 +31,7 @@ function closeServer(server) {
 }
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-function-level-'));
+  const tempDir = makeTempDir('paper-function-level-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'function@example.test';

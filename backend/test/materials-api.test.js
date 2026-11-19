@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { weightKg, validate } = require('../modules/items/material-types');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The material master exists for one sum: volume × density = weight. So the
 // arithmetic is tested directly, and the API is tested for the ways a density
@@ -72,7 +71,7 @@ test('an unknown category falls back rather than being stored raw', () => {
 });
 
 test('the material master seeds, lists, edits and archives', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-materials-'));
+  const tempDir = makeTempDir('paper-materials-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'materials@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

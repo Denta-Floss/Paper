@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const sqlite3 = require('sqlite3');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A deployed database that already had its own unit group called "Count"
 // stopped the server from booting: migration 051 inserted the Count family
@@ -21,7 +20,7 @@ function open(file) {
 }
 
 test('051 on a database that already has groups named for the families', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'paper-051-'));
+  const dir = makeTempDir('paper-051-');
   const db = open(path.join(dir, 'old.db'));
   try {
     // The shape before 051: no code columns, and two groups called Count.
@@ -71,7 +70,7 @@ test('a server left with a coded Count and an older uncoded one still boots', as
   // What the failed 051 left on the deployed database: the family it inserted
   // (coded) beside the group the database already had (not coded). The boot
   // seeding then picked the older, uncoded row and coded it — the same error.
-  const dir = mkdtempSync(path.join(tmpdir(), 'paper-051-boot-'));
+  const dir = makeTempDir('paper-051-boot-');
   process.env.DB_PATH = path.join(dir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'units-051@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Units051Pass1';

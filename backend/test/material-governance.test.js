@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 function loadFreshBackend() {
   const backendPath = require.resolve('../server.js');
@@ -12,7 +11,7 @@ function loadFreshBackend() {
 }
 
 test('group governance persists and can be updated without recreating material', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-governance-'));
+  const tempDir = makeTempDir('paper-governance-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
 
@@ -149,7 +148,7 @@ test('group governance persists and can be updated without recreating material',
 });
 
 test('effective schema applies discarded inherited keys and item save snapshots resolved schema', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-governance-schema-'));
+  const tempDir = makeTempDir('paper-governance-schema-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
 
@@ -284,7 +283,7 @@ test('effective schema applies discarded inherited keys and item save snapshots 
 });
 
 test('materials parent create persists structured schema and effective-schema endpoint returns inherited lineage', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-governance-http-'));
+  const tempDir = makeTempDir('paper-governance-http-');
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'schema-owner@paper.local';

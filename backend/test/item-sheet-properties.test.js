@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The item sheet's own property columns (061): added with the sheet's "+",
 // each with a list of options, kept for everyone until the column is removed.
@@ -24,7 +23,7 @@ function closeServer(server) {
 }
 
 async function boot(prefix, email) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = email;
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

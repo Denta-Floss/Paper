@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 function loadBackend() {
   delete require.cache[require.resolve('../server.js')];
@@ -11,7 +10,7 @@ function loadBackend() {
 }
 
 test('auth roles and delete approval workflow', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-auth-api-'));
+  const tempDir = makeTempDir('paper-auth-api-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'primary@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -312,7 +311,7 @@ test('auth roles and delete approval workflow', async () => {
 });
 
 test('clear-data preserves auth state and reset-demo-data rebuilds seeded workspace', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-auth-reset-'));
+  const tempDir = makeTempDir('paper-auth-reset-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';
@@ -567,7 +566,7 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
 });
 
 test('initDb drops legacy tables referencing the old orders table so clear-data succeeds', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-stale-orders-'));
+  const tempDir = makeTempDir('paper-stale-orders-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';

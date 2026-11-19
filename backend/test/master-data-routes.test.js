@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The Master Data routes over HTTP: the (variant, pipeline) pair is the key, so
 // the same variant on two pipelines must answer with two different baselines,
@@ -26,7 +25,7 @@ function closeServer(server) {
 }
 
 test('Master Data routes key on the (variant, pipeline) pair', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-master-data-'));
+  const tempDir = makeTempDir('paper-master-data-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'md-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Stock put on a production run node by QUANTITY rather than by scanning one
 // barcode. Stock of one item and variation can sit under several barcodes (one
@@ -12,7 +11,7 @@ const test = require('node:test');
 // only for a split somebody approved.
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-run-stock-'));
+  const tempDir = makeTempDir('paper-run-stock-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'runstock@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A company's documents: named files of any kind (a PDF, a picture, a
 // spreadsheet) kept on a client or a contractor beside its photos — but never
@@ -21,7 +20,7 @@ function listen(app) {
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 test('a company keeps named documents of any kind, apart from its logo', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-company-documents-'));
+  const tempDir = makeTempDir('paper-company-documents-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_UPLOAD_DIR = path.join(tempDir, 'uploads');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'docs@paper.local';

@@ -1,7 +1,5 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -9,6 +7,7 @@ const ASKS = require('../modules/challans/asks');
 const { challansClient } = require('../modules/challans/client');
 const { createChallansPorts } = require('../modules/challans/ports');
 const { answered, answerFile, clientFromAsks, operationsFromAsks, joinOperations } = require('../kernel/desk-kit');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Challans behind the kernel desk.
 //
@@ -28,7 +27,7 @@ function listen(app) {
 }
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challans-ops-'));
+  const tempDir = makeTempDir('paper-challans-ops-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'challans@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

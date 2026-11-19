@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The order-book fulfilment rollup: one request for every order line's
 // ordered / delivered / produced position.
@@ -21,7 +20,7 @@ function closeServer(server) {
 }
 
 test('order fulfilment rollup reports ordered, delivered and produced per line', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-fulfilment-'));
+  const tempDir = makeTempDir('paper-fulfilment-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'fulfil@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -93,7 +92,7 @@ test('order fulfilment rollup reports ordered, delivered and produced per line',
 });
 
 test('scenario_c seeds every state the insights screen can show', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-scenario-c-'));
+  const tempDir = makeTempDir('paper-scenario-c-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'scenc@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

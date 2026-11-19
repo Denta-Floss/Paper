@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 const {
   UnitParseError,
@@ -80,7 +79,7 @@ test('Units Contract: Cross-family conversion throws (Invariant I4)', () => {
 });
 
 test('Units Contract: Seeded workspace contains canonical families and ladders', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-units-ladders-'));
+  const tempDir = makeTempDir('paper-units-ladders-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'units-ladder@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

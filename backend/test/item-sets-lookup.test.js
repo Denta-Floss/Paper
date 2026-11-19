@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Which sets hold a part, asked from the part's side.
 //
@@ -27,7 +26,7 @@ function closeServer(server) {
 }
 
 test('a part reports the sets that hold it, one row per line', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-item-sets-'));
+  const tempDir = makeTempDir('paper-item-sets-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'item-sets@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

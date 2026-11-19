@@ -1,12 +1,11 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 test('master usage guards, simple orders, and material variation links stay consistent', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-integrity-'));
+  const tempDir = makeTempDir('paper-integrity-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';

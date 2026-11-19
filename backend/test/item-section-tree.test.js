@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { validateSectionTree } = require('../modules/items/section-tree');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A part's section tree (migration 057): how its item sheet is nested, and
 // the links that nesting stands for. Die under Client = the client's tooling;
@@ -26,7 +25,7 @@ function closeServer(server) {
 }
 
 async function boot(prefix, email) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = email;
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

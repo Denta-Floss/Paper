@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The desktop asks the phone to take a photo: a click on a photo slot files a
 // request for the person who clicked, their phone (logged in as them at the
@@ -61,7 +60,7 @@ function watch(base, token) {
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test('the desktop queues a photo, the same user\'s phone takes it', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-photo-requests-'));
+  const tempDir = makeTempDir('paper-photo-requests-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_UPLOAD_DIR = path.join(tempDir, 'uploads');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'phone@paper.local';
@@ -200,7 +199,7 @@ test('the desktop queues a photo, the same user\'s phone takes it', async () => 
 });
 
 test('every photo upload is announced, so open screens re-read it', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-asset-changed-'));
+  const tempDir = makeTempDir('paper-asset-changed-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_UPLOAD_DIR = path.join(tempDir, 'uploads');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'announce@paper.local';

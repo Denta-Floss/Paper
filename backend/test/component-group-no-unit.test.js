@@ -1,16 +1,15 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A component group holds items that each carry their own unit, so asking the
 // group for one is asking a question its members already answer. The UI stopped
 // offering the field; this is the half that has to agree.
 test('a component group saves without a unit, an item group still needs one', async () => {
   process.env.DB_PATH = path.join(
-    mkdtempSync(path.join(tmpdir(), 'paper-component-unit-')),
+    makeTempDir('paper-component-unit-'),
     'paper.db',
   );
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'component-owner@paper.local';

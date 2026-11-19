@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The variation tree for masters other than items (modules/variations/*).
 //
@@ -27,7 +26,7 @@ function closeServer(server) {
 }
 
 test('a die carries a versioned variation tree', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-variations-'));
+  const tempDir = makeTempDir('paper-variations-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'vars-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -217,7 +216,7 @@ test('a die carries a versioned variation tree', async () => {
 });
 
 test('a variation tree is gated by the master that owns it', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-variations-authz-'));
+  const tempDir = makeTempDir('paper-variations-authz-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'vars-authz@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

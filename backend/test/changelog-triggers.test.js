@@ -1,10 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Every write must record that it happened.
 //
@@ -37,7 +36,7 @@ const LATER = [
 const ALL_TRIGGERED = [...REPLICATED, ...LATER];
 
 async function boot(prefix) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'changelog@paper.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
@@ -532,8 +531,7 @@ test('a client can catch up from a position, and is told when it cannot', async 
   // The endpoint a replica calls at launch. The SSE stream replays too, but a
   // client catching up wants a request that ends rather than a connection it
   // must decide when to stop reading.
-  const { mkdtempSync: mk } = require('node:fs');
-  const http = require('node:http');
+    const http = require('node:http');
   const backend = await boot('paper-changes-');
   const server = http.createServer(backend.app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

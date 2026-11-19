@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 test('delivery challans create issue and preserve company profile snapshot', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-challans-'));
+  const tempDir = makeTempDir('paper-delivery-challans-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -381,7 +380,7 @@ test('delivery challans create issue and preserve company profile snapshot', asy
 });
 
 test('reception challans issue and cancel with vendor-linked stock provenance', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-reception-challans-'));
+  const tempDir = makeTempDir('paper-reception-challans-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -526,7 +525,7 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
 });
 
 test('document-only challans issue without inventory movements', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-typewriter-challans-'));
+  const tempDir = makeTempDir('paper-typewriter-challans-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -619,7 +618,7 @@ test('document-only challans issue without inventory movements', async () => {
 });
 
 test('reception challans reject archived vendors and list filters stay scoped', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-filters-'));
+  const tempDir = makeTempDir('paper-challan-filters-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -728,7 +727,7 @@ test('reception challans reject archived vendors and list filters stay scoped', 
 });
 
 test('delivery challans allow unique manual numbers and reject duplicates', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-manual-no-'));
+  const tempDir = makeTempDir('paper-delivery-manual-no-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -786,7 +785,7 @@ test('delivery challans allow unique manual numbers and reject duplicates', asyn
 });
 
 test('delivery challans support multiple selected orders from the same client', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-multi-order-'));
+  const tempDir = makeTempDir('paper-delivery-multi-order-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -840,7 +839,7 @@ test('delivery challans support multiple selected orders from the same client', 
 });
 
 test('challan templates persist mappings and generate overprint pdf', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-templates-'));
+  const tempDir = makeTempDir('paper-challan-templates-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1062,7 +1061,7 @@ test('challan templates persist mappings and generate overprint pdf', async () =
 });
 
 test('challan templates reject stock and sheet combinations that do not fit', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-invalid-layout-'));
+  const tempDir = makeTempDir('paper-challan-template-invalid-layout-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1100,7 +1099,7 @@ test('challan templates reject stock and sheet combinations that do not fit', as
 });
 
 test('challan templates default stock size to paper size for older payloads', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-stock-fallback-'));
+  const tempDir = makeTempDir('paper-challan-template-stock-fallback-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1144,7 +1143,7 @@ test('challan templates default stock size to paper size for older payloads', as
 });
 
 test('challan templates render A4 stock on A3 sheet at 2-up', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-a4-on-a3-'));
+  const tempDir = makeTempDir('paper-challan-template-a4-on-a3-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1216,7 +1215,7 @@ test('challan templates render A4 stock on A3 sheet at 2-up', async () => {
 });
 
 test('issued challans freeze template snapshots and image mappings persist', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-snapshot-'));
+  const tempDir = makeTempDir('paper-challan-template-snapshot-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1349,7 +1348,7 @@ test('issued challans freeze template snapshots and image mappings persist', asy
 });
 
 test('delivery challans accept completed production runs and cancellations keep reversal provenance', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-production-run-handoff-'));
+  const tempDir = makeTempDir('paper-production-run-handoff-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1442,7 +1441,7 @@ test('delivery challans accept completed production runs and cancellations keep 
 });
 
 test('delivery challans reject mixed-client multi-order selections', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-mixed-client-'));
+  const tempDir = makeTempDir('paper-delivery-mixed-client-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];
@@ -1486,7 +1485,7 @@ test('delivery challans reject mixed-client multi-order selections', async () =>
 });
 
 test('reconciliation report persists invoice tax, conversion, client material, and waste audit', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-reconciliation-report-'));
+  const tempDir = makeTempDir('paper-reconciliation-report-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
 
   delete require.cache[require.resolve('../server.js')];

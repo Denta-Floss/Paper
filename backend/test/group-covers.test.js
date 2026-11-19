@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { coverBasis } = require('../modules/items/group-covers');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A group card is made of the items inside it, because a group has no photo of
 // its own. What matters is that the items chosen are the RIGHT ones, and that
@@ -34,7 +33,7 @@ test('the basis says whether a cover is popularity or just recency', () => {
 });
 
 test('group covers rank by orders, then fall back to what is newest', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-group-covers-'));
+  const tempDir = makeTempDir('paper-group-covers-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'covers@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

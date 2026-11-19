@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { validateRouteSteps, readSteps, pipelineName } = require('../modules/process_routes/service');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // Process routing: an ordered list of stages for a part.
 //
@@ -30,7 +29,7 @@ function closeServer(server) {
 }
 
 async function boot(prefix, email) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = email;
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'RoutePass1234';
@@ -430,7 +429,7 @@ test('the route tables survive two boots of the same database', async () => {
   // (tolerating only /duplicate column name/i), then the kernel runner from
   // inside initDb. A second boot is where a non-idempotent 052 would take the
   // server down, and where an INSERT without OR IGNORE would seed 18 stages.
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-route-reboot-'));
+  const tempDir = makeTempDir('paper-route-reboot-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'route-reboot@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'RoutePass1234';

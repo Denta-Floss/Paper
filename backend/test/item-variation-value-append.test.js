@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The `+` expression adds a value to an existing top-level property by
 // re-sending the whole variation tree with one extra child. The client then
@@ -11,7 +10,7 @@ const test = require('node:test');
 // thing that lookup depends on: the value comes back after saving.
 test('a value appended to a top-level property is saved and read back', async () => {
   process.env.DB_PATH = path.join(
-    mkdtempSync(path.join(tmpdir(), 'paper-var-append-')),
+    makeTempDir('paper-var-append-'),
     'paper.db',
   );
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'var-owner@paper.local';

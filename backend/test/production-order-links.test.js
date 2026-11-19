@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // What an order sees of its production runs. The link from a run to the order
 // lines it makes is production's; orders, the reports and inventory ask for it
@@ -12,7 +11,7 @@ const test = require('node:test');
 // order line does to its runs and the stock they took.
 
 async function boot() {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-order-links-'));
+  const tempDir = makeTempDir('paper-order-links-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'orderlinks@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

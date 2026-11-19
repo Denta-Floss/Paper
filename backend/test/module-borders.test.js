@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const registry = require('../kernel/registry');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The border meter: every place a module's code names a table it does not own.
 //
@@ -165,7 +164,7 @@ test('the scanner tells a read from a write, and its own tables from a neighbour
 });
 
 test('every table a fresh database has belongs to a module or the kernel', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-module-borders-'));
+  const tempDir = makeTempDir('paper-module-borders-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'borders@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

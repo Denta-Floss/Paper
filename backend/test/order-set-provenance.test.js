@@ -1,16 +1,15 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // An order expands a set into ordinary item lines rather than pointing at the
 // set, so that editing the set can never rewrite a placed order. The cost is
 // that nothing said those lines were ever one thing. These columns are that
 // memory: dead labels, snapshotted at order time.
 test('order lines remember the set they were expanded from', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-order-set-prov-'));
+  const tempDir = makeTempDir('paper-order-set-prov-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'prov-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'ProvOwner1234';

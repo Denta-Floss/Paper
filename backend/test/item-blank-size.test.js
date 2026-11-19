@@ -1,9 +1,8 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // A part needs a blank size before it can be planned onto a sheet. This is the
 // round trip that proves the column exists, the insert's placeholders line up
@@ -26,7 +25,7 @@ function closeServer(server) {
 }
 
 test('an item carries its blank size through create, read and update', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-blank-size-'));
+  const tempDir = makeTempDir('paper-blank-size-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'blank-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

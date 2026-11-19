@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // The payroll tables take a component, a salary structure for an employee, and
 // a line joining the two.
@@ -14,7 +13,7 @@ const test = require('node:test');
 // table". It now builds its own database like every other test here.
 
 test('a payroll component, a salary structure and the line that joins them', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-payroll-tables-'));
+  const tempDir = makeTempDir('paper-payroll-tables-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   delete require.cache[require.resolve('../server.js')];
   const backend = require('../server.js');

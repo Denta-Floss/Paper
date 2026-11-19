@@ -1,11 +1,10 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const barcodes = require('../kernel/barcodes');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // One code space over every entity, so a scanner gun resolves whatever it is
 // pointed at without knowing in advance what that is.
@@ -31,7 +30,7 @@ function closeServer(server) {
 }
 
 async function boot(prefix, email) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), prefix));
+  const tempDir = makeTempDir(prefix);
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = email;
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

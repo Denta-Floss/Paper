@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 // How the routes outside the fifteen business modules answer: accounts, the
 // activity trail, search, assets, payroll, settings, the control plane.
@@ -78,7 +77,7 @@ const steady = (text) => String(text)
   .replace(/\d+/g, '<n>');
 
 test('the routes outside the business modules answer as they did', async (t) => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-remaining-routes-'));
+  const tempDir = makeTempDir('paper-remaining-routes-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'remaining@example.test';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';

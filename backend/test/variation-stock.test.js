@@ -1,12 +1,11 @@
 const assert = require('node:assert/strict');
-const { mkdtempSync } = require('node:fs');
 const http = require('node:http');
-const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { makeTempDir } = require('./helpers/temp-dir');
 
 test('variation stock aggregates challan and inventory movement flows', async () => {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-variation-stock-'));
+  const tempDir = makeTempDir('paper-variation-stock-');
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'stock-owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
