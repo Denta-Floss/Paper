@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Inventory — what the module offers at the kernel desk.
 //
@@ -71,154 +73,154 @@ function userOperations({ all, work }) {
     'inventory.sets.list': {
       permission: 'inventory.read',
       summary: 'Every set, with its lines and its group.',
-      input: { fields: { query: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.listSets, ctx, { query: input.query || {} }),
     },
 
     'inventory.sets.create': {
       permission: 'inventory.create',
       summary: 'Define a set: a quantified list of items.',
-      input: { fields: { data: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.obj({ id: F.int, name: F.text, groupId: F.int, photoUrl: F.text, expectedVersion: F.int, lines: F.list(F.obj({ itemId: F.int, variationLeafNodeId: F.int, quantity: F.num, position: F.int })) }) } },
       run: (input, ctx) => runMoved(work.createSet, ctx, { body: input.data }),
     },
 
     'inventory.sets.update': {
       permission: 'inventory.update',
       summary: 'Change a set (a full replace of its lines). With expectedVersion, refused if it moved on (code set_changed).',
-      input: { fields: { id: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ id: F.int, name: F.text, groupId: F.int, photoUrl: F.text, expectedVersion: F.int, lines: F.list(F.obj({ itemId: F.int, variationLeafNodeId: F.int, quantity: F.num, position: F.int })) }) } },
       run: (input, ctx) => runMoved(work.updateSet, ctx, { params: { id: input.id }, body: input.data }),
     },
 
     'inventory.sets.delete': {
       permission: 'inventory.delete',
       summary: 'Remove a set and its links. Permanent.',
-      input: { fields: { id: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.deleteSet, ctx, { params: { id: input.id }, body: input.data }),
     },
 
     'inventory.stock.list': {
       permission: 'inventory.read',
       summary: 'Stock by item and variation.',
-      input: { fields: { query: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.stock, ctx, { query: input.query || {} }),
     },
 
     'inventory.stock.sources': {
       permission: 'inventory.read',
       summary: 'The barcodes that hold free stock of an item and variation, and a proposed split of a quantity over them.',
-      input: { fields: { query: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.obj({ itemId: F.int, variationLeafNodeId: F.int, quantity: F.num }), data: F.none } },
       run: (input, ctx) => runMoved(work.stockSources, ctx, { query: input.query || {} }),
     },
 
     'inventory.materials.list': {
       permission: 'inventory.read',
       summary: 'Every material.',
-      input: { fields: { query: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.listMaterials, ctx, { query: input.query || {} }),
     },
 
     'inventory.health': {
       permission: 'inventory.read',
       summary: 'The inventory summary tiles.',
-      input: { fields: { query: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.health, ctx, { query: input.query || {} }),
     },
 
     'inventory.materials.get': {
       permission: 'inventory.read',
       summary: 'One material, with its group configuration.',
-      input: { fields: { barcode: { type: 'any', required: true }, query: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.getMaterial, ctx, { params: { barcode: input.barcode }, query: input.query || {} }),
     },
 
     'inventory.materials.detail': {
       permission: 'inventory.read',
       summary: 'A material’s life story: where it came from, what took it, what is nested under it.',
-      input: { fields: { barcode: { type: 'any', required: true }, query: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.materialDetail, ctx, { params: { barcode: input.barcode }, query: input.query || {} }),
     },
 
     'inventory.materials.createParent': {
       permission: 'inventory.create',
       summary: 'A parent material and its children.',
-      input: { fields: { data: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.obj({ name: F.text, type: F.text, grade: F.text, thickness: F.text, supplier: F.text, location: F.text, notes: F.text, groupMode: F.text, inheritanceEnabled: F.flag, parentGroupId: F.int, numberOfChildren: F.int }) } },
       run: (input, ctx) => runMoved(work.createParent, ctx, { body: input.data }),
     },
 
     'inventory.materials.createChild': {
       permission: 'inventory.create',
       summary: 'One more child under a parent.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.obj({ name: F.text, notes: F.text }) } },
       run: (input, ctx) => runMoved(work.createChild, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.update': {
       permission: 'inventory.update',
       summary: 'Edit a material.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.obj({ name: F.text, type: F.text, grade: F.text, thickness: F.text, supplier: F.text, location: F.text, notes: F.text, groupMode: F.text, inheritanceEnabled: F.flag, parentGroupId: F.int }) } },
       run: (input, ctx) => runMoved(work.updateMaterial, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.setGroupConfig': {
       permission: 'inventory.update',
       summary: 'Set a material group’s governance: units, properties, preferences.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.obj({ groupMode: F.text, inheritanceEnabled: F.flag }) } },
       run: (input, ctx) => runMoved(work.setGroupConfig, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.delete': {
       permission: 'inventory.delete',
       summary: 'Remove a material; a parent takes its children.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.deleteMaterial, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.linkGroup': {
       permission: 'inventory.update',
       summary: 'Make a material inherit from a group.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.obj({ groupId: F.int }) } },
       run: (input, ctx) => runMoved(work.linkGroup, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.linkItem': {
       permission: 'inventory.update',
       summary: 'Make a material inherit from an item and variation.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.obj({ itemId: F.int, variationLeafNodeId: F.int }) } },
       run: (input, ctx) => runMoved(work.linkItem, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.unlink': {
       permission: 'inventory.update',
       summary: 'Stop a material inheriting.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.unlink, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.scan': {
       permission: 'inventory.update',
       summary: 'Count a scan of a material.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.scan, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.materials.resetScan': {
       permission: 'inventory.update',
       summary: 'Clear a material’s scan trace.',
-      input: { fields: { barcode: { type: 'any', required: true }, data: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.resetScan, ctx, { params: { barcode: input.barcode }, body: input.data }),
     },
 
     'inventory.movements.record': {
       permission: 'inventory.update',
       summary: 'Receive, issue, transfer or adjust stock. One transaction.',
-      input: { fields: { data: { type: 'object', nullable: true } } },
+      input: { fields: { query: F.none, data: F.obj({ barcode: F.text, movementType: F.text, qty: F.num, primaryQty: F.num, uom: F.text, toLocationId: F.text, fromLocationId: F.text, referenceType: F.text, referenceId: { type: 'any' }, reason: F.text, reasonCode: F.text, lotCode: F.text, reversesMovementId: F.int, sourceChallanId: F.int, sourceChallanLineId: F.int, sourceChallanType: F.text, actor: F.text, note: F.text }) } },
       run: (input, ctx) => runMoved(work.applyMovement, ctx, { body: input.data }),
     },
 
     'inventory.materials.activity': {
       permission: 'inventory.read',
       summary: 'A material’s per-barcode activity feed.',
-      input: { fields: { barcode: { type: 'any', required: true }, query: { type: 'object', nullable: true } } },
+      input: { fields: { barcode: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.activity, ctx, { params: { barcode: input.barcode }, query: input.query || {} }),
     },
 

@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Clients — what the module offers at the kernel desk.
 //
@@ -81,7 +83,7 @@ const contactData = {
   },
 };
 const contactResult = { fields: { contact: { ...object, required: true } } };
-const anyId = { type: 'any', required: true };
+const anyId = F.id;
 
 // What the old write gate asks of a POST to a path no module claims.
 const OLD_WRITE_GATE = {
@@ -332,7 +334,7 @@ module.exports = function clientOperations({
     'clients.portal.catalog': {
       access: 'signedIn',
       summary: 'The unarchived items in a client’s catalogue, by display name.',
-      input: { fields: { clientId: { type: 'any' } } },
+      input: { fields: { clientId: F.int } },
       output: { fields: { items: { type: 'array', required: true, items: object } } },
       run: (input) => portal.catalog(input.clientId),
     },
@@ -340,14 +342,14 @@ module.exports = function clientOperations({
     'clients.portal.addToCart': {
       access: OLD_WRITE_GATE,
       summary: 'Add an item to a buyer’s cart, or raise its quantity.',
-      input: { fields: { portal_user_id: { type: 'any' }, item_id: { type: 'any' }, quantity: { type: 'any' } } },
+      input: { fields: { portal_user_id: F.int, item_id: F.int, quantity: F.num } },
       run: (input) => portal.addToCart(input),
     },
 
     'clients.portal.placeOrder': {
       access: OLD_WRITE_GATE,
       summary: 'Turn a cart into a draft order, in one transaction, and empty the cart.',
-      input: { fields: { portal_user_id: { type: 'any' }, items: { type: 'any' } } },
+      input: { fields: { portal_user_id: F.int, items: F.list(F.obj({ item_id: F.int, quantity: F.num })) } },
       output: { fields: { orderNo: { type: 'string', required: true } } },
       run: (input) => portal.placeOrder(input),
     },
@@ -357,7 +359,7 @@ module.exports = function clientOperations({
     'clients.rows.get': {
       internal: true,
       summary: 'A client’s row with its usage count, or nothing.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       output: { fields: { row: { ...object, nullable: true } } },
       run: async (input) => ({ ok: true, row: await service.getClientRowById(input.id) }),
     },
@@ -365,7 +367,7 @@ module.exports = function clientOperations({
     'clients.subContractors.row': {
       internal: true,
       summary: 'A sub-contractor’s row as stored, or nothing.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       output: { fields: { row: { ...object, nullable: true } } },
       run: async (input) => ({ ok: true, row: await get('SELECT * FROM sub_contractors WHERE id = ?', [input.id]) }),
     },
@@ -392,7 +394,7 @@ module.exports = function clientOperations({
     'clients.exists': {
       internal: true,
       summary: 'Whether this id is a client.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       output: { fields: { exists: { type: 'boolean', required: true } } },
       run: async (input) => ({
         ok: true,

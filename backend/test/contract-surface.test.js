@@ -74,3 +74,49 @@ test('every operation a module declares it uses exists', () => {
   }
   assert.deepEqual(missing, [], 'a module declares a use of an operation nobody publishes');
 });
+
+// Every field a user-facing operation takes says what it is. The exceptions are
+// the fields whose type really is "either of two": a filter that may be a list
+// or a comma-separated string, a record id that may be a number or a barcode,
+// a part-code value list that may be an array or a joined string, and the two
+// payloads whose service answers each element for itself (route steps, unit
+// conversions), where a contract would speak before the service does.
+const UNTYPED_ON_PURPOSE = new Set([
+  'orders.list.statuses',
+  'orders.list.ids',
+  'action_center.trash.restore.data.recordId',
+  'action_center.deleteRequests.create.data.entityId',
+  'items.nextPartIdentity.query.values',
+  'inventory.movements.record.data.referenceId',
+  'process_routes.routes.save.steps',
+  'process_routes.routes.version.steps',
+  'units.convertBatch.conversions[].value',
+  'units.convertBatch.conversions[].fromUnitId',
+  'units.convertBatch.conversions[].toUnitId',
+]);
+
+function untypedFields(spec, path, out) {
+  const resolved = typeof spec === 'function' ? spec() : spec;
+  if (!resolved) return;
+  if (resolved.type === 'any') out.push(path);
+  if (resolved.type === 'object' && resolved.fields) {
+    for (const [name, field] of Object.entries(resolved.fields)) untypedFields(field, `${path}.${name}`, out);
+  }
+  if (resolved.type === 'array' && resolved.items) untypedFields(resolved.items, `${path}[]`, out);
+}
+
+test('every field a user operation takes is typed, except the ones listed here on purpose', () => {
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  const untyped = [];
+  for (const operation of backend.desk.catalogue()) {
+    if (operation.internal) continue;
+    for (const [name, field] of Object.entries(operation.input || {})) {
+      untypedFields(field, `${operation.name}.${name}`, untyped);
+    }
+  }
+  const surprises = untyped.filter((path) => !UNTYPED_ON_PURPOSE.has(path));
+  assert.deepEqual(surprises, [], 'a user operation has a field whose type the contract does not say');
+  const stale = [...UNTYPED_ON_PURPOSE].filter((path) => !untyped.includes(path));
+  assert.deepEqual(stale, [], 'an exception listed here is no longer untyped; take it off the list');
+});

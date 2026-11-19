@@ -5,7 +5,7 @@ It is edited with every change, so the plan, what is done, how the work went and
 what was found along the way are all here and nowhere else. If a conversation is
 lost, start from this file.
 
-Last updated: 2026-11-19 (P2 done: tests remove their temporary databases).
+Last updated: 2026-11-19 (P3 done: every field of every user operation is typed).
 
 ## 1. The plan
 
@@ -153,7 +153,7 @@ The packages, in order (approved 2026-11-19; P0 is done):
 | P0 | Merge to main and push; `encrypt` package dropped; this doc's dates fixed; staging watch list | done |
 | P1 | Remove the rest of the sandbox control plane (server and desktop app); socket.io removed outright, since no client connected to it | done |
 | P2 | Tests remove their temporary databases (B24) | done |
-| P3 | Typed contracts for every operation, per module, each with an evidence run | |
+| P3 | Typed contracts for every operation, per module, each with an evidence run | done |
 | P4 | Orders' 11 and process routes' 2 undeclared reads become asks or declared reads | |
 | P5 | Items logic out of `server.js` into `modules/items` (~2,700 lines, 4 commits) | |
 | P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | |
@@ -277,6 +277,19 @@ Traps met so far:
   the service already says in better words) and were loosened.
 - Under enforce an internal call with a missing argument throws at the caller.
   List arguments the ports treat as optional are optional in the contract too.
+- A contract says what a field is; it must not speak before a service that
+  already answers a shape in its own words. Two found by the evidence run:
+  route steps (a list of ids or of objects; the validator says
+  `route_steps_malformed`) and unit conversions (each line answers for
+  itself). Those fields stay untyped, listed in the test as exceptions.
+- Query values are strings: a flag written `?withCovers=1` is text, not a
+  boolean, because the checker's boolean takes only true, false, 0, 1,
+  'true' and 'false'.
+- Ids from the path are integers above zero where the table's id is an
+  integer, and non-empty strings where it is text (pipeline templates,
+  production runs, barcodes). A non-numeric id is now refused with 400
+  "id must be a number" where it used to be looked up and answered "not
+  found".
 - `kernel/desk-kit.js` has the shared pieces: `refusing` (a thrown 4xx becomes
   a result), `fromRefusal` (a service's `{ refusal }` becomes a result) and
   `httpKit` (`ask` and `refuse` for a route file).
@@ -312,7 +325,7 @@ Ticked only when a test proves it.
 - [x] The Flutter app's request models for units, vendors, clients, contacts, sub-contractors and die makers checked against the contracts by reading them (text fields are strings, the conversion factor a number)
 - [x] Operator switch `PAPER_CONTRACTS_MODE=report`, and `PAPER_CONTRACT_VIOLATIONS_FILE` to collect violations across a test run
 - [ ] The same evidence from a real installation: watch `/api/kernel/guard-alerts` on staging with the app in use
-- [ ] Tighten the loose contracts (`any` fields, free-form `data`)
+- [x] Every field of every user operation typed (`kernel/fields.js` is the vocabulary; `contract-surface.test.js` refuses a new untyped field and lists the eleven kept untyped on purpose)
 
 ### Stage 2a — the border meter
 
@@ -582,3 +595,4 @@ items are verified before anything is done about them.
 | 2026-11-18 | Decisions carried out. The sandbox dashboard and the two other login-free tools were removed (13 routes, `dashboard.html`, two login bypasses, the app's call that registered users with it); crossings 56 → 51 because the demo seeder wrote five modules' tables. Portal passwords are hashed and the built-in test account is gone. The freelancer card token is signed by the server; old cards must be reprinted. The job pool's permission is left as it is. 442 tests pass. (Mind map change 55.) |
 | 2026-11-19 | P1. `modules/control_plane` deleted with its six routes, the six `sandbox_*` tables, their default-config seed in `initDb`, the login bypasses for those paths, `backend/dashboard.html`'s companion `feature_registry.json` and the `config-defaults-sync` drift test. socket.io removed from the server (`socket.io` dependency dropped) and from both apps' pubspecs; every `getIo`/`emit` hand-in and call is gone (items, challans, clients, vendors, orders, settings, party contacts). Desktop app: no activation gate or screen, no `DataSyncService`, no `SessionReplayService` (tap listener and navigator observer), `ConfigService.init` loads the built-in defaults and nothing else. Route surface loses exactly six routes; 441 tests pass. (Mind map change 57.) |
 | 2026-11-19 | P2. `test/helpers/temp-dir.js`: `makeTempDir(prefix)` is `mkdtempSync` plus removal at process exit. The 92 test files that made their own folder were rewritten mechanically to call it (111 fixed-prefix calls, 18 with a `prefix` variable, one aliased import); the now-unused `mkdtempSync` and `tmpdir` imports went with it. A first attempt named the helper `tempDir`, which the files' own `const tempDir = …` shadowed into a temporal-dead-zone error; renamed. `npm test` leaves zero `paper-*` folders. 441 tests pass. (Mind map change 58.) |
+| 2026-11-19 | P3. `kernel/fields.js` holds the words a contract is written in (`text`, `int`, `num`, `flag`, `id`, `key`, `list`, `obj`, `none`, `both`). Every user operation in every module now names its fields with a type: 43 items operations (the item and group payloads reuse `modules/items/contract.js`), 22 inventory, 42 challans (both spellings of every challan, invoice and template field), 15 production, 7 jobs, 8 action centre, and the untyped ids and payloads left in clients, dies, machines, orders, people, pipelines and process routes. Nothing new is `required`: the services keep refusing in their own words. `plainRequest` gives a moved handler `{}` for a missing body. Evidence run first (report mode, 28 violations: 20 were tests sending bad input on purpose; 8 were contract shapes stricter than the code, all loosened). Behaviour change: a non-numeric path id answers 400 instead of 404. A third test in `contract-surface.test.js` fails on any new untyped field and lists the eleven kept on purpose. 442 tests pass. (Mind map change 59.) |

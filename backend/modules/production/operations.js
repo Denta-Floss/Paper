@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Production — what the module offers at the kernel desk.
 //
@@ -57,9 +59,7 @@ function answered({ status, body }) {
   return { ok: false, status, ...(success !== false ? { success } : {}), ...rest };
 }
 
-const any = { type: 'any' };
-const runId = { type: 'any', required: true };
-const data = { type: 'object', nullable: true };
+const runId = F.key;
 const rows = (key) => ({ fields: { [key]: { type: 'array', required: true } } });
 const runResult = { fields: { run: { type: 'object', required: true } } };
 
@@ -186,7 +186,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.output.row': {
       internal: true,
       summary: 'A finished-output record with its item name, or nothing. A challan line may deliver from one.',
-      input: { fields: { productionRunId: { type: 'any', required: true } } },
+      input: { fields: { productionRunId: F.id } },
       output: { fields: { row: { type: 'object', nullable: true } } },
       run: async (input) => ({ ok: true, row: await outputRow(input.productionRunId) }),
     },
@@ -194,7 +194,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.list': {
       access: 'signedIn',
       summary: 'Runs, newest first; with templateId, only that template’s.',
-      input: { fields: { templateId: any } },
+      input: { fields: { templateId: F.text } },
       output: rows('runs'),
       run: async (input, ctx) =>
         answered(await work.listRuns(asked(ctx, { query: { template_id: input.templateId } }))),
@@ -211,7 +211,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.start': {
       permission: 'config.write',
       summary: 'Start a run from a pipeline template, for an order line, an order, or nothing.',
-      input: { fields: { data } },
+      input: { fields: { data: F.obj({ templateId: F.text, name: F.text, orderNo: F.text, orderItemId: F.int, scrapRouting: F.text, outputVariationLeafNodeId: F.int, outputVariationPathLabel: F.text }) } },
       output: runResult,
       run: async (input, ctx) => answered(await work.startRun(asked(ctx, { body: input.data }))),
     },
@@ -226,7 +226,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.setNodeStatus': {
       permission: 'config.write',
       summary: 'Set a node’s status. Completing the last node books and mints the output.',
-      input: { fields: { runId, data } },
+      input: { fields: { runId, data: F.obj({ nodeId: F.text, status: F.text, actualDurationHours: F.num, batchQuantity: F.num, machineOverride: F.text, unit: F.text, unit_id: F.int, group_id: F.int }) } },
       run: async (input, ctx) =>
         answered(await work.setNodeStatusFor(asked(ctx, { params: { id: input.runId }, body: input.data }))),
     },
@@ -234,7 +234,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.setNodeMetrics': {
       permission: 'config.write',
       summary: 'Record a stage’s reconciliation numbers: allotted, output, scrap, leftover.',
-      input: { fields: { runId, data } },
+      input: { fields: { runId, data: F.obj({ nodeId: F.text, metrics: F.obj({ allotted: F.num, output: F.num, remaining: F.num, scrap: F.num, goodYield: F.num, actualHours: F.num, scrapItemId: F.int, scrapItem: F.text, leftoverAction: F.text, inputTime: F.text, outputTime: F.text }) }) } },
       run: async (input, ctx) =>
         answered(await work.setNodeMetrics(asked(ctx, { params: { id: input.runId }, body: input.data }))),
     },
@@ -242,7 +242,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.setBatches': {
       permission: 'config.write',
       summary: 'Replace a run’s batches, as the client keeps them.',
-      input: { fields: { runId, data } },
+      input: { fields: { runId, data: F.obj({ batches: F.list(F.none) }) } },
       run: async (input, ctx) =>
         answered(await work.setBatches(asked(ctx, { params: { id: input.runId }, body: input.data }))),
     },
@@ -250,7 +250,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.assignStock': {
       permission: 'config.write',
       summary: 'Put stock on a node: a material, a vendor sheet, or a quantity split over barcodes.',
-      input: { fields: { runId, data } },
+      input: { fields: { runId, data: F.obj({ nodeId: F.text, barcode: F.text, itemId: F.int, item_id: F.int, quantity: F.num, variationLeafNodeId: F.int, variation_leaf_node_id: F.int, allocations: F.list(F.obj({ barcode: F.text, quantity: F.num })), challanItemId: F.int, challan_item_id: F.int }) } },
       run: async (input, ctx) =>
         answered(await work.assignStock(asked(ctx, { params: { id: input.runId }, body: input.data }))),
     },
@@ -258,28 +258,28 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.runs.changeStock': {
       permission: 'config.write',
       summary: 'Change how much of a barcode a node took.',
-      input: { fields: { runId, nodeId: any, barcode: any, quantity: any, data } },
+      input: { fields: { runId, nodeId: F.text, barcode: F.text, quantity: F.num, data: F.obj({ nodeId: F.text, barcode: F.text, quantity: F.num }) } },
       run: async (input, ctx) => answered(await work.changeStock(asked(ctx, stock(input)))),
     },
 
     'production.runs.removeStock': {
       permission: 'config.write',
       summary: 'Take a barcode back off a node and return what it had taken.',
-      input: { fields: { runId, nodeId: any, barcode: any, data } },
+      input: { fields: { runId, nodeId: F.text, barcode: F.text, data: F.obj({ nodeId: F.text, barcode: F.text }) } },
       run: async (input, ctx) => answered(await work.removeStock(asked(ctx, stock(input)))),
     },
 
     'production.scrap.record': {
       access: OLD_WRITE_GATE,
       summary: 'Book scrap against a run’s node.',
-      input: { fields: { data } },
+      input: { fields: { data: F.obj({ pipelineRunId: F.text, nodeId: F.text, materialBarcode: F.text, orderNo: F.text, scrapQty: F.num, scrapItemId: F.int, scrapItemName: F.text }) } },
       run: async (input, ctx) => answered(await work.recordScrap(asked(ctx, { body: input.data }))),
     },
 
     'production.scrap.list': {
       access: 'signedIn',
       summary: 'Scrap rows, newest first; optionally one run’s, or one node’s.',
-      input: { fields: { pipelineRunId: any, nodeId: any } },
+      input: { fields: { pipelineRunId: F.text, nodeId: F.text } },
       output: rows('data'),
       run: async (input, ctx) =>
         answered(await work.listScrap(asked(ctx, {
@@ -293,7 +293,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.output.completed': {
       permission: 'production.read',
       summary: 'Finished output a delivery challan can be raised for.',
-      input: { fields: { search: any, q: any, limit: any } },
+      input: { fields: { search: F.text, q: F.text, limit: F.int } },
       output: rows('productionRuns'),
       run: async (input, ctx) =>
         answered(await work.completedOutput(asked(ctx, {
@@ -304,7 +304,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.machines.queue': {
       permission: 'machines.read',
       summary: 'The live runs that name a machine.',
-      input: { fields: { machineId: { type: 'any', required: true } } },
+      input: { fields: { machineId: F.id } },
       output: rows('queue'),
       run: async (input, ctx) =>
         answered(await work.machineQueue(asked(ctx, { params: { id: input.machineId } }))),
@@ -313,7 +313,7 @@ module.exports = function productionOperations({ work, ports, outputRow }) {
     'production.items.pipelineHistory': {
       permission: 'items.read',
       summary: 'The runs that made an item, and its default pipeline.',
-      input: { fields: { itemId: { type: 'any', required: true } } },
+      input: { fields: { itemId: F.id } },
       output: rows('runs'),
       run: async (input, ctx) =>
         answered(await work.itemPipelineHistory(asked(ctx, { params: { id: input.itemId } }))),

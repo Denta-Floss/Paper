@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Jobs (the freelancer job pool) — what the module offers at the kernel desk.
 //
@@ -24,56 +26,55 @@ const OLD_WRITE_GATE = {
   anyRole: ['super_admin', 'admin'],
   anyPermission: ['config.write', 'inventory.update'],
 };
-const loose = { type: 'any' };
 
 module.exports = function jobOperations({ work, service }) {
   return joinOperations(operationsFromAsks('jobs', ASKS, service), {
     'jobs.list': {
       access: 'signedIn',
       summary: 'Everything the job board draws: batches, jobs and tasks.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.listJobs, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'jobs.batches.create': {
       access: OLD_WRITE_GATE,
       summary: 'Hand a batch of jobs to a worker; assembly sets go out of stock with it.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.obj({ freelancer_id: F.int, job_ids: F.list(F.int) }) } },
       run: (input, ctx) => runMoved(work.createJobBatches, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'jobs.create': {
       access: OLD_WRITE_GATE,
       summary: 'Create a job for an item, with tasks from its bill of materials.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.obj({ item_id: F.int, quantity: F.num }) } },
       run: (input, ctx) => runMoved(work.createJob, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'jobs.update': {
       access: OLD_WRITE_GATE,
       summary: 'Move a job along its status.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ status: F.text }) } },
       run: (input, ctx) => runMoved(work.updateJob, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'jobs.delete': {
       access: OLD_WRITE_GATE,
       summary: 'Remove a job and its tasks.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(work.deleteJob, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'jobs.portalToken': {
       access: 'signedIn',
       summary: 'The token for a worker’s printed card, signed by this server.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.obj({ barcodeId: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(work.portalToken, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'jobs.portalData': {
       access: 'signedIn',
       summary: 'A freelancer’s own batches, jobs and tasks, by the token on their card.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.obj({ token: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(work.portalData, ctx, { query: input.query || {}, body: input.data }),
     },
   });

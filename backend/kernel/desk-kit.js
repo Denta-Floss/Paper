@@ -80,7 +80,9 @@ function plainRequest(ctx, { params = {}, query = {}, body } = {}) {
   return {
     params,
     query,
-    body,
+    // A call with no data is a request with an empty body, as Express gives
+    // a handler; a handler that read req.body.x used to throw on undefined.
+    body: body === undefined || body === null ? {} : body,
     user: ctx.actor?.user || null,
     track: (...entry) => tracked.push(entry),
     tracked,

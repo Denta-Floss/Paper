@@ -1,5 +1,8 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+const contracts = require('./contract');
+
 const { runMoved, joinOperations, operationsFromAsks } = require('../../kernel/desk-kit');
 const ASKS = require('./asks');
 
@@ -63,7 +66,6 @@ const OLD_WRITE_GATE = {
   anyRole: ['super_admin', 'admin'],
   anyPermission: ['config.write', 'inventory.update'],
 };
-const loose = { type: 'any' };
 
 module.exports = function itemsOperations({ all, get, ports, core, masterData, materialTypes, sheetProperties }) {
   return joinOperations(
@@ -78,301 +80,301 @@ function userOperations({ core, masterData, materialTypes, sheetProperties }) {
     'items.groups.list': {
       permission: 'items.read',
       summary: 'Every group, with how many items it holds and its cover pictures.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.obj({ withCovers: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(core.listGroups, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.assets.uploadIntent': {
       permission: 'items.create',
       summary: 'Ask for somewhere to upload an item attachment.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ uploadType: F.text, entityType: F.text, entityId: F.int, fileName: F.text, contentType: F.text, sizeBytes: F.int, sha256: F.text, isPrimary: F.flag, documentTitle: F.text, thumbnail: F.text, width: F.int, height: F.int }) } },
       run: (input, ctx) => runMoved(core.itemAssetUploadIntent, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.assets.uploadComplete': {
       permission: 'items.create',
       summary: 'Say an item attachment arrived.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ entityId: F.int, uploadSessionId: F.text, objectKey: F.text }) } },
       run: (input, ctx) => runMoved(core.itemAssetUploadComplete, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.assets.list': {
       permission: 'items.read',
       summary: 'An item’s attachments.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.listItemAssets, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.photos.list': {
       permission: 'items.asset.list',
       summary: 'A part’s photos, in order.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.listItemPhotos, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.photos.arrange': {
       permission: 'items.asset.upload',
       summary: 'Set a part’s photos and their order.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ order: F.list(), primaryId: F.int }) } },
       run: (input, ctx) => runMoved(core.arrangeItemPhotos, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.sets': {
       permission: 'items.read',
       summary: 'The sets an item is in, with its quantity in each.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.itemSets, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.usage': {
       permission: 'items.read',
       summary: 'Where an item is used: orders, challans, stock.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.itemUsage, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.list': {
       permission: 'items.read',
       summary: 'Items, with usage.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.listItems, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.nextPartIdentity': {
       permission: 'items.read',
       summary: 'The next part number and code for a group and set.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.obj({ groupId: F.int, setId: F.int, setPending: F.text, values: { type: 'any' }, name: F.text, setName: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(core.nextPartIdentity, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.get': {
       permission: 'items.read',
       summary: 'One item, with its variation tree.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.getItem, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.setShortCode': {
       permission: 'items.update',
       summary: 'Set an item’s short code.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ shortCode: F.text }) } },
       run: (input, ctx) => runMoved(core.setShortCode, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.create': {
       permission: 'items.create',
       summary: 'Create an item, with its variation tree.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.obj(contracts.itemWrite.fields) } },
       run: (input, ctx) => runMoved(core.createItem, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.update': {
       permission: 'items.update',
       summary: 'Change an item. What is left out is kept.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj(contracts.itemWrite.fields) } },
       run: (input, ctx) => runMoved(core.updateItem, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.setSectionTree': {
       permission: 'items.update',
       summary: 'Set how a part’s sheet sections nest, and reconcile its links.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ tree: F.none }) } },
       run: (input, ctx) => runMoved(core.setSectionTree, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.archive': {
       permission: 'items.update',
       summary: 'Archive or restore an item.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ archived: F.flag }) } },
       run: (input, ctx) => runMoved(core.archiveItem, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.delete': {
       permission: 'items.delete',
       summary: 'Move an item to the trash.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.deleteItem, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.moveToGroup': {
       permission: 'items.update',
       summary: 'File an item under another group.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ groupId: F.int }) } },
       run: (input, ctx) => runMoved(core.moveItemToGroup, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.create': {
       permission: 'items.create',
       summary: 'Create a group.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.obj({ ...contracts.groupWrite.fields, itemFormSections: F.none }) } },
       run: (input, ctx) => runMoved(core.createGroup, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.groups.addItems': {
       permission: 'items.create',
       summary: 'File items or variants into a group.',
-      input: { fields: { groupId: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { groupId: F.id, query: F.none, data: F.obj({ itemIds: F.list(F.int) }) } },
       run: (input, ctx) => runMoved(core.addItemsToGroup, ctx, { params: { groupId: input.groupId }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.items': {
       permission: 'items.read',
       summary: 'The items in a group.',
-      input: { fields: { groupId: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { groupId: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.groupItems, ctx, { params: { groupId: input.groupId }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.update': {
       permission: 'items.update',
       summary: 'Change a group.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ ...contracts.groupWrite.fields, itemFormSections: F.none }) } },
       run: (input, ctx) => runMoved(core.updateGroup, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.archive': {
       permission: 'items.update',
       summary: 'Archive a group.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.archiveGroup, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.unarchive': {
       permission: 'items.update',
       summary: 'Restore a group.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.unarchiveGroup, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.delete': {
       permission: 'items.delete',
       summary: 'Move a group to the trash.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.deleteGroup, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.schemaImpact': {
       permission: 'items.read',
       summary: 'Which items a change to a group’s properties would leave without a value.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.groupSchemaImpact, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.overview': {
       permission: 'items.read',
       summary: 'A group at a glance: its items, sets and stock.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.groupOverview, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.groups.effectiveSchema': {
       permission: 'items.read',
       summary: 'The properties a group’s items carry, inherited ones included.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(core.groupEffectiveSchema, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.masterData.list': {
       permission: 'items.read',
       summary: 'Every Master Data record for an item, one per pipeline.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(masterData.masterDataFor, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.masterData.resolve': {
       permission: 'items.read',
       summary: 'The Master Data that applies to an item on a pipeline, and where each value came from.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.obj({ pipelineId: F.text, adopt: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(masterData.resolveMasterData, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.masterData.save': {
       permission: 'items.update',
       summary: 'Save an item’s Master Data for a pipeline.',
-      input: { fields: { id: { type: 'any', required: true }, pipelineId: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, pipelineId: F.key, query: F.none, data: F.obj({ baseline: F.none }) } },
       run: (input, ctx) => runMoved(masterData.saveMasterData, ctx, { params: { id: input.id, pipelineId: input.pipelineId }, query: input.query || {}, body: input.data }),
     },
 
     'items.masterData.delete': {
       permission: 'items.delete',
       summary: 'Remove an item’s Master Data for a pipeline.',
-      input: { fields: { id: { type: 'any', required: true }, pipelineId: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, pipelineId: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(masterData.deleteMasterData, ctx, { params: { id: input.id, pipelineId: input.pipelineId }, query: input.query || {}, body: input.data }),
     },
 
     'items.masterData.forPipeline': {
       access: 'signedIn',
       summary: 'Every item’s Master Data on one pipeline.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.key, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(masterData.pipelineMasterData, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.materialTypes.list': {
       access: 'signedIn',
       summary: 'The material types, each with its density.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.obj({ includeArchived: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(materialTypes.listMaterialTypes, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.materialTypes.create': {
       access: OLD_WRITE_GATE,
       summary: 'Add a material type.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.obj({ name: F.text, densityGCm3: F.num, category: F.text, notes: F.text }) } },
       run: (input, ctx) => runMoved(materialTypes.createMaterialType, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.materialTypes.update': {
       access: OLD_WRITE_GATE,
       summary: 'Change a material type.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ name: F.text, densityGCm3: F.num, category: F.text, notes: F.text, isArchived: F.flag }) } },
       run: (input, ctx) => runMoved(materialTypes.updateMaterialType, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.materialTypes.delete': {
       access: OLD_WRITE_GATE,
       summary: 'Remove a material type.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(materialTypes.deleteMaterialType, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.list': {
       permission: 'items.read',
       summary: 'The item sheet’s property columns.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(sheetProperties.listSheetProperties, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.create': {
       permission: 'items.create',
       summary: 'Add a property column.',
-      input: { fields: { query: loose, data: loose } },
+      input: { fields: { query: F.none, data: F.obj({ name: F.text, kind: F.text, options: F.list(F.text) }) } },
       run: (input, ctx) => runMoved(sheetProperties.createSheetProperty, ctx, { query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.update': {
       permission: 'items.update',
       summary: 'Change a property column.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ displayName: F.text, options: F.list(F.text) }) } },
       run: (input, ctx) => runMoved(sheetProperties.updateSheetProperty, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.addOption': {
       permission: 'items.create',
       summary: 'Add a value to a property column’s list.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.obj({ label: F.text }) } },
       run: (input, ctx) => runMoved(sheetProperties.addSheetPropertyOption, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.removeOption': {
       permission: 'items.delete',
       summary: 'Remove a value no saved part carries.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.obj({ label: F.text }), data: F.none } },
       run: (input, ctx) => runMoved(sheetProperties.removeSheetPropertyOption, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
 
     'items.sheetProperties.delete': {
       permission: 'items.delete',
       summary: 'Remove a property column.',
-      input: { fields: { id: { type: 'any', required: true }, query: loose, data: loose } },
+      input: { fields: { id: F.id, query: F.none, data: F.none } },
       run: (input, ctx) => runMoved(sheetProperties.deleteSheetProperty, ctx, { params: { id: input.id }, query: input.query || {}, body: input.data }),
     },
   };

@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Process routing module — what it offers at the kernel desk.
 //
@@ -49,10 +51,14 @@ module.exports = function processRouteOperations({ service }) {
     };
   }
 
-  const partId = { type: 'any', required: true };
+  const partId = F.id;
+  // Steps are a list of stage ids or of objects with stageId (or stage_id),
+  // seq, notes, machineId and dieId. The validator takes both and answers a
+  // malformed list with its own code, route_steps_malformed, so the contract
+  // says nothing here that would speak before it.
   const steps = { type: 'any' };
-  const note = { type: 'any' };
-  const userId = { type: 'any' };
+  const note = F.text;
+  const userId = F.int;
 
   return {
     'process_routes.stages.list': {
@@ -70,14 +76,14 @@ module.exports = function processRouteOperations({ service }) {
     'process_routes.stages.create': {
       permission: 'items.create',
       summary: 'Add a stage by name. A name already in the master answers with that stage.',
-      input: { fields: { name: { type: 'any' } } },
+      input: { fields: { name: F.text } },
       run: (input) => service.createStage({ name: input.name }),
     },
 
     'process_routes.stages.retire': {
       permission: 'items.delete',
       summary: 'Retire a stage no draft or active route stands on.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       run: (input) => service.retireStage(input.id),
     },
 
@@ -92,7 +98,7 @@ module.exports = function processRouteOperations({ service }) {
     'process_routes.routes.save': {
       permission: 'items.update',
       summary: 'Save a part’s route as a draft or as the active one.',
-      input: { fields: { partId, steps, status: { type: 'any' }, note, userId } },
+      input: { fields: { partId, steps, status: F.text, note, userId } },
       run: (input, ctx) =>
         withPart(input, async (id) =>
           withRoutes(

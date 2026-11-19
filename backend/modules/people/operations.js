@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // People — what the module offers at the kernel desk.
 //
@@ -156,8 +158,8 @@ module.exports = function peopleOperations({
           password: { type: 'string', nullable: true },
           role: { type: 'string', nullable: true },
           // Where the request came from, for the audit entry.
-          ipAddress: { type: 'any' },
-          userAgent: { type: 'any' },
+          ipAddress: F.text,
+          userAgent: F.text,
         },
       },
       output: employeeResult,
@@ -216,7 +218,7 @@ module.exports = function peopleOperations({
       roles: ADMINS,
       access: 'signedIn',
       summary: 'Link an in-house employee to a login account that already exists.',
-      input: { fields: { id, userId: { type: 'any' } } },
+      input: { fields: { id, userId: F.int } },
       output: employeeResult,
       run: (input) =>
         refusing(async () => {
@@ -261,7 +263,7 @@ module.exports = function peopleOperations({
     'people.employees.idByBarcode': {
       internal: true,
       summary: 'The id of the employee whose barcode this is, or nothing.',
-      input: { fields: { barcodeId: { type: 'any', required: true } } },
+      input: { fields: { barcodeId: F.key } },
       output: { fields: { employeeId: { type: 'integer', nullable: true } } },
       run: async (input) => ({ ok: true, employeeId: await ports.employeeIdByBarcode(input.barcodeId) }),
     },

@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Machine — what the module offers at the kernel desk.
 //
@@ -19,7 +21,7 @@ const { fromRefusal } = require('../../kernel/desk-kit');
 
 const object = { type: 'object' };
 // Ids arrive as text and may be a temporary one ("temp_3") on a create.
-const anyId = { type: 'any', required: true };
+const anyId = F.id;
 
 module.exports = function machineOperations({
   service,
@@ -50,7 +52,7 @@ module.exports = function machineOperations({
     'machines.save': {
       permission: 'machines.create',
       summary: 'Create a machine, or update the one whose id is given. What is left out is kept.',
-      input: { fields: { id: { type: 'any' }, name: { type: 'string', nullable: true } } },
+      input: { fields: { id: { ...F.int, nullable: true }, name: { type: 'string', nullable: true } } },
       output: { fields: { machine: { ...object, required: true } } },
       run: async (input) => {
         const saved = await service.saveMachine(input);
@@ -77,7 +79,7 @@ module.exports = function machineOperations({
     'machines.rows.byAssetOrName': {
       internal: true,
       summary: 'The machine a pipeline node names, by its machine number or its name; or nothing.',
-      input: { fields: { key: { type: 'any', required: true } } },
+      input: { fields: { key: F.key } },
       output: { fields: { row: { type: 'object', nullable: true } } },
       run: async (input) => ({ ok: true, row: await service.getMachineRowByAssetOrName(input.key) }),
     },
@@ -85,7 +87,7 @@ module.exports = function machineOperations({
     'machines.rows.remove': {
       internal: true,
       summary: 'Delete a machine’s row outright: an approved delete request.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       run: async (input) => {
         await service.removeMachineRow(input.id);
         return { ok: true };

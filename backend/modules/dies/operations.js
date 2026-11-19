@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Die — what the module offers at the kernel desk.
 //
@@ -23,7 +25,7 @@ const { fromRefusal } = require('../../kernel/desk-kit');
 
 const object = { type: 'object' };
 // Ids arrive as text and may be a temporary one ("temp_3") on a create.
-const anyId = { type: 'any', required: true };
+const anyId = F.id;
 
 const makerId = { type: 'integer', required: true, gt: 0 };
 const makerResult = { fields: { dieMaker: { ...object, required: true } } };
@@ -70,7 +72,7 @@ module.exports = function dieOperations({
     'dies.save': {
       permission: 'dies.create',
       summary: 'Create a die, or update the one whose id is given. What is left out is kept.',
-      input: { fields: { id: { type: 'any' }, name: { type: 'string', nullable: true } } },
+      input: { fields: { id: { ...F.int, nullable: true }, name: { type: 'string', nullable: true } } },
       output: { fields: { die: { ...object, required: true } } },
       run: async (input) => {
         const saved = await service.saveDie(input);
@@ -89,7 +91,7 @@ module.exports = function dieOperations({
     'dies.rows.byToolCode': {
       internal: true,
       summary: 'The die a pipeline node names, by its tool code; or nothing.',
-      input: { fields: { toolCode: { type: 'any', required: true } } },
+      input: { fields: { toolCode: F.key } },
       output: { fields: { row: { ...object, nullable: true } } },
       run: async (input) => ({ ok: true, row: await service.getDieRowByToolCode(input.toolCode) }),
     },
@@ -148,7 +150,7 @@ module.exports = function dieOperations({
     'dies.rows.remove': {
       internal: true,
       summary: 'Delete a die’s row outright: an approved delete request.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       run: async (input) => {
         await service.removeDieRow(input.id);
         return { ok: true };

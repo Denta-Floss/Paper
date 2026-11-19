@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Pipeline templates — what the module offers at the kernel desk.
 //
@@ -34,7 +36,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.templates.list': {
       permission: 'pipelines.read',
       summary: 'Every template, or one factory’s plus the shared ones.',
-      input: { fields: { factoryId: { type: 'any' } } },
+      input: { fields: { factoryId: F.text } },
       output: { fields: { templates: { type: 'array', required: true, items: object } } },
       run: async (input) => ({ ok: true, templates: await service.apiListTemplates(input.factoryId) }),
     },
@@ -42,7 +44,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.templates.save': {
       permission: 'pipelines.create',
       summary: 'Save a template; one with the same id is replaced.',
-      input: { fields: { data: { type: 'any' } } },
+      input: { fields: { data: F.obj({ id: F.text, name: F.text, description: F.text, status: F.text, factoryId: F.text, factory_id: F.text, shopFloorId: F.text, shop_floor_id: F.text, nodes: F.list(), flows: F.list(), laneLabels: F.list(), stageLabels: F.list(), intermediateNamingConvention: F.text, intermediate_naming_convention: F.text }) } },
       output: templateResult,
       run: async (input) => {
         const row = await service.apiSaveTemplate(input.data);
@@ -53,7 +55,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.templates.update': {
       permission: 'pipelines.update',
       summary: 'Change a template; what is left out is kept.',
-      input: { fields: { id: { type: 'any', required: true }, data: { type: 'any' } } },
+      input: { fields: { id: F.key, data: F.obj({ id: F.text, name: F.text, description: F.text, status: F.text, factoryId: F.text, factory_id: F.text, shopFloorId: F.text, shop_floor_id: F.text, nodes: F.list(), flows: F.list(), laneLabels: F.list(), stageLabels: F.list(), intermediateNamingConvention: F.text, intermediate_naming_convention: F.text }) } },
       output: templateResult,
       run: async (input) => {
         const saved = await service.apiUpdateTemplate(input.id, input.data);
@@ -77,7 +79,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.legacyTemplates.get': {
       access: 'signedIn',
       summary: 'One template (the older /templates set).',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.key } },
       output: templateResult,
       run: async (input) => {
         const row = await service.getTemplateRow(input.id);
@@ -101,7 +103,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.legacyTemplates.update': {
       permission: 'config.write',
       summary: 'Change a template and bump its version (the older /templates set).',
-      input: { fields: { id: { type: 'any', required: true }, data: { type: 'object' } } },
+      input: { fields: { id: F.key, data: F.obj({ id: F.text, name: F.text, description: F.text, status: F.text, factoryId: F.text, factory_id: F.text, shopFloorId: F.text, shop_floor_id: F.text, nodes: F.list(), flows: F.list(), laneLabels: F.list(), stageLabels: F.list(), intermediateNamingConvention: F.text, intermediate_naming_convention: F.text }) } },
       output: templateResult,
       run: async (input) => {
         const saved = await service.rootUpdateTemplate(input.id, input.data || {});
@@ -113,7 +115,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.legacyTemplates.delete': {
       permission: 'config.write',
       summary: 'Remove a template without checking for runs (the older /templates set).',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.key } },
       run: async (input) => {
         if (!(await service.getTemplateRow(input.id))) {
           return { ok: false, status: 404, error: 'Template not found.' };
@@ -126,7 +128,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.templates.row': {
       internal: true,
       summary: 'A template’s row as stored, or nothing. Production reads the nodes a run was started from.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.key } },
       output: { fields: { row: { type: 'object', nullable: true } } },
       run: async (input) => ({ ok: true, row: await service.getTemplateRow(input.id) }),
     },
@@ -134,7 +136,7 @@ module.exports = function pipelineOperations({ service, desk }) {
     'pipelines.templates.delete': {
       permission: 'pipelines.delete',
       summary: 'Remove a template no run was ever started from.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.key } },
       run: async (input) => {
         if ((await desk.ask('production.templates.runCount', { templateId: input.id })).count > 0) {
           return {

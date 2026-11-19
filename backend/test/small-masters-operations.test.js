@@ -96,12 +96,19 @@ test('a refusal is the same refusal with no request', async (t) => {
   assert.deepEqual(await ctx.desk.call('vendors.get', { id: 999999 }, system), {
     ok: false, status: 404, error: 'Not found',
   });
-  assert.deepEqual(await ctx.desk.call('machines.get', { id: 'nope' }, system), {
+  assert.deepEqual(await ctx.desk.call('machines.get', { id: 999999 }, system), {
     ok: false, status: 404, machine: null, error: 'Machine not found',
   });
-  assert.deepEqual(await ctx.desk.call('dies.get', { id: 'nope' }, system), {
+  assert.deepEqual(await ctx.desk.call('dies.get', { id: 999999 }, system), {
     ok: false, status: 404, die: null, error: 'Die not found',
   });
+  // An id that is not a number is refused by the contract, not looked up:
+  // until 2026-11-19 it was answered "not found".
+  const notANumber = await ctx.desk.call('machines.get', { id: 'nope' }, system);
+  assert.equal(notANumber.status, 400);
+  assert.equal(notANumber.code, 'input_invalid');
+  assert.equal(notANumber.error, 'id must be a number');
+  assert.equal((await ctx.desk.call('dies.get', { id: 'nope' }, system)).code, 'input_invalid');
 
   // A vendor a challan names cannot be deleted, and the refusal says why.
   const vendor = (await api(ctx, 'POST', '/api/vendors', { name: 'Desk Steel' })).body.vendor;

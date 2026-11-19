@@ -1,5 +1,7 @@
 'use strict';
 
+const F = require('../../kernel/fields');
+
 // ---------------------------------------------------------------------------
 // Orders — what the module offers at the kernel desk.
 //
@@ -57,10 +59,28 @@ function authorOf(ctx) {
   };
 }
 
-const any = { type: 'any' };
-// Loose on purpose: an id that is not a number is answered by the service as
-// "Order not found", which is what the app has always been told.
-const id = { type: 'any', required: true };
+// A line id from the path. Until 2026-11-19 this was loose, so that an id
+// that is not a number was answered "Order not found"; it is now refused as
+// not an integer, like every other module's ids.
+const id = F.id;
+// A filter list may arrive as an array or as a comma-separated string; toList
+// below takes both. The one place the contract says nothing about the type.
+const idsOrCsv = { type: 'any' };
+const save = F.obj({
+  orderNo: F.text, clientId: F.int, subContractorId: F.int, clientName: F.text, poNumber: F.text,
+  clientCode: F.text, itemId: F.int, itemName: F.text, variationLeafNodeId: F.int,
+  variationPathLabel: F.text, variationPathNodeIds: F.list(F.int), customVariationValues: F.none,
+  quantity: F.num, unitId: F.int, unitName: F.text, unitSymbol: F.text, unitPrice: F.num,
+  totalInvoicedQty: F.num, status: F.text, startDate: F.text, endDate: F.text,
+  poDocumentIds: F.list(F.int), materialRequirements: F.list(F.none),
+  sourceSetId: F.int, sourceSetName: F.text, sourceSetMultiplier: F.num,
+}).fields;
+const edit = F.obj({
+  orderNo: F.text, clientId: F.int, clientName: F.text, clientCode: F.text, itemId: F.int,
+  itemName: F.text, variationLeafNodeId: F.int, variationPathLabel: F.text, quantity: F.num,
+  unitPrice: F.num, hsnCode: F.text, cgstRate: F.num, sgstRate: F.num, cgstAmount: F.num,
+  sgstAmount: F.num, taxableValue: F.num,
+}).fields;
 
 module.exports = function orderOperations({ service, ports, lineWrites }) {
   return {
@@ -70,7 +90,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
       permission: 'orders.read',
       summary: 'Order lines. Narrowing and paging are opt-in: no limit means every line.',
       input: {
-        fields: { search: any, clientId: any, statuses: any, ids: any, limit: any, offset: any },
+        fields: { search: F.text, clientId: F.int, statuses: idsOrCsv, ids: idsOrCsv, limit: F.int, offset: F.int },
       },
       run: async (input) => {
         // A request with no `limit` gets every order — several features
@@ -119,7 +139,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
       summary: 'Add an order line, or merge the quantity into a matching one.',
       // The service reads and checks every field itself, and says what is wrong
       // in words a person can act on.
-      input: { fields: { clientId: any, itemId: any, quantity: any, orderNo: any } },
+      input: { fields: save },
       run: (input, ctx) =>
         refusing(async () => {
           const result = await service.saveOrder(
@@ -140,7 +160,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.edit': {
       permission: 'orders.update',
       summary: 'Change fields of an order line. Answers with the raw row.',
-      input: { fields: { id } },
+      input: { fields: { id, ...edit } },
       run: (input) => {
         const { id: orderId, ...updates } = input;
         return refusing(() => lineWrites.editOrderLine(Number(orderId), updates));
@@ -150,7 +170,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.lifecycle.set': {
       permission: 'orders.update',
       summary: 'Move a line along its lifecycle, or set its start and end dates.',
-      input: { fields: { id, status: any, startDate: any, endDate: any } },
+      input: { fields: { id, status: F.text, startDate: F.text, endDate: F.text } },
       run: (input, ctx) =>
         refusing(async () => {
           const order = await service.updateOrderLifecycle({
@@ -165,7 +185,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.delete': {
       permission: 'orders.delete',
       summary: 'Remove a line, dissolve its runs and put the stock they consumed back.',
-      input: { fields: { id, wipBarcode: any, wipQty: any } },
+      input: { fields: { id, wipBarcode: F.text, wipQty: F.num } },
       run: (input, ctx) =>
         refusing(() =>
           lineWrites.deleteOrderLine({
@@ -182,7 +202,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.clients.lineCount': {
       internal: true,
       summary: 'How many order lines name this client.',
-      input: { fields: { clientId: any } },
+      input: { fields: { clientId: F.int } },
       run: async (input) => ({ ok: true, count: await ports.clientLineCount(input.clientId) }),
     },
 
@@ -198,7 +218,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.clients.lockedLineCount': {
       internal: true,
       summary: 'How many of this client’s lines are in progress, completed or delayed.',
-      input: { fields: { clientId: any } },
+      input: { fields: { clientId: F.int } },
       run: async (input) => ({
         ok: true,
         count: await ports.clientLockedLineCount(input.clientId),
@@ -208,35 +228,35 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.lines.get': {
       internal: true,
       summary: 'Which item and variation an order line is for.',
-      input: { fields: { orderItemId: any } },
+      input: { fields: { orderItemId: F.int } },
       run: async (input) => ({ ok: true, line: await ports.lines.row(input.orderItemId) }),
     },
 
     'orders.lines.summary': {
       internal: true,
       summary: 'An order line with its order number and client name.',
-      input: { fields: { orderItemId: any } },
+      input: { fields: { orderItemId: F.int } },
       run: async (input) => ({ ok: true, summary: await ports.lines.summary(input.orderItemId) }),
     },
 
     'orders.lines.idsForOrderNo': {
       internal: true,
       summary: 'The ids of every line on an order.',
-      input: { fields: { orderNo: any } },
+      input: { fields: { orderNo: F.text } },
       run: async (input) => ({ ok: true, ids: await ports.lines.idsForOrderNo(input.orderNo) }),
     },
 
     'orders.lines.idsForItem': {
       internal: true,
       summary: 'The ids of every order line for an item.',
-      input: { fields: { itemId: any } },
+      input: { fields: { itemId: F.int } },
       run: async (input) => ({ ok: true, ids: await ports.lines.idsForItem(input.itemId) }),
     },
 
     'orders.lines.customVariationValues': {
       internal: true,
       summary: 'Custom variation values typed on an item and variation’s order lines.',
-      input: { fields: { itemId: any, variationLeafNodeId: any } },
+      input: { fields: { itemId: F.int, variationLeafNodeId: F.int } },
       run: async (input) => ({
         ok: true,
         rows: await ports.customVariationValueRows(input.itemId, input.variationLeafNodeId),
@@ -246,7 +266,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.rows.get': {
       internal: true,
       summary: 'An order line as the list shows it, with its derived status; or nothing.',
-      input: { fields: { id: { type: 'any', required: true } } },
+      input: { fields: { id: F.id } },
       output: { fields: { row: { type: 'object', nullable: true } } },
       run: async (input) => ({ ok: true, row: await service.getOrderRowById(input.id) }),
     },
@@ -262,7 +282,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.rows.forOrderNo': {
       internal: true,
       summary: 'Every line of an order as stored, in the order they were added.',
-      input: { fields: { orderNo: { type: 'any', required: true } } },
+      input: { fields: { orderNo: F.key } },
       output: { fields: { rows: { type: 'array', required: true } } },
       run: async (input) => ({ ok: true, rows: await ports.rowsForOrderNo(input.orderNo) }),
     },
@@ -272,9 +292,9 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
       summary: 'Move a line along its lifecycle for another module. A step the lifecycle forbids throws.',
       input: {
         fields: {
-          id: { type: 'any', required: true },
+          id: F.id,
           status: { type: 'string', required: true },
-          actor: { type: 'any' },
+          actor: { type: 'object', nullable: true },
         },
       },
       run: async (input) => {
@@ -286,7 +306,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.items.usage': {
       internal: true,
       summary: 'How many order lines and material requirements name an item.',
-      input: { fields: { itemId: { type: 'any', required: true } } },
+      input: { fields: { itemId: F.id } },
       output: { fields: { count: { type: 'integer', required: true, min: 0 } } },
       run: (input) => ports.itemUsage(input.itemId),
     },
@@ -294,7 +314,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.items.demand': {
       internal: true,
       summary: 'How many order lines name an item, and the quantity they add up to.',
-      input: { fields: { itemId: { type: 'any', required: true } } },
+      input: { fields: { itemId: F.id } },
       output: {
         fields: {
           lines: { type: 'integer', required: true, min: 0 },
@@ -315,7 +335,7 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
     'orders.portal.insertHeader': {
       internal: true,
       summary: 'The header row a portal order’s lines hang off.',
-      input: { fields: { orderNo: any, clientId: any } },
+      input: { fields: { orderNo: F.text, clientId: F.int } },
       run: async (input) => {
         await ports.insertOrderHeader({ orderNo: input.orderNo, clientId: input.clientId });
         return { ok: true };

@@ -181,6 +181,9 @@ module.exports = function unitOperations({ master, db, trashAndDelete }) {
             type: 'array',
             items: {
               type: 'object',
+              // Each line answers for itself, bad value or unknown unit included,
+              // so the fields are not typed here: a typed contract would refuse
+              // the whole batch for one line.
               fields: { value: { type: 'any', required: true }, fromUnitId: { type: 'any' }, toUnitId: { type: 'any' } },
             },
           },

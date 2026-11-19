@@ -20,14 +20,20 @@
       "summary": "Approve a delete request and delete the record.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "note": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -44,10 +50,24 @@
       "summary": "Ask for a record to be deleted.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "entityType": {
+              "type": "string"
+            },
+            "entityId": {
+              "type": "any"
+            },
+            "entityLabel": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -63,10 +83,10 @@
       "summary": "Every delete request, as a CSV file.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -82,10 +102,24 @@
       "summary": "The delete requests waiting for review, and the reviewed ones.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "status": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            },
+            "offset": {
+              "type": "integer"
+            },
+            "page": {
+              "type": "integer"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -111,14 +145,20 @@
       "summary": "Reject a delete request.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "note": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -134,10 +174,10 @@
       "summary": "References to records that are gone: an order naming a deleted client, an item in a deleted group.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -153,10 +193,15 @@
       "summary": "What is in the trash.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "tableName": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -172,10 +217,18 @@
       "summary": "Put a trashed record back.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "tableName": {
+              "type": "string"
+            },
+            "recordId": {
+              "type": "any"
+            }
+          }
         }
       },
       "output": null,
@@ -191,14 +244,26 @@
       "summary": "Say a challan photo arrived.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "entityId": {
+              "type": "integer"
+            },
+            "uploadSessionId": {
+              "type": "string"
+            },
+            "objectKey": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -214,14 +279,53 @@
       "summary": "Ask for somewhere to upload a challan photo.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "uploadType": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "entityId": {
+              "type": "integer"
+            },
+            "fileName": {
+              "type": "string"
+            },
+            "contentType": {
+              "type": "string"
+            },
+            "sizeBytes": {
+              "type": "integer"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "isPrimary": {
+              "type": "boolean"
+            },
+            "documentTitle": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "width": {
+              "type": "integer"
+            },
+            "height": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -237,14 +341,20 @@
       "summary": "Cancel a challan and undo its stock; a partly used reception becomes a vendor return instead.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "action": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -260,14 +370,15 @@
       "summary": "What cancelling a challan would do.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -283,10 +394,266 @@
       "summary": "Create a draft challan.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "integer"
+            },
+            "challanNo": {
+              "type": "string"
+            },
+            "challan_no": {
+              "type": "string"
+            },
+            "challanType": {
+              "type": "string"
+            },
+            "challan_type": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "challanPurpose": {
+              "type": "string"
+            },
+            "challan_purpose": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "customerName": {
+              "type": "string"
+            },
+            "customer_name": {
+              "type": "string"
+            },
+            "customerGstin": {
+              "type": "string"
+            },
+            "customer_gstin": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "maintainStocks": {
+              "type": "boolean"
+            },
+            "maintain_stocks": {
+              "type": "boolean"
+            },
+            "materialOwnerClientId": {
+              "type": "integer"
+            },
+            "material_owner_client_id": {
+              "type": "integer"
+            },
+            "materialOwnerClientName": {
+              "type": "string"
+            },
+            "material_owner_client_name": {
+              "type": "string"
+            },
+            "materialOwnerGstin": {
+              "type": "string"
+            },
+            "material_owner_gstin": {
+              "type": "string"
+            },
+            "internalPurpose": {
+              "type": "string"
+            },
+            "internal_purpose": {
+              "type": "string"
+            },
+            "internalSubtype": {
+              "type": "string"
+            },
+            "internal_subtype": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "orderId": {
+              "type": "integer"
+            },
+            "orderNo": {
+              "type": "string"
+            },
+            "order_no": {
+              "type": "string"
+            },
+            "orderIds": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "poDate": {
+              "type": "string"
+            },
+            "po_date": {
+              "type": "string"
+            },
+            "poNumber": {
+              "type": "string"
+            },
+            "po_number": {
+              "type": "string"
+            },
+            "reportGroupCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "report_group_codes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "returnedSheetCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "returned_sheet_codes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sourceReceptionChallanId": {
+              "type": "integer"
+            },
+            "source_reception_challan_id": {
+              "type": "integer"
+            },
+            "sourceReference": {
+              "type": "string"
+            },
+            "source_reference": {
+              "type": "string"
+            },
+            "pieceBarcodes": {
+              "type": "array"
+            },
+            "piece_barcodes": {
+              "type": "array"
+            },
+            "genericAssets": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "itemId": {
+                    "type": "integer"
+                  },
+                  "item_id": {
+                    "type": "integer"
+                  },
+                  "variationLeafNodeId": {
+                    "type": "integer"
+                  },
+                  "variation_leaf_node_id": {
+                    "type": "integer"
+                  },
+                  "variationPathLabel": {
+                    "type": "string"
+                  },
+                  "variation_path_label": {
+                    "type": "string"
+                  },
+                  "variationPathNodeIds": {
+                    "type": "array"
+                  },
+                  "variation_path_node_ids": {
+                    "type": "array"
+                  },
+                  "variation_path_node_ids_json": {
+                    "type": "string"
+                  },
+                  "customVariationValues": {
+                    "type": "object"
+                  },
+                  "custom_variation_values": {
+                    "type": "object"
+                  },
+                  "custom_variation_values_json": {
+                    "type": "string"
+                  },
+                  "hsnCode": {
+                    "type": "string"
+                  },
+                  "hsn_code": {
+                    "type": "string"
+                  },
+                  "lineNo": {
+                    "type": "integer"
+                  },
+                  "line_no": {
+                    "type": "integer"
+                  },
+                  "lineNote": {
+                    "type": "string"
+                  },
+                  "line_note": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "materialBarcode": {
+                    "type": "string"
+                  },
+                  "material_barcode": {
+                    "type": "string"
+                  },
+                  "orderItemId": {
+                    "type": "integer"
+                  },
+                  "order_item_id": {
+                    "type": "integer"
+                  },
+                  "particulars": {
+                    "type": "string"
+                  },
+                  "productionRunId": {
+                    "type": "integer"
+                  },
+                  "production_run_id": {
+                    "type": "integer"
+                  },
+                  "quantityPcs": {
+                    "type": "number"
+                  },
+                  "quantity_pcs": {
+                    "type": "number"
+                  },
+                  "weight": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -323,14 +690,15 @@
       "summary": "Delete a draft challan.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -346,14 +714,15 @@
       "summary": "One challan.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -369,10 +738,131 @@
       "summary": "Raise an invoice from challans.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "invoiceNo": {
+              "type": "string"
+            },
+            "invoice_no": {
+              "type": "string"
+            },
+            "invoiceDate": {
+              "type": "string"
+            },
+            "invoice_date": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "integer"
+            },
+            "client_id": {
+              "type": "integer"
+            },
+            "clientName": {
+              "type": "string"
+            },
+            "client_name": {
+              "type": "string"
+            },
+            "gstin": {
+              "type": "string"
+            },
+            "customerGstin": {
+              "type": "string"
+            },
+            "customer_gstin": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "qty": {
+                    "type": "number"
+                  },
+                  "unitPrice": {
+                    "type": "number"
+                  },
+                  "unit_price": {
+                    "type": "number"
+                  },
+                  "cgstRate": {
+                    "type": "number"
+                  },
+                  "cgst_rate": {
+                    "type": "number"
+                  },
+                  "sgstRate": {
+                    "type": "number"
+                  },
+                  "sgst_rate": {
+                    "type": "number"
+                  },
+                  "cgstAmount": {
+                    "type": "number"
+                  },
+                  "sgstAmount": {
+                    "type": "number"
+                  },
+                  "taxableValue": {
+                    "type": "number"
+                  },
+                  "orderId": {
+                    "type": "integer"
+                  },
+                  "order_id": {
+                    "type": "integer"
+                  },
+                  "challanId": {
+                    "type": "integer"
+                  },
+                  "challan_id": {
+                    "type": "integer"
+                  },
+                  "challanItemId": {
+                    "type": "integer"
+                  },
+                  "challan_item_id": {
+                    "type": "integer"
+                  },
+                  "itemId": {
+                    "type": "integer"
+                  },
+                  "item_id": {
+                    "type": "integer"
+                  },
+                  "variationLeafNodeId": {
+                    "type": "integer"
+                  },
+                  "variation_leaf_node_id": {
+                    "type": "integer"
+                  },
+                  "itemName": {
+                    "type": "string"
+                  },
+                  "item_name": {
+                    "type": "string"
+                  },
+                  "hsnCode": {
+                    "type": "string"
+                  },
+                  "hsn_code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -388,14 +878,15 @@
       "summary": "Delete an invoice.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -411,14 +902,15 @@
       "summary": "One invoice, with its lines.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -434,10 +926,10 @@
       "summary": "Invoices.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -453,14 +945,15 @@
       "summary": "An invoice as a PDF.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -476,14 +969,20 @@
       "summary": "Move an invoice along its status.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "status": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -499,14 +998,136 @@
       "summary": "Replace an invoice’s lines and recompute its totals.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "invoiceNo": {
+              "type": "string"
+            },
+            "invoice_no": {
+              "type": "string"
+            },
+            "invoiceDate": {
+              "type": "string"
+            },
+            "invoice_date": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "integer"
+            },
+            "client_id": {
+              "type": "integer"
+            },
+            "clientName": {
+              "type": "string"
+            },
+            "client_name": {
+              "type": "string"
+            },
+            "gstin": {
+              "type": "string"
+            },
+            "customerGstin": {
+              "type": "string"
+            },
+            "customer_gstin": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "qty": {
+                    "type": "number"
+                  },
+                  "unitPrice": {
+                    "type": "number"
+                  },
+                  "unit_price": {
+                    "type": "number"
+                  },
+                  "cgstRate": {
+                    "type": "number"
+                  },
+                  "cgst_rate": {
+                    "type": "number"
+                  },
+                  "sgstRate": {
+                    "type": "number"
+                  },
+                  "sgst_rate": {
+                    "type": "number"
+                  },
+                  "cgstAmount": {
+                    "type": "number"
+                  },
+                  "sgstAmount": {
+                    "type": "number"
+                  },
+                  "taxableValue": {
+                    "type": "number"
+                  },
+                  "orderId": {
+                    "type": "integer"
+                  },
+                  "order_id": {
+                    "type": "integer"
+                  },
+                  "challanId": {
+                    "type": "integer"
+                  },
+                  "challan_id": {
+                    "type": "integer"
+                  },
+                  "challanItemId": {
+                    "type": "integer"
+                  },
+                  "challan_item_id": {
+                    "type": "integer"
+                  },
+                  "itemId": {
+                    "type": "integer"
+                  },
+                  "item_id": {
+                    "type": "integer"
+                  },
+                  "variationLeafNodeId": {
+                    "type": "integer"
+                  },
+                  "variation_leaf_node_id": {
+                    "type": "integer"
+                  },
+                  "itemName": {
+                    "type": "string"
+                  },
+                  "item_name": {
+                    "type": "string"
+                  },
+                  "hsnCode": {
+                    "type": "string"
+                  },
+                  "hsn_code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -522,14 +1143,15 @@
       "summary": "Issue a challan: its lines move stock, in one transaction.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -570,10 +1192,66 @@
       "summary": "Challans, paged and filtered.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "type": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "search": {
+              "type": "string"
+            },
+            "dateFrom": {
+              "type": "string"
+            },
+            "date_from": {
+              "type": "string"
+            },
+            "dateTo": {
+              "type": "string"
+            },
+            "date_to": {
+              "type": "string"
+            },
+            "orderId": {
+              "type": "integer"
+            },
+            "order_id": {
+              "type": "integer"
+            },
+            "vendorId": {
+              "type": "integer"
+            },
+            "vendor_id": {
+              "type": "integer"
+            },
+            "itemId": {
+              "type": "integer"
+            },
+            "item_id": {
+              "type": "integer"
+            },
+            "variationLeafNodeId": {
+              "type": "integer"
+            },
+            "variation_leaf_node_id": {
+              "type": "integer"
+            },
+            "mine": {
+              "type": "string"
+            },
+            "createdBy": {
+              "type": "integer"
+            },
+            "created_by": {
+              "type": "integer"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -589,14 +1267,15 @@
       "summary": "The delivery challans raised against an order line.",
       "input": {
         "orderId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -630,14 +1309,46 @@
       "summary": "Record the per-piece barcodes of a challan line.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "barcodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "challanItemId": {
+                    "type": "integer"
+                  },
+                  "challan_item_id": {
+                    "type": "integer"
+                  },
+                  "parentCode": {
+                    "type": "string"
+                  },
+                  "parent_code": {
+                    "type": "string"
+                  },
+                  "childCode": {
+                    "type": "string"
+                  },
+                  "child_code": {
+                    "type": "string"
+                  },
+                  "weight": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -653,14 +1364,15 @@
       "summary": "Record that a challan was printed.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -676,14 +1388,26 @@
       "summary": "A challan as its template would print it, as a PDF.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -699,14 +1423,51 @@
       "summary": "Settle an internal-use challan into stock, scrap and finished goods, and complete its order.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "challanItemId": {
+                    "type": "integer"
+                  },
+                  "id": {
+                    "type": "integer"
+                  },
+                  "buckets": {
+                    "type": "object",
+                    "fields": {
+                      "scrap": {
+                        "type": "number"
+                      },
+                      "leftover": {
+                        "type": "number"
+                      },
+                      "lost": {
+                        "type": "number"
+                      },
+                      "rejection": {
+                        "type": "number"
+                      },
+                      "finishedGoods": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -722,10 +1483,51 @@
       "summary": "A client’s statement over a period.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "challanIds": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "challan_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "receptionChallanIds": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "reception_challan_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "reportGroupCode": {
+              "type": "string"
+            },
+            "report_group_code": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "weight": {
+              "type": "number"
+            },
+            "challanNo": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -741,10 +1543,10 @@
       "summary": "The unit conversions the report uses in place of the defaults.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -760,14 +1562,15 @@
       "summary": "One order’s reconciliation.",
       "input": {
         "orderNo": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -783,10 +1586,10 @@
       "summary": "The reconciliation report: received against delivered, with scrap.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -802,10 +1605,42 @@
       "summary": "Set those conversions.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "itemId": {
+              "type": "integer"
+            },
+            "item_id": {
+              "type": "integer"
+            },
+            "variationLeafNodeId": {
+              "type": "integer"
+            },
+            "variation_leaf_node_id": {
+              "type": "integer"
+            },
+            "fromUnit": {
+              "type": "string"
+            },
+            "from_unit": {
+              "type": "string"
+            },
+            "toUnitLabel": {
+              "type": "string"
+            },
+            "to_unit_label": {
+              "type": "string"
+            },
+            "conversionRatio": {
+              "type": "number"
+            },
+            "conversion_ratio": {
+              "type": "number"
+            }
+          }
         }
       },
       "output": null,
@@ -821,10 +1656,10 @@
       "summary": "Where material went that was not delivered.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -864,14 +1699,29 @@
       "summary": "Set which report groups a challan counts under.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "reportGroupCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "report_group_codes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -980,10 +1830,96 @@
       "summary": "Add a print template.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "partyType": {
+              "type": "string"
+            },
+            "party_type": {
+              "type": "string"
+            },
+            "partyId": {
+              "type": "integer"
+            },
+            "party_id": {
+              "type": "integer"
+            },
+            "challanType": {
+              "type": "string"
+            },
+            "challan_type": {
+              "type": "string"
+            },
+            "paperSize": {
+              "type": "string"
+            },
+            "paper_size": {
+              "type": "string"
+            },
+            "stockSize": {
+              "type": "string"
+            },
+            "stock_size": {
+              "type": "string"
+            },
+            "nUpLayout": {
+              "type": "object"
+            },
+            "n_up_layout": {
+              "type": "object"
+            },
+            "mappings": {
+              "type": "array"
+            },
+            "backgroundObjectKey": {
+              "type": "string"
+            },
+            "background_object_key": {
+              "type": "string"
+            },
+            "canvasWidth": {
+              "type": "number"
+            },
+            "canvas_width": {
+              "type": "number"
+            },
+            "canvasHeight": {
+              "type": "number"
+            },
+            "canvas_height": {
+              "type": "number"
+            },
+            "globalOffsetXmm": {
+              "type": "number"
+            },
+            "global_offset_x_mm": {
+              "type": "number"
+            },
+            "globalOffsetYmm": {
+              "type": "number"
+            },
+            "global_offset_y_mm": {
+              "type": "number"
+            },
+            "rotationDegrees": {
+              "type": "number"
+            },
+            "rotation_degrees": {
+              "type": "number"
+            },
+            "isActive": {
+              "type": "boolean"
+            },
+            "is_active": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "output": null,
@@ -999,14 +1935,15 @@
       "summary": "Remove a print template.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -1022,14 +1959,15 @@
       "summary": "One print template.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -1045,10 +1983,36 @@
       "summary": "The print templates.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "partyType": {
+              "type": "string"
+            },
+            "party_type": {
+              "type": "string"
+            },
+            "partyId": {
+              "type": "integer"
+            },
+            "party_id": {
+              "type": "integer"
+            },
+            "challanType": {
+              "type": "string"
+            },
+            "challan_type": {
+              "type": "string"
+            },
+            "activeOnly": {
+              "type": "string"
+            },
+            "active_only": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -1083,10 +2047,15 @@
       "summary": "The scanned stationery a template can be built on.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "limit": {
+              "type": "integer"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -1102,10 +2071,18 @@
       "summary": "Say a stamp arrived.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "uploadSessionId": {
+              "type": "string"
+            },
+            "objectKey": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1121,10 +2098,27 @@
       "summary": "Ask for somewhere to upload a stamp.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "fileName": {
+              "type": "string"
+            },
+            "contentType": {
+              "type": "string"
+            },
+            "sizeBytes": {
+              "type": "integer"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "uploadType": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1140,10 +2134,47 @@
       "summary": "A test print of a template, as a PDF.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "itemCount": {
+              "type": "integer"
+            },
+            "item_count": {
+              "type": "integer"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "itemCount": {
+              "type": "integer"
+            },
+            "item_count": {
+              "type": "integer"
+            },
+            "mappings": {
+              "type": "array"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1159,14 +2190,52 @@
       "summary": "A test print of a stored template, as a PDF.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "itemCount": {
+              "type": "integer"
+            },
+            "item_count": {
+              "type": "integer"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "itemCount": {
+              "type": "integer"
+            },
+            "item_count": {
+              "type": "integer"
+            },
+            "mappings": {
+              "type": "array"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1182,10 +2251,47 @@
       "summary": "A test print of a template sent in the request, as a PDF.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "itemCount": {
+              "type": "integer"
+            },
+            "item_count": {
+              "type": "integer"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "templateId": {
+              "type": "integer"
+            },
+            "template_id": {
+              "type": "integer"
+            },
+            "itemCount": {
+              "type": "integer"
+            },
+            "item_count": {
+              "type": "integer"
+            },
+            "mappings": {
+              "type": "array"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1201,14 +2307,101 @@
       "summary": "Change a print template.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "partyType": {
+              "type": "string"
+            },
+            "party_type": {
+              "type": "string"
+            },
+            "partyId": {
+              "type": "integer"
+            },
+            "party_id": {
+              "type": "integer"
+            },
+            "challanType": {
+              "type": "string"
+            },
+            "challan_type": {
+              "type": "string"
+            },
+            "paperSize": {
+              "type": "string"
+            },
+            "paper_size": {
+              "type": "string"
+            },
+            "stockSize": {
+              "type": "string"
+            },
+            "stock_size": {
+              "type": "string"
+            },
+            "nUpLayout": {
+              "type": "object"
+            },
+            "n_up_layout": {
+              "type": "object"
+            },
+            "mappings": {
+              "type": "array"
+            },
+            "backgroundObjectKey": {
+              "type": "string"
+            },
+            "background_object_key": {
+              "type": "string"
+            },
+            "canvasWidth": {
+              "type": "number"
+            },
+            "canvas_width": {
+              "type": "number"
+            },
+            "canvasHeight": {
+              "type": "number"
+            },
+            "canvas_height": {
+              "type": "number"
+            },
+            "globalOffsetXmm": {
+              "type": "number"
+            },
+            "global_offset_x_mm": {
+              "type": "number"
+            },
+            "globalOffsetYmm": {
+              "type": "number"
+            },
+            "global_offset_y_mm": {
+              "type": "number"
+            },
+            "rotationDegrees": {
+              "type": "number"
+            },
+            "rotation_degrees": {
+              "type": "number"
+            },
+            "isActive": {
+              "type": "boolean"
+            },
+            "is_active": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "output": null,
@@ -1224,10 +2417,18 @@
       "summary": "Say a template scan arrived.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "uploadSessionId": {
+              "type": "string"
+            },
+            "objectKey": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1243,10 +2444,27 @@
       "summary": "Ask for somewhere to upload a template scan.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "fileName": {
+              "type": "string"
+            },
+            "contentType": {
+              "type": "string"
+            },
+            "sizeBytes": {
+              "type": "integer"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "uploadType": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -1262,14 +2480,271 @@
       "summary": "Edit a draft challan.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "integer"
+            },
+            "challanNo": {
+              "type": "string"
+            },
+            "challan_no": {
+              "type": "string"
+            },
+            "challanType": {
+              "type": "string"
+            },
+            "challan_type": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "challanPurpose": {
+              "type": "string"
+            },
+            "challan_purpose": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "customerName": {
+              "type": "string"
+            },
+            "customer_name": {
+              "type": "string"
+            },
+            "customerGstin": {
+              "type": "string"
+            },
+            "customer_gstin": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "maintainStocks": {
+              "type": "boolean"
+            },
+            "maintain_stocks": {
+              "type": "boolean"
+            },
+            "materialOwnerClientId": {
+              "type": "integer"
+            },
+            "material_owner_client_id": {
+              "type": "integer"
+            },
+            "materialOwnerClientName": {
+              "type": "string"
+            },
+            "material_owner_client_name": {
+              "type": "string"
+            },
+            "materialOwnerGstin": {
+              "type": "string"
+            },
+            "material_owner_gstin": {
+              "type": "string"
+            },
+            "internalPurpose": {
+              "type": "string"
+            },
+            "internal_purpose": {
+              "type": "string"
+            },
+            "internalSubtype": {
+              "type": "string"
+            },
+            "internal_subtype": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "orderId": {
+              "type": "integer"
+            },
+            "orderNo": {
+              "type": "string"
+            },
+            "order_no": {
+              "type": "string"
+            },
+            "orderIds": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "poDate": {
+              "type": "string"
+            },
+            "po_date": {
+              "type": "string"
+            },
+            "poNumber": {
+              "type": "string"
+            },
+            "po_number": {
+              "type": "string"
+            },
+            "reportGroupCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "report_group_codes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "returnedSheetCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "returned_sheet_codes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sourceReceptionChallanId": {
+              "type": "integer"
+            },
+            "source_reception_challan_id": {
+              "type": "integer"
+            },
+            "sourceReference": {
+              "type": "string"
+            },
+            "source_reference": {
+              "type": "string"
+            },
+            "pieceBarcodes": {
+              "type": "array"
+            },
+            "piece_barcodes": {
+              "type": "array"
+            },
+            "genericAssets": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "itemId": {
+                    "type": "integer"
+                  },
+                  "item_id": {
+                    "type": "integer"
+                  },
+                  "variationLeafNodeId": {
+                    "type": "integer"
+                  },
+                  "variation_leaf_node_id": {
+                    "type": "integer"
+                  },
+                  "variationPathLabel": {
+                    "type": "string"
+                  },
+                  "variation_path_label": {
+                    "type": "string"
+                  },
+                  "variationPathNodeIds": {
+                    "type": "array"
+                  },
+                  "variation_path_node_ids": {
+                    "type": "array"
+                  },
+                  "variation_path_node_ids_json": {
+                    "type": "string"
+                  },
+                  "customVariationValues": {
+                    "type": "object"
+                  },
+                  "custom_variation_values": {
+                    "type": "object"
+                  },
+                  "custom_variation_values_json": {
+                    "type": "string"
+                  },
+                  "hsnCode": {
+                    "type": "string"
+                  },
+                  "hsn_code": {
+                    "type": "string"
+                  },
+                  "lineNo": {
+                    "type": "integer"
+                  },
+                  "line_no": {
+                    "type": "integer"
+                  },
+                  "lineNote": {
+                    "type": "string"
+                  },
+                  "line_note": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "materialBarcode": {
+                    "type": "string"
+                  },
+                  "material_barcode": {
+                    "type": "string"
+                  },
+                  "orderItemId": {
+                    "type": "integer"
+                  },
+                  "order_item_id": {
+                    "type": "integer"
+                  },
+                  "particulars": {
+                    "type": "string"
+                  },
+                  "productionRunId": {
+                    "type": "integer"
+                  },
+                  "production_run_id": {
+                    "type": "integer"
+                  },
+                  "quantityPcs": {
+                    "type": "number"
+                  },
+                  "quantity_pcs": {
+                    "type": "number"
+                  },
+                  "weight": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -1383,8 +2858,9 @@
       "summary": "Add a person at a client. The first one becomes the first call.",
       "input": {
         "clientId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "data": {
           "type": "object",
@@ -1439,8 +2915,9 @@
       "summary": "A client’s people: the first call first, archived last.",
       "input": {
         "clientId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -1464,12 +2941,14 @@
       "summary": "Change, archive or restore a person, or make them the first call.",
       "input": {
         "clientId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "data": {
           "type": "object",
@@ -1604,8 +3083,9 @@
       "summary": "Whether this id is a client.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -1681,13 +3161,13 @@
       "summary": "Add an item to a buyer’s cart, or raise its quantity.",
       "input": {
         "portal_user_id": {
-          "type": "any"
+          "type": "integer"
         },
         "item_id": {
-          "type": "any"
+          "type": "integer"
         },
         "quantity": {
-          "type": "any"
+          "type": "number"
         }
       },
       "output": null,
@@ -1704,7 +3184,7 @@
       "summary": "The unarchived items in a client’s catalogue, by display name.",
       "input": {
         "clientId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": {
@@ -1728,8 +3208,9 @@
       "summary": "The ids of the items a client may order through the portal.",
       "input": {
         "clientId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -1796,10 +3277,21 @@
       "summary": "Turn a cart into a draft order, in one transaction, and empty the cart.",
       "input": {
         "portal_user_id": {
-          "type": "any"
+          "type": "integer"
         },
         "items": {
-          "type": "any"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "item_id": {
+                "type": "integer"
+              },
+              "quantity": {
+                "type": "number"
+              }
+            }
+          }
         }
       },
       "output": {
@@ -1820,8 +3312,9 @@
       "summary": "Replace the list of items a client may order.",
       "input": {
         "clientId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "itemIds": {
           "type": "array",
@@ -1841,8 +3334,9 @@
       "summary": "Give a client a portal login, or replace the one it has.",
       "input": {
         "clientId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "email": {
           "type": "string",
@@ -1866,8 +3360,9 @@
       "summary": "A client’s row with its usage count, or nothing.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -2011,8 +3506,9 @@
       "summary": "A sub-contractor’s row as stored, or nothing.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -2176,8 +3672,9 @@
       "summary": "Remove a die, unless a live run holds it. Its links and variation tree go with it.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -2193,8 +3690,9 @@
       "summary": "One die.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -2430,8 +3928,9 @@
       "summary": "The die a pipeline node names, by its tool code; or nothing.",
       "input": {
         "toolCode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -2454,8 +3953,9 @@
       "summary": "Delete a die’s row outright: an approved delete request.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -2473,7 +3973,8 @@
       "summary": "Create a die, or update the one whose id is given. What is left out is kept.",
       "input": {
         "id": {
-          "type": "any"
+          "type": "integer",
+          "nullable": true
         },
         "name": {
           "type": "string",
@@ -2555,8 +4056,10 @@
       "summary": "The inventory summary tiles.",
       "input": {
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -2618,12 +4121,15 @@
       "summary": "A material’s per-barcode activity feed.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -2639,12 +4145,23 @@
       "summary": "One more child under a parent.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -2659,9 +4176,46 @@
       "joinsCallerTransaction": false,
       "summary": "A parent material and its children.",
       "input": {
+        "query": {
+          "type": "object"
+        },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "grade": {
+              "type": "string"
+            },
+            "thickness": {
+              "type": "string"
+            },
+            "supplier": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "groupMode": {
+              "type": "string"
+            },
+            "inheritanceEnabled": {
+              "type": "boolean"
+            },
+            "parentGroupId": {
+              "type": "integer"
+            },
+            "numberOfChildren": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -2677,12 +4231,15 @@
       "summary": "Remove a material; a parent takes its children.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
         }
       },
       "output": null,
@@ -2716,12 +4273,15 @@
       "summary": "A material’s life story: where it came from, what took it, what is nested under it.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -2737,12 +4297,15 @@
       "summary": "One material, with its group configuration.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -2758,12 +4321,20 @@
       "summary": "Make a material inherit from a group.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "groupId": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -2779,12 +4350,23 @@
       "summary": "Make a material inherit from an item and variation.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "itemId": {
+              "type": "integer"
+            },
+            "variationLeafNodeId": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -2824,8 +4406,10 @@
       "summary": "Every material.",
       "input": {
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -2841,12 +4425,15 @@
       "summary": "Clear a material’s scan trace.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
         }
       },
       "output": null,
@@ -2881,12 +4468,15 @@
       "summary": "Count a scan of a material.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
         }
       },
       "output": null,
@@ -2902,12 +4492,23 @@
       "summary": "Set a material group’s governance: units, properties, preferences.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "groupMode": {
+              "type": "string"
+            },
+            "inheritanceEnabled": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "output": null,
@@ -2923,12 +4524,15 @@
       "summary": "Stop a material inheriting.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
         }
       },
       "output": null,
@@ -2944,12 +4548,47 @@
       "summary": "Edit a material.",
       "input": {
         "barcode": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "grade": {
+              "type": "string"
+            },
+            "thickness": {
+              "type": "string"
+            },
+            "supplier": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "groupMode": {
+              "type": "string"
+            },
+            "inheritanceEnabled": {
+              "type": "boolean"
+            },
+            "parentGroupId": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -3073,9 +4712,67 @@
       "joinsCallerTransaction": false,
       "summary": "Receive, issue, transfer or adjust stock. One transaction.",
       "input": {
+        "query": {
+          "type": "object"
+        },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "barcode": {
+              "type": "string"
+            },
+            "movementType": {
+              "type": "string"
+            },
+            "qty": {
+              "type": "number"
+            },
+            "primaryQty": {
+              "type": "number"
+            },
+            "uom": {
+              "type": "string"
+            },
+            "toLocationId": {
+              "type": "string"
+            },
+            "fromLocationId": {
+              "type": "string"
+            },
+            "referenceType": {
+              "type": "string"
+            },
+            "referenceId": {
+              "type": "any"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "reasonCode": {
+              "type": "string"
+            },
+            "lotCode": {
+              "type": "string"
+            },
+            "reversesMovementId": {
+              "type": "integer"
+            },
+            "sourceChallanId": {
+              "type": "integer"
+            },
+            "sourceChallanLineId": {
+              "type": "integer"
+            },
+            "sourceChallanType": {
+              "type": "string"
+            },
+            "actor": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -3255,9 +4952,48 @@
       "joinsCallerTransaction": false,
       "summary": "Define a set: a quantified list of items.",
       "input": {
+        "query": {
+          "type": "object"
+        },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "id": {
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "groupId": {
+              "type": "integer"
+            },
+            "photoUrl": {
+              "type": "string"
+            },
+            "expectedVersion": {
+              "type": "integer"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "itemId": {
+                    "type": "integer"
+                  },
+                  "variationLeafNodeId": {
+                    "type": "integer"
+                  },
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "position": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -3273,12 +5009,15 @@
       "summary": "Remove a set and its links. Permanent.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
         }
       },
       "output": null,
@@ -3312,8 +5051,10 @@
       "summary": "Every set, with its lines and its group.",
       "input": {
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -3403,12 +5144,52 @@
       "summary": "Change a set (a full replace of its lines). With expectedVersion, refused if it moved on (code set_changed).",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "query": {
+          "type": "object"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "id": {
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "groupId": {
+              "type": "integer"
+            },
+            "photoUrl": {
+              "type": "string"
+            },
+            "expectedVersion": {
+              "type": "integer"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "itemId": {
+                    "type": "integer"
+                  },
+                  "variationLeafNodeId": {
+                    "type": "integer"
+                  },
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "position": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -3466,8 +5247,10 @@
       "summary": "Stock by item and variation.",
       "input": {
         "query": {
-          "type": "object",
-          "nullable": true
+          "type": "object"
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -3484,7 +5267,20 @@
       "input": {
         "query": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "itemId": {
+              "type": "integer"
+            },
+            "variationLeafNodeId": {
+              "type": "integer"
+            },
+            "quantity": {
+              "type": "number"
+            }
+          }
+        },
+        "data": {
+          "type": "object"
         }
       },
       "output": null,
@@ -3525,14 +5321,20 @@
       "summary": "Archive or restore an item.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "archived": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "output": null,
@@ -3548,14 +5350,15 @@
       "summary": "An item’s attachments.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3571,14 +5374,26 @@
       "summary": "Say an item attachment arrived.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "entityId": {
+              "type": "integer"
+            },
+            "uploadSessionId": {
+              "type": "string"
+            },
+            "objectKey": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -3594,14 +5409,53 @@
       "summary": "Ask for somewhere to upload an item attachment.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "uploadType": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "entityId": {
+              "type": "integer"
+            },
+            "fileName": {
+              "type": "string"
+            },
+            "contentType": {
+              "type": "string"
+            },
+            "sizeBytes": {
+              "type": "integer"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "isPrimary": {
+              "type": "boolean"
+            },
+            "documentTitle": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "width": {
+              "type": "integer"
+            },
+            "height": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -3635,10 +5489,197 @@
       "summary": "Create an item, with its variation tree.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "name": {
+              "type": "string",
+              "required": true,
+              "nonEmpty": true
+            },
+            "alias": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "number",
+              "min": 0
+            },
+            "groupId": {
+              "type": "integer",
+              "required": true,
+              "min": 1
+            },
+            "unitId": {
+              "type": "integer",
+              "required": true,
+              "min": 1
+            },
+            "unitConversions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "unitId": {
+                    "type": "integer",
+                    "required": true,
+                    "min": 1
+                  },
+                  "factorToPrimary": {
+                    "type": "number",
+                    "required": true,
+                    "gt": 0
+                  }
+                }
+              }
+            },
+            "namingFormat": {
+              "type": "array"
+            },
+            "variationTree": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "min": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "required": true,
+                    "enum": [
+                      "property",
+                      "value"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "required": true,
+                    "nonEmpty": true
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "inputType": {
+                    "type": "string",
+                    "enum": [
+                      "Text",
+                      "Numeric",
+                      "Gauge",
+                      "Material"
+                    ]
+                  },
+                  "nameJoin": {
+                    "type": "string"
+                  },
+                  "numericMin": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "numericMax": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "materialTypeId": {
+                    "type": "integer",
+                    "nullable": true,
+                    "min": 1
+                  },
+                  "position": {
+                    "type": "integer",
+                    "min": 0
+                  },
+                  "children": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            },
+            "defaultPipelineId": {
+              "type": "string",
+              "nullable": true
+            },
+            "baseItemId": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "photoUrl": {
+              "type": "string",
+              "nullable": true
+            },
+            "availableForPurchase": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "penPaperBaseline": {
+              "type": "object",
+              "nullable": true,
+              "fields": {}
+            },
+            "partNo": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "partCode": {
+              "type": "string",
+              "nullable": true
+            },
+            "developedFor": {
+              "type": "object",
+              "nullable": true,
+              "fields": {
+                "kind": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "clientId": {
+                  "type": "integer",
+                  "nullable": true,
+                  "min": 1
+                },
+                "subContractorId": {
+                  "type": "integer",
+                  "nullable": true,
+                  "min": 1
+                },
+                "at": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "quotationAmount": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "costAmount": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "contactIds": {
+                  "type": "array",
+                  "nullable": true
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -3654,14 +5695,15 @@
       "summary": "Move an item to the trash.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3766,14 +5808,15 @@
       "summary": "One item, with its variation tree.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3789,14 +5832,23 @@
       "summary": "File items or variants into a group.",
       "input": {
         "groupId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "itemIds": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -3812,14 +5864,15 @@
       "summary": "Archive a group.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3835,10 +5888,44 @@
       "summary": "Create a group.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "name": {
+              "type": "string",
+              "required": true,
+              "nonEmpty": true
+            },
+            "parentGroupId": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "unitId": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "groupType": {
+              "type": "string"
+            },
+            "groupStructure": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "itemFormSections": {
+              "type": "object"
+            }
+          }
         }
       },
       "output": null,
@@ -3854,14 +5941,15 @@
       "summary": "Move a group to the trash.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3877,14 +5965,15 @@
       "summary": "The properties a group’s items carry, inherited ones included.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3938,14 +6027,15 @@
       "summary": "The items in a group.",
       "input": {
         "groupId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -3961,10 +6051,15 @@
       "summary": "Every group, with how many items it holds and its cover pictures.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "withCovers": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4005,14 +6100,15 @@
       "summary": "A group at a glance: its items, sets and stock.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4111,14 +6207,15 @@
       "summary": "Which items a change to a group’s properties would leave without a value.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4134,14 +6231,15 @@
       "summary": "Restore a group.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4157,14 +6255,49 @@
       "summary": "Change a group.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "name": {
+              "type": "string",
+              "required": true,
+              "nonEmpty": true
+            },
+            "parentGroupId": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "unitId": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "groupType": {
+              "type": "string"
+            },
+            "groupStructure": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "itemFormSections": {
+              "type": "object"
+            }
+          }
         }
       },
       "output": null,
@@ -4180,10 +6313,10 @@
       "summary": "Items, with usage.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4217,18 +6350,20 @@
       "summary": "Remove an item’s Master Data for a pipeline.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "pipelineId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4245,14 +6380,15 @@
       "summary": "Every item’s Master Data on one pipeline.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4268,14 +6404,15 @@
       "summary": "Every Master Data record for an item, one per pipeline.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4291,14 +6428,23 @@
       "summary": "The Master Data that applies to an item on a pipeline, and where each value came from.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "pipelineId": {
+              "type": "string"
+            },
+            "adopt": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4314,18 +6460,25 @@
       "summary": "Save an item’s Master Data for a pipeline.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "pipelineId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "baseline": {
+              "type": "object"
+            }
+          }
         }
       },
       "output": null,
@@ -4351,10 +6504,24 @@
       "summary": "Add a material type.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "densityGCm3": {
+              "type": "number"
+            },
+            "category": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -4380,14 +6547,15 @@
       "summary": "Remove a material type.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4404,10 +6572,15 @@
       "summary": "The material types, each with its density.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "includeArchived": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4433,14 +6606,32 @@
       "summary": "Change a material type.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "densityGCm3": {
+              "type": "number"
+            },
+            "category": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "isArchived": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "output": null,
@@ -4456,14 +6647,20 @@
       "summary": "File an item under another group.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "groupId": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -4479,10 +6676,30 @@
       "summary": "The next part number and code for a group and set.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "groupId": {
+              "type": "integer"
+            },
+            "setId": {
+              "type": "integer"
+            },
+            "setPending": {
+              "type": "string"
+            },
+            "values": {
+              "type": "any"
+            },
+            "name": {
+              "type": "string"
+            },
+            "setName": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4498,14 +6715,23 @@
       "summary": "Set a part’s photos and their order.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "order": {
+              "type": "array"
+            },
+            "primaryId": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -4521,14 +6747,15 @@
       "summary": "A part’s photos, in order.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4641,14 +6868,15 @@
       "summary": "The sets an item is in, with its quantity in each.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4664,14 +6892,20 @@
       "summary": "Set how a part’s sheet sections nest, and reconcile its links.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "tree": {
+              "type": "object"
+            }
+          }
         }
       },
       "output": null,
@@ -4687,14 +6921,20 @@
       "summary": "Set an item’s short code.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "shortCode": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -4710,14 +6950,20 @@
       "summary": "Add a value to a property column’s list.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "label": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -4733,10 +6979,24 @@
       "summary": "Add a property column.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -4752,14 +7012,15 @@
       "summary": "Remove a property column.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4775,10 +7036,10 @@
       "summary": "The item sheet’s property columns.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4794,14 +7055,20 @@
       "summary": "Remove a value no saved part carries.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "label": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -4817,14 +7084,26 @@
       "summary": "Change a property column.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "displayName": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -4924,14 +7203,202 @@
       "summary": "Change an item. What is left out is kept.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "name": {
+              "type": "string",
+              "required": true,
+              "nonEmpty": true
+            },
+            "alias": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "number",
+              "min": 0
+            },
+            "groupId": {
+              "type": "integer",
+              "required": true,
+              "min": 1
+            },
+            "unitId": {
+              "type": "integer",
+              "required": true,
+              "min": 1
+            },
+            "unitConversions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "unitId": {
+                    "type": "integer",
+                    "required": true,
+                    "min": 1
+                  },
+                  "factorToPrimary": {
+                    "type": "number",
+                    "required": true,
+                    "gt": 0
+                  }
+                }
+              }
+            },
+            "namingFormat": {
+              "type": "array"
+            },
+            "variationTree": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "min": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "required": true,
+                    "enum": [
+                      "property",
+                      "value"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "required": true,
+                    "nonEmpty": true
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "inputType": {
+                    "type": "string",
+                    "enum": [
+                      "Text",
+                      "Numeric",
+                      "Gauge",
+                      "Material"
+                    ]
+                  },
+                  "nameJoin": {
+                    "type": "string"
+                  },
+                  "numericMin": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "numericMax": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "materialTypeId": {
+                    "type": "integer",
+                    "nullable": true,
+                    "min": 1
+                  },
+                  "position": {
+                    "type": "integer",
+                    "min": 0
+                  },
+                  "children": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            },
+            "defaultPipelineId": {
+              "type": "string",
+              "nullable": true
+            },
+            "baseItemId": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "photoUrl": {
+              "type": "string",
+              "nullable": true
+            },
+            "availableForPurchase": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "penPaperBaseline": {
+              "type": "object",
+              "nullable": true,
+              "fields": {}
+            },
+            "partNo": {
+              "type": "integer",
+              "nullable": true,
+              "min": 1
+            },
+            "partCode": {
+              "type": "string",
+              "nullable": true
+            },
+            "developedFor": {
+              "type": "object",
+              "nullable": true,
+              "fields": {
+                "kind": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "clientId": {
+                  "type": "integer",
+                  "nullable": true,
+                  "min": 1
+                },
+                "subContractorId": {
+                  "type": "integer",
+                  "nullable": true,
+                  "min": 1
+                },
+                "at": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "quotationAmount": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "costAmount": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "contactIds": {
+                  "type": "array",
+                  "nullable": true
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -4947,14 +7414,15 @@
       "summary": "Where an item is used: orders, challans, stock.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -5050,10 +7518,21 @@
       "summary": "Hand a batch of jobs to a worker; assembly sets go out of stock with it.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "freelancer_id": {
+              "type": "integer"
+            },
+            "job_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -5079,10 +7558,18 @@
       "summary": "Create a job for an item, with tasks from its bill of materials.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "item_id": {
+              "type": "integer"
+            },
+            "quantity": {
+              "type": "number"
+            }
+          }
         }
       },
       "output": null,
@@ -5108,14 +7595,15 @@
       "summary": "Remove a job and its tasks.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -5132,10 +7620,10 @@
       "summary": "Everything the job board draws: batches, jobs and tasks.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -5152,10 +7640,15 @@
       "summary": "A freelancer’s own batches, jobs and tasks, by the token on their card.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "token": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -5172,10 +7665,15 @@
       "summary": "The token for a worker’s printed card, signed by this server.",
       "input": {
         "query": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "barcodeId": {
+              "type": "string"
+            }
+          }
         },
         "data": {
-          "type": "any"
+          "type": "object"
         }
       },
       "output": null,
@@ -5243,14 +7741,20 @@
       "summary": "Move a job along its status.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "query": {
-          "type": "any"
+          "type": "object"
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "status": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -5266,8 +7770,9 @@
       "summary": "Remove a machine, unless a live run holds it. Its links and variation tree go with it.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -5283,8 +7788,9 @@
       "summary": "One machine.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -5325,8 +7831,9 @@
       "summary": "The machine a pipeline node names, by its machine number or its name; or nothing.",
       "input": {
         "key": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -5349,8 +7856,9 @@
       "summary": "A machine’s row as stored, or nothing. Production reads it for a machine’s queue.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -5373,8 +7881,9 @@
       "summary": "Delete a machine’s row outright: an approved delete request.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -5392,7 +7901,8 @@
       "summary": "Create a machine, or update the one whose id is given. What is left out is kept.",
       "input": {
         "id": {
-          "type": "any"
+          "type": "integer",
+          "nullable": true
         },
         "name": {
           "type": "string",
@@ -5417,7 +7927,7 @@
       "summary": "How many order lines name this client.",
       "input": {
         "clientId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5450,7 +7960,7 @@
       "summary": "How many of this client’s lines are in progress, completed or delayed.",
       "input": {
         "clientId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5468,14 +7978,15 @@
       "summary": "Remove a line, dissolve its runs and put the stock they consumed back.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "wipBarcode": {
-          "type": "any"
+          "type": "string"
         },
         "wipQty": {
-          "type": "any"
+          "type": "number"
         }
       },
       "output": null,
@@ -5491,8 +8002,57 @@
       "summary": "Change fields of an order line. Answers with the raw row.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        },
+        "orderNo": {
+          "type": "string"
+        },
+        "clientId": {
+          "type": "integer"
+        },
+        "clientName": {
+          "type": "string"
+        },
+        "clientCode": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "integer"
+        },
+        "itemName": {
+          "type": "string"
+        },
+        "variationLeafNodeId": {
+          "type": "integer"
+        },
+        "variationPathLabel": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "number"
+        },
+        "unitPrice": {
+          "type": "number"
+        },
+        "hsnCode": {
+          "type": "string"
+        },
+        "cgstRate": {
+          "type": "number"
+        },
+        "sgstRate": {
+          "type": "number"
+        },
+        "cgstAmount": {
+          "type": "number"
+        },
+        "sgstAmount": {
+          "type": "number"
+        },
+        "taxableValue": {
+          "type": "number"
         }
       },
       "output": null,
@@ -5508,8 +8068,9 @@
       "summary": "One order line, shaped exactly like a row of the list.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -5525,8 +8086,9 @@
       "summary": "How many order lines name an item, and the quantity they add up to.",
       "input": {
         "itemId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -5554,8 +8116,9 @@
       "summary": "How many order lines and material requirements name an item.",
       "input": {
         "itemId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -5579,15 +8142,17 @@
       "summary": "Move a line along its lifecycle for another module. A step the lifecycle forbids throws.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "status": {
           "type": "string",
           "required": true
         },
         "actor": {
-          "type": "any"
+          "type": "object",
+          "nullable": true
         }
       },
       "output": null,
@@ -5605,17 +8170,18 @@
       "summary": "Move a line along its lifecycle, or set its start and end dates.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "status": {
-          "type": "any"
+          "type": "string"
         },
         "startDate": {
-          "type": "any"
+          "type": "string"
         },
         "endDate": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": null,
@@ -5631,10 +8197,10 @@
       "summary": "Custom variation values typed on an item and variation’s order lines.",
       "input": {
         "itemId": {
-          "type": "any"
+          "type": "integer"
         },
         "variationLeafNodeId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5652,7 +8218,7 @@
       "summary": "Which item and variation an order line is for.",
       "input": {
         "orderItemId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5670,7 +8236,7 @@
       "summary": "The ids of every order line for an item.",
       "input": {
         "itemId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5688,7 +8254,7 @@
       "summary": "The ids of every line on an order.",
       "input": {
         "orderNo": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": null,
@@ -5707,7 +8273,7 @@
       "summary": "An order line with its order number and client name.",
       "input": {
         "orderItemId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5725,10 +8291,10 @@
       "summary": "Order lines. Narrowing and paging are opt-in: no limit means every line.",
       "input": {
         "search": {
-          "type": "any"
+          "type": "string"
         },
         "clientId": {
-          "type": "any"
+          "type": "integer"
         },
         "statuses": {
           "type": "any"
@@ -5737,10 +8303,10 @@
           "type": "any"
         },
         "limit": {
-          "type": "any"
+          "type": "integer"
         },
         "offset": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5756,10 +8322,10 @@
       "summary": "The header row a portal order’s lines hang off.",
       "input": {
         "orderNo": {
-          "type": "any"
+          "type": "string"
         },
         "clientId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -5820,8 +8386,9 @@
       "summary": "Every line of an order as stored, in the order they were added.",
       "input": {
         "orderNo": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -5844,8 +8411,9 @@
       "summary": "An order line as the list shows it, with its derived status; or nothing.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -5867,17 +8435,92 @@
       "joinsCallerTransaction": false,
       "summary": "Add an order line, or merge the quantity into a matching one.",
       "input": {
+        "orderNo": {
+          "type": "string"
+        },
         "clientId": {
-          "type": "any"
+          "type": "integer"
+        },
+        "subContractorId": {
+          "type": "integer"
+        },
+        "clientName": {
+          "type": "string"
+        },
+        "poNumber": {
+          "type": "string"
+        },
+        "clientCode": {
+          "type": "string"
         },
         "itemId": {
-          "type": "any"
+          "type": "integer"
+        },
+        "itemName": {
+          "type": "string"
+        },
+        "variationLeafNodeId": {
+          "type": "integer"
+        },
+        "variationPathLabel": {
+          "type": "string"
+        },
+        "variationPathNodeIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "customVariationValues": {
+          "type": "object"
         },
         "quantity": {
-          "type": "any"
+          "type": "number"
         },
-        "orderNo": {
-          "type": "any"
+        "unitId": {
+          "type": "integer"
+        },
+        "unitName": {
+          "type": "string"
+        },
+        "unitSymbol": {
+          "type": "string"
+        },
+        "unitPrice": {
+          "type": "number"
+        },
+        "totalInvoicedQty": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "startDate": {
+          "type": "string"
+        },
+        "endDate": {
+          "type": "string"
+        },
+        "poDocumentIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "materialRequirements": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "sourceSetId": {
+          "type": "integer"
+        },
+        "sourceSetName": {
+          "type": "string"
+        },
+        "sourceSetMultiplier": {
+          "type": "number"
         }
       },
       "output": null,
@@ -6048,10 +8691,10 @@
           "nullable": true
         },
         "ipAddress": {
-          "type": "any"
+          "type": "string"
         },
         "userAgent": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": {
@@ -6090,8 +8733,9 @@
       "summary": "The id of the employee whose barcode this is, or nothing.",
       "input": {
         "barcodeId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -6124,7 +8768,7 @@
           "gt": 0
         },
         "userId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": {
@@ -6241,8 +8885,9 @@
       "summary": "Remove a template without checking for runs (the older /templates set).",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": null,
@@ -6259,8 +8904,9 @@
       "summary": "One template (the older /templates set).",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -6302,11 +8948,56 @@
       "summary": "Change a template and bump its version (the older /templates set).",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "data": {
-          "type": "object"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "factoryId": {
+              "type": "string"
+            },
+            "factory_id": {
+              "type": "string"
+            },
+            "shopFloorId": {
+              "type": "string"
+            },
+            "shop_floor_id": {
+              "type": "string"
+            },
+            "nodes": {
+              "type": "array"
+            },
+            "flows": {
+              "type": "array"
+            },
+            "laneLabels": {
+              "type": "array"
+            },
+            "stageLabels": {
+              "type": "array"
+            },
+            "intermediateNamingConvention": {
+              "type": "string"
+            },
+            "intermediate_naming_convention": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": {
@@ -6327,8 +9018,9 @@
       "summary": "Remove a template no run was ever started from.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": null,
@@ -6344,7 +9036,7 @@
       "summary": "Every template, or one factory’s plus the shared ones.",
       "input": {
         "factoryId": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": {
@@ -6368,8 +9060,9 @@
       "summary": "A template’s row as stored, or nothing. Production reads the nodes a run was started from.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -6394,7 +9087,51 @@
       "summary": "Save a template; one with the same id is replaced.",
       "input": {
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "factoryId": {
+              "type": "string"
+            },
+            "factory_id": {
+              "type": "string"
+            },
+            "shopFloorId": {
+              "type": "string"
+            },
+            "shop_floor_id": {
+              "type": "string"
+            },
+            "nodes": {
+              "type": "array"
+            },
+            "flows": {
+              "type": "array"
+            },
+            "laneLabels": {
+              "type": "array"
+            },
+            "stageLabels": {
+              "type": "array"
+            },
+            "intermediateNamingConvention": {
+              "type": "string"
+            },
+            "intermediate_naming_convention": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": {
@@ -6415,11 +9152,56 @@
       "summary": "Change a template; what is left out is kept.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "data": {
-          "type": "any"
+          "type": "object",
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "factoryId": {
+              "type": "string"
+            },
+            "factory_id": {
+              "type": "string"
+            },
+            "shopFloorId": {
+              "type": "string"
+            },
+            "shop_floor_id": {
+              "type": "string"
+            },
+            "nodes": {
+              "type": "array"
+            },
+            "flows": {
+              "type": "array"
+            },
+            "laneLabels": {
+              "type": "array"
+            },
+            "stageLabels": {
+              "type": "array"
+            },
+            "intermediateNamingConvention": {
+              "type": "string"
+            },
+            "intermediate_naming_convention": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": {
@@ -6440,8 +9222,9 @@
       "summary": "Every version of a part’s route, active first.",
       "input": {
         "partId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -6457,20 +9240,21 @@
       "summary": "Save a part’s route as a draft or as the active one.",
       "input": {
         "partId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "steps": {
           "type": "any"
         },
         "status": {
-          "type": "any"
+          "type": "string"
         },
         "note": {
-          "type": "any"
+          "type": "string"
         },
         "userId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -6486,17 +9270,18 @@
       "summary": "Declare a new version of the active route; the old one is retired.",
       "input": {
         "partId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         },
         "steps": {
           "type": "any"
         },
         "note": {
-          "type": "any"
+          "type": "string"
         },
         "userId": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": null,
@@ -6512,7 +9297,7 @@
       "summary": "Add a stage by name. A name already in the master answers with that stage.",
       "input": {
         "name": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": null,
@@ -6544,8 +9329,9 @@
       "summary": "Retire a stage no draft or active route stands on.",
       "input": {
         "id": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": null,
@@ -6609,8 +9395,9 @@
       "summary": "The runs that made an item, and its default pipeline.",
       "input": {
         "itemId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -6655,8 +9442,9 @@
       "summary": "The live runs that name a machine.",
       "input": {
         "machineId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -6677,13 +9465,13 @@
       "summary": "Finished output a delivery challan can be raised for.",
       "input": {
         "search": {
-          "type": "any"
+          "type": "string"
         },
         "q": {
-          "type": "any"
+          "type": "string"
         },
         "limit": {
-          "type": "any"
+          "type": "integer"
         }
       },
       "output": {
@@ -6704,8 +9492,9 @@
       "summary": "A finished-output record with its item name, or nothing. A challan line may deliver from one.",
       "input": {
         "productionRunId": {
-          "type": "any",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "gt": 0
         }
       },
       "output": {
@@ -6770,12 +9559,55 @@
       "summary": "Put stock on a node: a material, a vendor sheet, or a quantity split over barcodes.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "nodeId": {
+              "type": "string"
+            },
+            "barcode": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "integer"
+            },
+            "item_id": {
+              "type": "integer"
+            },
+            "quantity": {
+              "type": "number"
+            },
+            "variationLeafNodeId": {
+              "type": "integer"
+            },
+            "variation_leaf_node_id": {
+              "type": "integer"
+            },
+            "allocations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "barcode": {
+                    "type": "string"
+                  },
+                  "quantity": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "challanItemId": {
+              "type": "integer"
+            },
+            "challan_item_id": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -6791,21 +9623,32 @@
       "summary": "Change how much of a barcode a node took.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "nodeId": {
-          "type": "any"
+          "type": "string"
         },
         "barcode": {
-          "type": "any"
+          "type": "string"
         },
         "quantity": {
-          "type": "any"
+          "type": "number"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "nodeId": {
+              "type": "string"
+            },
+            "barcode": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "number"
+            }
+          }
         }
       },
       "output": null,
@@ -6821,8 +9664,9 @@
       "summary": "Remove a run, with its inputs and scrap rows.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": null,
@@ -6882,8 +9726,9 @@
       "summary": "One run.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         }
       },
       "output": {
@@ -7025,7 +9870,7 @@
       "summary": "Runs, newest first; with templateId, only that template’s.",
       "input": {
         "templateId": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": {
@@ -7070,18 +9915,26 @@
       "summary": "Take a barcode back off a node and return what it had taken.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "nodeId": {
-          "type": "any"
+          "type": "string"
         },
         "barcode": {
-          "type": "any"
+          "type": "string"
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "nodeId": {
+              "type": "string"
+            },
+            "barcode": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
@@ -7120,12 +9973,20 @@
       "summary": "Replace a run’s batches, as the client keeps them.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "batches": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -7141,12 +10002,55 @@
       "summary": "Record a stage’s reconciliation numbers: allotted, output, scrap, leftover.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "nodeId": {
+              "type": "string"
+            },
+            "metrics": {
+              "type": "object",
+              "fields": {
+                "allotted": {
+                  "type": "number"
+                },
+                "output": {
+                  "type": "number"
+                },
+                "remaining": {
+                  "type": "number"
+                },
+                "scrap": {
+                  "type": "number"
+                },
+                "goodYield": {
+                  "type": "number"
+                },
+                "actualHours": {
+                  "type": "number"
+                },
+                "scrapItemId": {
+                  "type": "integer"
+                },
+                "scrapItem": {
+                  "type": "string"
+                },
+                "leftoverAction": {
+                  "type": "string"
+                },
+                "inputTime": {
+                  "type": "string"
+                },
+                "outputTime": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       },
       "output": null,
@@ -7162,12 +10066,38 @@
       "summary": "Set a node’s status. Completing the last node books and mints the output.",
       "input": {
         "runId": {
-          "type": "any",
-          "required": true
+          "type": "string",
+          "required": true,
+          "nonEmpty": true
         },
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "nodeId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "actualDurationHours": {
+              "type": "number"
+            },
+            "batchQuantity": {
+              "type": "number"
+            },
+            "machineOverride": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "unit_id": {
+              "type": "integer"
+            },
+            "group_id": {
+              "type": "integer"
+            }
+          }
         }
       },
       "output": null,
@@ -7231,7 +10161,29 @@
       "input": {
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "templateId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "orderNo": {
+              "type": "string"
+            },
+            "orderItemId": {
+              "type": "integer"
+            },
+            "scrapRouting": {
+              "type": "string"
+            },
+            "outputVariationLeafNodeId": {
+              "type": "integer"
+            },
+            "outputVariationPathLabel": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": {
@@ -7296,10 +10248,10 @@
       "summary": "Scrap rows, newest first; optionally one run’s, or one node’s.",
       "input": {
         "pipelineRunId": {
-          "type": "any"
+          "type": "string"
         },
         "nodeId": {
-          "type": "any"
+          "type": "string"
         }
       },
       "output": {
@@ -7331,7 +10283,29 @@
       "input": {
         "data": {
           "type": "object",
-          "nullable": true
+          "fields": {
+            "pipelineRunId": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            },
+            "materialBarcode": {
+              "type": "string"
+            },
+            "orderNo": {
+              "type": "string"
+            },
+            "scrapQty": {
+              "type": "number"
+            },
+            "scrapItemId": {
+              "type": "integer"
+            },
+            "scrapItemName": {
+              "type": "string"
+            }
+          }
         }
       },
       "output": null,
