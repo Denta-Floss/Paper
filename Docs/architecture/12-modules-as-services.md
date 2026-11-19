@@ -5,7 +5,7 @@ It is edited with every change, so the plan, what is done, how the work went and
 what was found along the way are all here and nowhere else. If a conversation is
 lost, start from this file.
 
-Last updated: 2026-11-19 (P7 done: every multi-row write is one transaction).
+Last updated: 2026-11-19 (P8 done, in part: 349 of 423 schema statements live in the modules; the rest wait on the rebuilds).
 
 ## 1. The plan
 
@@ -91,7 +91,11 @@ After the deploy of 2026-11-19, with the app in real use:
   be reprinted.
 - The server log on first start says `Hashed N portal password(s) that were stored
   as plain text.` once, and never again.
-- The deploy on the previous `main` (d9ba926) had failed; confirm this one succeeds.
+- The deploy of `main` (8577592) failed the same way the previous one did:
+  `appleboy/scp-action` says "can't connect without a private SSH key or
+  password", so the workflow's SSH secret for the staging host is missing or
+  empty. Nothing of this work has reached staging; the watch list above waits
+  on that secret being set and the workflow re-run.
 
 ### Stage 1 — API contracts for every module
 
@@ -158,10 +162,14 @@ The packages, in order (approved 2026-11-19; P0 is done):
 | P5 | Items logic out of `server.js` into `modules/items` (2,700 lines, one move by function name) | done |
 | P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | done |
 | P7 | Writes across modules get transactions (stage 2c); cascades deferred | done |
-| P8 | Each module creates its own tables (stage 2d), behind a schema snapshot test | |
+| P8 | Each module creates its own tables (stage 2d), behind a schema snapshot test | done for 349 of 423 statements; the 12 tables `initDb` still rebuilds stay with it (B37) |
 
 Not in these packages: stage 3 (walls), an event bus, and replacing cross-module
 `ON DELETE CASCADE` with explicit calls.
+
+Still open after P8, each its own small series: the 12 rebuilt tables (B37),
+the cascades (B36), the staging check (the deploy of `main` fails before it
+reaches the host: the workflow's SSH secret is empty, see the watch list).
 
 ### Left as they are, on purpose
 
@@ -319,6 +327,16 @@ Traps met so far:
 - `desk.trip(name, error)` makes the next call of an operation fail before
   it runs. It exists for tests of what a failure mid-flow leaves behind, and
   for nothing else.
+- A schema split needs an oracle before the first cut: `schema-snapshot.test.js`
+  pins `sqlite_master` on two ways in. Its first run after the split caught the
+  module schemas running BEFORE `initDb` dropped the legacy tables that
+  referenced the old `orders` table (so the end-of-boot migration runner
+  recreated them in their old shape); the fix was where the schema phase
+  runs, not what it holds.
+- Move only a plain statement (`await run(CREATE …)`, `await
+  ensureColumnExists(…)`, a one-line `try { ALTER TABLE … ADD COLUMN }`).
+  A table that a rebuild in `initDb` reshapes keeps its statements there,
+  with that rebuild; moving its indexes ahead of the rebuild would lose them.
 - `kernel/desk-kit.js` has the shared pieces: `refusing` (a thrown 4xx becomes
   a result), `fromRefusal` (a service's `{ refusal }` becomes a result) and
   `httpKit` (`ask` and `refuse` for a route file).
@@ -628,6 +646,8 @@ items are verified before anything is done about them.
 | B34 | Both order reports loaded every machine and every die (`SELECT * FROM machines`, `SELECT * FROM dies`) to key them by id and name; they still do, now through `machines.rows.all` and `dies.rows.all`. A report-sized read, fine for a master of tens of rows; noted so nobody asks a module for its whole table for a per-row lookup | `modules/orders/reports.js` | P4 | Open, by design |
 | B35 | The item list (`getItemsWithUsage`) and an item's DTO are each one statement joining up to eleven tables of six modules. Declared, not split: a per-row ask would multiply the calls by the list's length. The way out is a batch read per owner (`orders.items.usageCounts {itemIds}` and the like) or an event-kept copy; neither exists | `modules/items/reads.js`, `modules/items/dto.js` | P5 | Open; the largest remaining reach across modules |
 | B36 | The connection that deletes runs with `foreign_keys = OFF` (`server.js` ~1166), so the eleven cross-module `ON DELETE CASCADE` clauses do not all fire today; what each module removes on a delete is what its code removes. Noted while deferring the cascade work | `server.js` | P7 | Open; the cascades are replaced by explicit asks after P8, as their own series |
+| B37 | Twelve tables are still created by `initDb` in `server.js` rather than by their module's `schema.js`, because a rebuild there reshapes them (`groups`, `items`, `variation_stock`, `inventory_stock_positions`, `clients`, `vendors`, `machines`, `pipeline_templates`, `piece_barcodes`, `freelancer_jobs`, `freelancer_job_batches`) or a seed block creates them; with them stay their columns, indexes and the nine triggers (74 statements). Each rebuild is a one-time repair of an old file's shape; once no such file is left, the rebuilds can go and the tables follow the others | `server.js` `initDb` | P8 | Open; the last of stage 2d |
+| B38 | The staging deploy workflow cannot reach the host: `appleboy/scp-action` fails with "can't connect without a private SSH key or password" on every push to `main` since at least d9ba926. A repository secret, not code | `.github/workflows/deploy-backend.yml` | P0's push | **Open, needs the owner: set the SSH secret and re-run** |
 | B19 | The unit DTO reads `unit_group_code` and `unit_group_integral_only`, which the units query never selects, so `unitGroupCode` is always null and `unitGroupIntegralOnly` always false in `GET /api/units` | `modules/units/master.js` (`rowToUnitDto`, `UNIT_ROW_SELECT`) | Moving the units code | Open: kept as it was |
 
 ## 6. Change log
@@ -657,3 +677,4 @@ items are verified before anything is done about them.
 | 2026-11-19 | P5. The items logic left `server.js`: 49 functions (2,700 lines) moved by name into `modules/items/variation-tree.js` (pure), `property-keys.js` (pure), `schema-props.js`, `developed-for.js`, `variations.js`, `dto.js`, `reads.js`, `save.js`, `deletes.js`, assembled by `service.js` (`createItemsService(deps)`); `server.js` destructures the same names from it, so seeds, exports and ~20 test files are unchanged; a dead duplicate `normalizePropertyKey` and three dead functions went. Inventory is handed an items client and requires the pure tree walkers; `items.variationTree`, `items.rowById`, `items.resolveLeaf` are new asks. The move exposed eleven foreign reads: the single-row ones became asks (`units.rows.get`, `units.rows.first`, `machines.rows.get`, `dies.rows.get`, `clients.rows.get`, `clients.subContractors.row`, `clients.contacts.byIds`, `pipelines.templates.row`, `inventory.materials.firstForGroup`, and `orders.items.usageRows`, `challans.items.usageRows`, `inventory.items.usageRows` for where an item is used); the list and DTO joins are declared in the registry with their reason (B35). `server.js` 16,707 → 14,019 lines. 359 operations. 442 tests pass. (Mind map change 61.) |
 | 2026-11-19 | P6. Kernel services publish their tables: `modules/accounts/operations.js` (`accounts.users.get`, `.byIds`, `.setMobilePin`), `modules/assets/operations.js` (`assets.forEntity`, `.primaryFor`, `.attachUploaded`, `.sessionEntity`), `modules/links/operations.js` (`links.byRelation`, `.remove`, `.removeRelation`, `.add`). People, challans, inventory and the items section tree ask them. Kernel services ask the owners: deleting an account asks `action_center.users.forget`, `orders.users.forget`, `challans.users.forget` inside its transaction and `clients.rows.byIds` for the user list; search asks `items.search.hits`, `items.search.configurations`, `inventory.materials.search`, `challans.pieceBarcodes.lookup`. `user_favorite_items` reassigned to the kernel. Crossings 51 → 26, all declared; the border test asserts every other count is zero. 378 operations (155 internal, 23 inside the caller's transaction). 442 tests pass. (Mind map change 62.) |
 | 2026-11-19 | P7. `kernel/db-kit.js`: `withTransaction(run, work)` and `withSavepoint(run, name, work)`, both with `rollbackWhen` (a 4xx/5xx answer or a refusal undoes the writes). Wrapped: production's deleteRun, assignStock, changeStock, removeStock, setNodeMetrics, recordScrap, upsertStageReconciliation, createRunFromTemplate, ensurePipelineRunRecord, assignMaterialToRunNode, setNodeStatus; inventory's persistMaterialGroupGovernance, incrementMaterialScanCount, updateMaterialGroupConfiguration, createChildMaterial, updateMaterialRecord, deleteMaterialRecord, link/unlink; recordProducedSet; jobs' createBatch, createJob, syncAssemblyJob (deleteJob is a real transaction in the service, the handler's stray ROLLBACK gone); challans' createStageNote, removeStageNote; and a challan cancel now removes the draft invoices it cascades inside its own transaction. Seven `movements.apply` calls inside production flows became `applyCore` in the caller's transaction. `desk.trip` for tests. Tests: `kernel-db-kit.test.js` (5), `transactions-atomic.test.js` (2); 449 pass. (Mind map change 63.) |
+| 2026-11-19 | P8. `test/schema-snapshot.test.js` pins `sqlite_master` after boot from an empty file and after `initDb` alone on a file holding only the first migration's tables (both ledgers marked complete). Then `initDb`'s plain statements moved by table owner into `modules/{kernel,units,items,clients,dies,orders,production,inventory,challans,action_center,people}/schema.js` (`createSchema({ run, all })`, same statements, same order within a module); `initDb` runs them in `SCHEMA_ORDER` after it has dropped the legacy tables that referenced the old `orders` table. `ensureColumnExists` moved to `kernel/schema-kit.js`. 349 statements moved; 74 stay with the rebuilds that reshape their tables (B37). `server.js` 14,050 → 12,378 lines. 450 tests pass; the oracle is unchanged. The staging deploy is found to fail on a missing SSH secret (B38). (Mind map change 64.) |
