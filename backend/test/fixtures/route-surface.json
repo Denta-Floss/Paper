@@ -38,6 +38,7 @@
   "DELETE /runs/:id/barcodes/:nodeId/:barcode",
   "DELETE /templates/:id",
   "GET /api/action-center/issues",
+  "GET /api/app/latest",
   "GET /api/assets/documents",
   "GET /api/assets/local/*key",
   "GET /api/assets/view/*key",

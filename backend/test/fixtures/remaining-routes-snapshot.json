@@ -8,6 +8,15 @@
   },
   "error": "Authentication required."
  },
+ "anonymous GET /api/app/latest": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
  "anonymous GET /api/assets/documents": {
   "status": 401,
   "type": "application/json",
@@ -838,6 +847,16 @@
    "scanErrors": [],
    "success": "boolean",
    "total": "number"
+  }
+ },
+ "owner GET /api/app/latest": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "downloadUrl": "null",
+   "error": "null",
+   "latestVersion": "null",
+   "success": "boolean"
   }
  },
  "owner GET /api/assets/documents": {

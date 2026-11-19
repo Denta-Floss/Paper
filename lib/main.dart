@@ -208,8 +208,6 @@ Future<void> main() async {
     isDemoMode: _isDemoMode,
   );
 
-  await AutoUpdaterService.instance.initialize();
-
   await SentryFlutter.init((options) {
     options.dsn = const String.fromEnvironment(
       'PAPER_SENTRY_DSN',
@@ -1101,6 +1099,11 @@ class _AuthGateState extends State<_AuthGate> {
         namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
       ));
     }
+    // The update feed is behind the login, so it is asked now (Windows only).
+    unawaited(AutoUpdaterService.instance.checkWithServer(
+      _apiBaseUrl,
+      AuthenticatedHttpClient(tokenResolver: () => auth.token),
+    ));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;

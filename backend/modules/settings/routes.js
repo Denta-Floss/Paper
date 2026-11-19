@@ -9,6 +9,7 @@
 //   DELETE /api/favorites/:itemId/:variationLeafNodeId
 //   GET    /api/company-profile
 //   PUT    /api/company-profile
+//   GET    /api/app/latest              the desktop app's update feed
 //
 // URLs, guards and the order routes are matched in are exactly as they were in
 // server.js: each group below is registered into a router that holds the place
@@ -104,6 +105,17 @@ function registerSettingsRoutes(app, {
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
     }
+  });
+
+  // The desktop app's update feed: which version is current and where its
+  // Windows build is. Set on the server, for a signed-in app to ask after it
+  // starts (B32). Either unset means there is no update to offer.
+  //   PAPER_DESKTOP_LATEST_VERSION   e.g. 1.0.412
+  //   PAPER_DESKTOP_DOWNLOAD_URL     the .exe the desktop build uploaded to S3
+  app.get('/api/app/latest', async (_req, res) => {
+    const latestVersion = String(process.env.PAPER_DESKTOP_LATEST_VERSION || '').trim() || null;
+    const downloadUrl = String(process.env.PAPER_DESKTOP_DOWNLOAD_URL || '').trim() || null;
+    res.json({ success: true, latestVersion, downloadUrl, error: null });
   });
 
   app.get('/api/company-profile', requirePermission('config.read'), async (_req, res) => {

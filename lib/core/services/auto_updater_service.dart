@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:core_erp/core/services/config_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -13,31 +12,26 @@ class AutoUpdaterService {
   static final AutoUpdaterService instance = AutoUpdaterService._();
   bool _isUpdating = false;
 
-  Future<void> initialize() async {
-    if (kIsWeb || (!Platform.isWindows && !Platform.isMacOS)) return;
-
-    // Check periodically
-    Future.delayed(const Duration(seconds: 10), _checkForUpdates);
-  }
-
-  Future<void> _checkForUpdates() async {
-    if (_isUpdating) return;
-    
+  /// Asks the server which desktop version is current and where its Windows
+  /// build is (`GET /api/app/latest`), and installs it if it differs from this
+  /// one. Called once a user is signed in, because the feed is behind the
+  /// login. It used to read the sandbox configuration, which no longer exists.
+  Future<void> checkWithServer(String baseUrl, http.Client client) async {
+    if (kIsWeb || !Platform.isWindows || _isUpdating) return;
     try {
-      final config = ConfigService.instance.config;
-      final updateConfig = config['update'] as Map<String, dynamic>?;
-      if (updateConfig == null) return;
-
-      final targetVersion = updateConfig['latest_version'] as String?;
-      final downloadUrl = updateConfig['appcast_url'] as String?; // Reusing this field for the binary URL
-
-      if (targetVersion == null || downloadUrl == null || downloadUrl.isEmpty) return;
+      final response = await client.get(
+        Uri.parse('${baseUrl.replaceFirst(RegExp(r'/$'), '')}/api/app/latest'),
+      );
+      if (response.statusCode != 200) return;
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) return;
+      final targetVersion = body['latestVersion'] as String?;
+      final downloadUrl = body['downloadUrl'] as String?;
+      if (targetVersion == null || targetVersion.isEmpty) return;
+      if (downloadUrl == null || downloadUrl.isEmpty) return;
 
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version;
-
-      // Basic version check
-      if (_isNewerVersion(currentVersion, targetVersion)) {
+      if (_isNewerVersion(packageInfo.version, targetVersion)) {
         await _performSilentUpdate(downloadUrl);
       }
     } catch (e) {
@@ -45,6 +39,9 @@ class AutoUpdaterService {
     }
   }
 
+  /// The version the server names is the one to run: a different version is
+  /// installed whether it is newer or older, so an operator can roll back by
+  /// naming the older one.
   bool _isNewerVersion(String current, String target) {
     // Simple naive check
     return current != target; 
