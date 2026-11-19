@@ -59,11 +59,11 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
       return;
     }
 
+    // Kept on this screen. It used to be relayed to the server too, which
+    // passed it on to nothing (removed 2026-11-19).
     setState(() {
       _stagedItems.insert(0, itemData);
     });
-
-    socketService.stageItem(itemData);
 
     _scannerController.clear();
     _scannerFocusNode.requestFocus();
@@ -132,19 +132,6 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
             icon: Icon(Icons.camera_alt, color: SoftErpTheme.textPrimary, size: isTablet ? 28.0 : 24.0),
             onPressed: _openCameraScanner,
             tooltip: 'Camera Scanner',
-          ),
-          TextButton(
-            onPressed: () async {
-              final barcode = await socketService.seedDemoManufacturing();
-              if (barcode != null) {
-                _handleBarcodeScanned(barcode);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to seed demo data.')),
-                );
-              }
-            },
-            child: const Text('demo-prod', style: TextStyle(fontWeight: FontWeight.bold, color: SoftErpTheme.accent)),
           ),
           const SizedBox(width: 8),
         ],

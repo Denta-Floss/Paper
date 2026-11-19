@@ -595,42 +595,6 @@
   },
   "error": "Authentication required."
  },
- "anonymous POST /api/mobile/challan-generated": {
-  "status": 401,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Authentication required."
- },
- "anonymous POST /api/mobile/lock-inventory": {
-  "status": 401,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Authentication required."
- },
- "anonymous POST /api/mobile/remove-staged-item": {
-  "status": 401,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Authentication required."
- },
- "anonymous POST /api/mobile/stage-item": {
-  "status": 401,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Authentication required."
- },
  "anonymous POST /api/order-po-documents/:id/read-url": {
   "status": 401,
   "type": "application/json",
@@ -1556,38 +1520,6 @@
    "success": "boolean"
   },
   "error": "itemId is required"
- },
- "owner POST /api/mobile/challan-generated": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "error": "null",
-   "success": "boolean"
-  }
- },
- "owner POST /api/mobile/lock-inventory": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "error": "null",
-   "success": "boolean"
-  }
- },
- "owner POST /api/mobile/remove-staged-item": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "error": "null",
-   "success": "boolean"
-  }
- },
- "owner POST /api/mobile/stage-item": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "error": "null",
-   "success": "boolean"
-  }
  },
  "owner POST /api/order-po-documents/:id/read-url": {
   "status": 404,

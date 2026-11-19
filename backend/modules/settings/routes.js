@@ -2,17 +2,13 @@
 
 // ---------------------------------------------------------------------------
 // Settings a workspace keeps for itself: a user's favourites, the company
-// profile printed on documents, and the signals the phone app sends the desktop.
+// profile printed on documents.
 //
 //   GET    /api/favorites
 //   POST   /api/favorites
 //   DELETE /api/favorites/:itemId/:variationLeafNodeId
 //   GET    /api/company-profile
 //   PUT    /api/company-profile
-//   POST   /api/mobile/stage-item
-//   POST   /api/mobile/remove-staged-item
-//   POST   /api/mobile/lock-inventory
-//   POST   /api/mobile/challan-generated
 //
 // URLs, guards and the order routes are matched in are exactly as they were in
 // server.js: each group below is registered into a router that holds the place
@@ -133,51 +129,6 @@ function registerSettingsRoutes(app, {
   });
 }
 
-// These are registered after the /api error handler that sits in the middle of
-// server.js, as they always were, so an error they pass on is caught by the
-// last handler instead.
-function registerSettingsRoutesAfterErrorHandler(app, {
-  changeEmitter,
-  requireAuth,
-}) {
-  app.post('/api/mobile/stage-item', requireAuth, async (req, res) => {
-    try {
-      changeEmitter.emit('custom-event', { event: 'item_staged', data: req.body });
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post('/api/mobile/remove-staged-item', requireAuth, async (req, res) => {
-    try {
-      changeEmitter.emit('custom-event', { event: 'item_removed', data: req.body });
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post('/api/mobile/lock-inventory', requireAuth, async (req, res) => {
-    try {
-      changeEmitter.emit('custom-event', { event: 'inventory_locked', data: req.body });
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.post('/api/mobile/challan-generated', requireAuth, async (req, res) => {
-    try {
-      changeEmitter.emit('custom-event', { event: 'challan_generated_ok', data: req.body });
-      res.json({ success: true, error: null });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-}
-
 module.exports = {
   registerSettingsRoutes,
-  registerSettingsRoutesAfterErrorHandler,
 };

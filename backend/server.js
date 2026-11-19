@@ -10977,12 +10977,6 @@ const peopleService = createPeopleService({
   desk: desk.as('people'),
 });
 
-// registerSettingsRoutesAfterErrorHandler: its routes are in modules/settings/routes.js and are registered into this
-// router further down, where everything they use exists. The router holds
-// their place in the matching order here.
-const settingsAfterErrorHandlerRouter = express.Router();
-app.use(settingsAfterErrorHandlerRouter);
-
 // ==========================================
 // PAYROLL APIs
 // ==========================================
@@ -11680,7 +11674,6 @@ const {
 } = require('./modules/units/master-routes.js');
 const {
   registerSettingsRoutes,
-  registerSettingsRoutesAfterErrorHandler,
 } = require('./modules/settings/routes.js');
 const {
   registerPayrollRoutes,
@@ -11829,10 +11822,6 @@ registerSettingsRoutes(settingsRouter, {
   rowToCompanyProfileDto,
   run,
   saveCompanyProfile,
-});
-registerSettingsRoutesAfterErrorHandler(settingsAfterErrorHandlerRouter, {
-  changeEmitter,
-  requireAuth,
 });
 registerPayrollRoutes(payrollRouter, {
   all,
