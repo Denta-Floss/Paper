@@ -169,6 +169,8 @@ Not in these packages: stage 3 (walls), an event bus, and replacing cross-module
 
 Still open: the staging check, because the deploy cannot reach the host (B38).
 
+Next, approved 2026-11-19: stage 2e, the wire — nine steps in the checklist below, step 1 done.
+
 ### Left as they are, on purpose
 
 | Routes | Why they call something other than an operation |
@@ -470,6 +472,25 @@ fixed meaning are typed. "Out: ✅" means every operation that returns data
 declares it. The rest of the crossings (26) are in kernel-service folders:
 search, accounts, the control plane and settings.
 
+### Stage 2e — the wire (approved 2026-11-19)
+
+The playbook assessed on 2026-11-19 (BFF, GraphQL/gRPC, CQRS read models, event
+deltas, edge cache, database per service) came down to: Paper stays a modular
+monolith; the cost is the wire, not the server. Nine steps, in this order, one
+commit each, the suite green before every commit:
+
+- [x] 1. Assert wire budgets — `test/wire-budget.test.js` on `test/helpers/sized-workspace.js`: sign_in ≤ 20 requests and ≤ 120 KB compressed, orders list ≤ 40 KB, items list ≤ 60 KB, inventory_overview exactly 1 request, replica_hydration ≤ 3 requests. Measured 2026-11-19: sign-in 21 requests / 57.3 KB, orders 7.8 KB, items 26.7 KB, inventory 4 requests, hydration 14 requests / 60.6 KB. The three that are over are pending on steps 3 and 5 and assert they stay over until then.
+- [ ] 2. Parallelise start-up (inventory 4, units 2, action centre 2 chained calls become concurrent; inventory refreshes coalesced per burst); the mobile app's seven providers refreshed twice at start-up become once.
+- [ ] 3. One `GET /api/inventory/overview` (`inventory.overview.get`) answering materials, stock, sets and health together; the two N+1s inside them fixed; ETag on it. Sign-in goes to 18 requests.
+- [ ] 4. The seven full-row lists (items, materials, units, machines, dies, clients, vendors) get a list shape and keep the full row on `/:id`; `{ items, nextCursor, serverTime, changedSince }` envelope, parsed either way on the client.
+- [ ] 5. Replica hydration batched and parallel, delta-first (`hasMore`, `oldestAvailable`, `head` honoured), one `GET /api/replica/bootstrap` for a cold replica.
+- [ ] 6. Desktop clients, vendors, units, groups, machines, dies, departments read from the replica they are already written to; `inventory_stock_positions` changes consumed; an explicit offline state in the shell.
+- [ ] 7. Mobile: the ETag cache and a scoped replica; the overview endpoint; the offline state.
+- [ ] 8. Two projections off the changelog, idempotent, with `processed_changelog_id`: `order_items.delivered_qty` + `run_status`, and `items.usage_count`. The last declared cross-module list reads go with them. The four unlogged tables join `TRIGGER_LOGGED_TABLES`.
+- [ ] 9. The extraction triggers written down (§ "When to extract a service").
+
+Not now, and why: GraphQL (field selection is a list shape per endpoint, seven of them), gRPC (one process, no inter-service wire), Kafka/NATS (the changelog is the outbox and there is one durable store), database per service (nothing measured asks for it), Varnish/Redis (the replica on the user's disk is the better cache), full event sourcing (the changelog feeds two projections; the tables stay the truth).
+
 ### Stage 3 — walls (not started, not yet approved)
 
 - [ ] Gate per module (`/svc/<module>/<operation>`)
@@ -684,3 +705,4 @@ items are verified before anything is done about them.
 | 2026-11-19 | B36. The five cascades that fired across modules became asks: deleting a run (and dissolving one) asks `jobs.runs.forget`; deleting an order line asks `challans.orderLines.forget`; deleting a die or a machine (and the action centre's `rows.remove`) asks `items.dies.forget` / `items.machines.forget`. All join the caller's transaction. The trash keeps foreign keys off on purpose, so a restore brings dependents back; that is recorded, not changed. `cascades-explicit.test.js` (3, foreign keys off). 453 tests pass. (Mind map change 66.) |
 | 2026-11-19 | B37. The last schema statements left `initDb`: the groups and variation_stock rebuilds and every CREATE, column and index of the tables they or seed blocks touched, moved by content anchor into the owners' `schema.js` (items, inventory, clients, kernel, challans, people; new files for vendors, machines, pipelines, jobs), 15 files in `SCHEMA_ORDER`. Triggers, backfills, seeds and the three column-repair helpers stay in `initDb` (340 lines, was 2,646 before P8). 70 comments that described moved statements were re-homed above them. Oracle unchanged; 453 tests pass. (Mind map change 67.) |
 | 2026-11-19 | B32. The desktop update feed: `GET /api/app/latest` in `modules/settings/routes.js` answers two server settings; `AutoUpdaterService.checkWithServer` asks it from the post-sign-in hook in `lib/main.dart` (the start-up call to the sandbox config is gone). Route surface +1. `app-update-feed.test.js` (2); 455 tests pass. (Mind map change 68.) |
+| 2026-11-19 | Stage 2e step 1. `test/wire-budget.test.js`: the desktop's cold sign-in (21 GETs, traced provider by provider), the orders and items list pages, inventory's four refresh calls and the replica's hydration, each against a budget of requests and compressed bytes, measured on `test/helpers/sized-workspace.js` (a few hundred rows per master through the API; the demo seed is 11 KB and would never trip a budget). `UPDATE_WIRE_BUDGETS=1` prints the figures. Pending on later steps: sign_in (21 > 20), inventory_overview (4 > 1), replica_hydration (14 > 3). 460 tests. (Mind map change 69.) |
