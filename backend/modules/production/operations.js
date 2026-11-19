@@ -149,6 +149,8 @@ function internalOperations(ports) {
       summary: 'Remove a run and the stock inputs recorded on it. The caller has put the stock back.',
       input: one('runId'),
       run: async (given) => {
+        // The jobs the run raised are the jobs module's to remove.
+        await desk.ask('jobs.runs.forget', { runId: String(given.runId) });
         await ports.runs.dissolve(given.runId);
         return { ok: true };
       },
@@ -166,7 +168,7 @@ function internalOperations(ports) {
   };
 }
 
-module.exports = function productionOperations({ work, ports, outputRow }) {
+module.exports = function productionOperations({ work, ports, outputRow, desk }) {
   /// The plain request a work function reads.
   const asked = (ctx, { params = {}, query = {}, body } = {}) => ({
     params,

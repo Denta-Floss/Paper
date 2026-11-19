@@ -97,6 +97,7 @@ module.exports = function machineOperations({
       summary: 'Delete a machine’s row outright: an approved delete request.',
       input: { fields: { id: F.id } },
       run: async (input) => {
+        await desk.ask('items.machines.forget', { machineId: Number(input.id) });
         await service.removeMachineRow(input.id);
         return { ok: true };
       },
@@ -115,6 +116,8 @@ module.exports = function machineOperations({
             error: 'Cannot delete machine: assigned to an active pipeline run.',
           };
         }
+        // Parts that list it are the items module's to update.
+        await desk.ask('items.machines.forget', { machineId: id });
         const before = await service.deleteMachine(id);
         const purgeEntityLinks = getPurgeEntityLinks();
         const purgeEntityVariations = getPurgeEntityVariations();

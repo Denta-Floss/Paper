@@ -27,8 +27,20 @@ const OLD_WRITE_GATE = {
   anyPermission: ['config.write', 'inventory.update'],
 };
 
-module.exports = function jobOperations({ work, service }) {
+module.exports = function jobOperations({ work, service, run }) {
   return joinOperations(operationsFromAsks('jobs', ASKS, service), {
+    'jobs.runs.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'A pipeline run is being removed: the jobs it raised go, with their tasks.',
+      input: { fields: { runId: F.text } },
+      run: async (input) => {
+        await run('DELETE FROM freelancer_job_tasks WHERE job_id IN (SELECT id FROM freelancer_jobs WHERE run_id = ?)', [input.runId]);
+        await run('DELETE FROM freelancer_jobs WHERE run_id = ?', [input.runId]);
+        return { ok: true };
+      },
+    },
+
     'jobs.list': {
       access: 'signedIn',
       summary: 'Everything the job board draws: batches, jobs and tasks.',

@@ -154,6 +154,8 @@ function createOrderLineWrites({ get, all, run, orders, inventoryPorts, desk }) 
 
       const item = await get('SELECT order_no FROM order_items WHERE id = ?', [orderId]);
       if (item) {
+        // Challans list the line among those they deliver; they drop it.
+        await desk.ask('challans.orderLines.forget', { orderItemId: orderId });
         await run('DELETE FROM order_items WHERE id = ?', [orderId]);
         const otherItems = await get('SELECT id FROM order_items WHERE order_no = ?', [item.order_no]);
         if (!otherItems) {

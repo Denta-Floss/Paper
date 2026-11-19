@@ -317,6 +317,17 @@ function userOperations({ all, run, core, template, invoice, report, removeTempl
       run: async (input) => ({ ok: true, value: await removeTemplate(input.id) }),
     },
 
+    'challans.orderLines.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'An order line is being removed: challans stop listing it among the lines they deliver.',
+      input: { fields: { orderItemId: F.int } },
+      run: async (input) => {
+        await run('DELETE FROM delivery_challan_order_items WHERE order_id = ?', [input.orderItemId]);
+        return { ok: true };
+      },
+    },
+
     'challans.users.forget': {
       internal: true,
       joinsCallerTransaction: true,

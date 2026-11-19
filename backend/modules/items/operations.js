@@ -67,10 +67,10 @@ const OLD_WRITE_GATE = {
   anyPermission: ['config.write', 'inventory.update'],
 };
 
-module.exports = function itemsOperations({ all, get, ports, core, masterData, materialTypes, sheetProperties }) {
+module.exports = function itemsOperations({ all, get, run, ports, core, masterData, materialTypes, sheetProperties }) {
   return joinOperations(
     operationsFromAsks('items', ASKS, ports),
-    internalOperations({ all, get }),
+    internalOperations({ all, get, run }),
     userOperations({ core, masterData, materialTypes, sheetProperties }),
   );
 };
@@ -380,7 +380,7 @@ function userOperations({ core, masterData, materialTypes, sheetProperties }) {
   };
 }
 
-function internalOperations({ all, get }) {
+function internalOperations({ all, get, run }) {
   return {
     'items.groups.name': {
       internal: true,
@@ -469,6 +469,28 @@ function internalOperations({ all, get }) {
           [input.itemId, input.unitId],
         );
         return { ok: true, factor: row ? Number(row.factor_to_primary) : null };
+      },
+    },
+
+    'items.dies.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'A die is being removed: no part lists it among its dies any more.',
+      input: { fields: { dieId: F.int } },
+      run: async (input) => {
+        await run('DELETE FROM item_dies WHERE die_id = ?', [input.dieId]);
+        return { ok: true };
+      },
+    },
+
+    'items.machines.forget': {
+      internal: true,
+      joinsCallerTransaction: true,
+      summary: 'A machine is being removed: no part lists it among its machines any more.',
+      input: { fields: { machineId: F.int } },
+      run: async (input) => {
+        await run('DELETE FROM item_machines WHERE machine_id = ?', [input.machineId]);
+        return { ok: true };
       },
     },
 

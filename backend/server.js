@@ -269,6 +269,7 @@ desk.register('action_center', {
 });
 desk.register('production', {
   uses: [
+    'jobs.runs.forget',
     'orders.lines.get',
     'orders.lines.summary',
     'orders.lines.idsForOrderNo',
@@ -401,6 +402,7 @@ desk.register('challans', {
 // An order line is for a client.
 desk.register('orders', {
   uses: [
+    'challans.orderLines.forget',
     'clients.rows.get',
     'clients.subContractors.row',
     // A line's unit and the item's conversion to its primary unit.
@@ -431,9 +433,9 @@ desk.register('orders', {
 });
 // A die may belong to a client; a machine is numbered after its type.
 // …and neither is deleted while a live run holds it.
-desk.register('dies', { uses: ['clients.exists', 'production.dies.assignedToActiveRun'] });
+desk.register('dies', { uses: ['clients.exists', 'production.dies.assignedToActiveRun', 'items.dies.forget'] });
 desk.register('machines', {
-  uses: ['items.groups.name', 'production.machines.assignedToActiveRun'],
+  uses: ['items.groups.name', 'production.machines.assignedToActiveRun', 'items.machines.forget'],
 });
 // A template runs were started from is kept.
 desk.register('pipelines', { uses: ['production.templates.runCount'] });
@@ -11126,6 +11128,7 @@ desk.register('items', {
   operations: require('./modules/items/operations')({
     all,
     get,
+    run,
     ports: itemsPorts,
     core: require('./modules/items/work').createItemsWork({
       desk: desk.as('items'),
@@ -11266,6 +11269,7 @@ registerVendorRoutes({
 desk.register('jobs', {
   operations: require('./modules/jobs/operations')({
     service: jobsService,
+    run,
     work: require('./modules/jobs/work').createJobsWork({
       run,
       jobs: jobsService,
@@ -11598,6 +11602,7 @@ registerUnitRoutes(app, { desk, requirePermission, trackCreate });
 // machine's queue and an item's pipeline history. See modules/production/routes.js.
 desk.register('production', {
   operations: require('./modules/production/operations')({
+    desk: desk.as('production'),
     ports: productionPorts,
     outputRow: (id) => productionService.getProductionRunRowById(id),
     work: require('./modules/production/work').createProductionWork({

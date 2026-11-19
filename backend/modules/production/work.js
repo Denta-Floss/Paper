@@ -153,6 +153,8 @@ function createProductionWork({
       }
       await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [req.params.id]);
       await run('DELETE FROM production_scrap WHERE pipeline_run_id = ?', [req.params.id]);
+      // The jobs the run raised are the jobs module's to remove.
+      await desk.ask('jobs.runs.forget', { runId: String(req.params.id) });
       await run('DELETE FROM pipeline_runs WHERE id = ?', [req.params.id]);
       return answer(200, { success: true });
     } catch (error) {

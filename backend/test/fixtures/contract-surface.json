@@ -1547,6 +1547,24 @@
       ]
     },
     {
+      "name": "challans.orderLines.forget",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "An order line is being removed: challans stop listing it among the lines they deliver.",
+      "input": {
+        "orderItemId": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "orders"
+      ]
+    },
+    {
       "name": "challans.pieceBarcodes.add",
       "module": "challans",
       "permission": "challans.create",
@@ -6262,6 +6280,24 @@
       ]
     },
     {
+      "name": "items.dies.forget",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A die is being removed: no part lists it among its dies any more.",
+      "input": {
+        "dieId": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "dies"
+      ]
+    },
+    {
       "name": "items.ensureForReconcile",
       "module": "items",
       "permission": null,
@@ -6829,6 +6865,24 @@
       "output": null,
       "usedBy": [
         "production"
+      ]
+    },
+    {
+      "name": "items.machines.forget",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A machine is being removed: no part lists it among its machines any more.",
+      "input": {
+        "machineId": {
+          "type": "integer"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "machines"
       ]
     },
     {
@@ -8331,6 +8385,24 @@
         },
         "metrics": {
           "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "production"
+      ]
+    },
+    {
+      "name": "jobs.runs.forget",
+      "module": "jobs",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": true,
+      "summary": "A pipeline run is being removed: the jobs it raised go, with their tasks.",
+      "input": {
+        "runId": {
+          "type": "string"
         }
       },
       "output": null,
@@ -11922,6 +11994,7 @@
       "items.selectionSnapshot",
       "items.stock.applyDelta",
       "jobs.propagateAssemblyRejection",
+      "jobs.runs.forget",
       "jobs.syncAssemblyJob",
       "machines.rows.get",
       "orders.lines.get",
@@ -12006,6 +12079,7 @@
     ],
     "orders": [
       "challans.deliveries.byOrderLines",
+      "challans.orderLines.forget",
       "challans.sheets.provenance",
       "clients.rows.get",
       "clients.subContractors.row",
@@ -12026,10 +12100,12 @@
     ],
     "dies": [
       "clients.exists",
+      "items.dies.forget",
       "production.dies.assignedToActiveRun"
     ],
     "machines": [
       "items.groups.name",
+      "items.machines.forget",
       "production.machines.assignedToActiveRun"
     ],
     "pipelines": [

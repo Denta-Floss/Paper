@@ -168,6 +168,7 @@ module.exports = function dieOperations({
       summary: 'Delete a die’s row outright: an approved delete request.',
       input: { fields: { id: F.id } },
       run: async (input) => {
+        await desk.ask('items.dies.forget', { dieId: Number(input.id) });
         await service.removeDieRow(input.id);
         return { ok: true };
       },
@@ -186,6 +187,8 @@ module.exports = function dieOperations({
             error: 'Cannot delete die: assigned to an active pipeline run.',
           };
         }
+        // Parts that list it are the items module's to update.
+        await desk.ask('items.dies.forget', { dieId: id });
         const before = await service.deleteDie(id);
         const purgeEntityLinks = getPurgeEntityLinks();
         const purgeEntityVariations = getPurgeEntityVariations();
