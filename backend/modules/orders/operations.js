@@ -303,6 +303,18 @@ module.exports = function orderOperations({ service, ports, lineWrites }) {
       },
     },
 
+    'orders.items.usageRows': {
+      internal: true,
+      summary: 'Where an item is used in orders: the lines that are for it and the material requirements that name it, newest first, at most 50 each.',
+      input: { fields: { itemId: F.int } },
+      output: { fields: { lines: { type: 'array', required: true }, requirements: { type: 'array', required: true } } },
+      run: async (input) => ({
+        ok: true,
+        lines: await ports.itemUsageLines(input.itemId),
+        requirements: await ports.itemRequirementLines(input.itemId),
+      }),
+    },
+
     'orders.items.usage': {
       internal: true,
       summary: 'How many order lines and material requirements name an item.',

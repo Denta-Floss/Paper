@@ -5,7 +5,7 @@ It is edited with every change, so the plan, what is done, how the work went and
 what was found along the way are all here and nowhere else. If a conversation is
 lost, start from this file.
 
-Last updated: 2026-11-19 (P4 done: no module reads another module's table without asking or declaring it).
+Last updated: 2026-11-19 (P5 done: the items logic is out of server.js).
 
 ## 1. The plan
 
@@ -155,7 +155,7 @@ The packages, in order (approved 2026-11-19; P0 is done):
 | P2 | Tests remove their temporary databases (B24) | done |
 | P3 | Typed contracts for every operation, per module, each with an evidence run | done |
 | P4 | Orders' 11 and process routes' 2 undeclared reads become asks or declared reads | done |
-| P5 | Items logic out of `server.js` into `modules/items` (~2,700 lines, 4 commits) | |
+| P5 | Items logic out of `server.js` into `modules/items` (2,700 lines, one move by function name) | done |
 | P6 | Kernel-side crossings: 17 kernel-service touches of module tables, 8 module touches of kernel tables | |
 | P7 | Writes across modules get transactions (stage 2c); cascades deferred | |
 | P8 | Each module creates its own tables (stage 2d), behind a schema snapshot test | |
@@ -290,6 +290,21 @@ Traps met so far:
   production runs, barcodes). A non-numeric id is now refused with 400
   "id must be a number" where it used to be looked up and answered "not
   found".
+- Move functions by NAME, not by line number: the first cut shifts every
+  line below it. The items move cut 49 functions by matching
+  `^(async )?function NAME(` and the closing `}` at column 0.
+- Insert the replacement wiring at a stable anchor (a named line), not at the
+  position of the first cut; the first attempt landed inside another
+  function's body and `node --check` did not mind.
+- A factory per file taking `(deps, api)`, with every cross-file call
+  written as `const sibling = (...a) => api.sibling(...a)`, lets the moved
+  bodies stay verbatim while the files reach each other at call time.
+- A client built from an `asks.js` list only has what the list names: a
+  function added to a module's ports is not on the client until it is in the
+  list. Calling a missing one is a TypeError, and inside a seed it left a
+  transaction open and the suite hanging.
+- Code that moves into a module folder becomes visible to the border meter.
+  The items move exposed eleven foreign reads that had always been there.
 - `kernel/desk-kit.js` has the shared pieces: `refusing` (a thrown 4xx becomes
   a result), `fromRefusal` (a service's `{ refusal }` becomes a result) and
   `httpKit` (`ask` and `refuse` for a route file).
@@ -333,14 +348,18 @@ Ticked only when a test proves it.
 - [x] `module-borders.test.js` with its starting list of crossings
 - [x] Starting count recorded here: **93** crossings
 
-| Crossings (a module's code naming a table it does not own) | Start | Units | Small masters | Production | Inventory | Challans | Items | Jobs, action centre | P1 | P4 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| A module reads another module's table, undeclared | 63 | 57 | 54 | 50 | 42 | 36 | 25 | 13 | 13 | **0** |
-| A module reads another module's table, declared with a reason | 0 | 0 | 0 | 1 | 1 | 3 | 4 | 13 | 13 | 15 |
-| A module writes another module's table | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| A module touches a kernel table (links, assets, users…) | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
-| A kernel service (search, accounts, settings…) touches a module's table | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 17 | 17 |
-| **Total** | **93** | **87** | **84** | **81** | **73** | **69** | **59** | **56** | **51** | **40** |
+| Crossings (a module's code naming a table it does not own) | Start | Units | Small masters | Production | Inventory | Challans | Items | Jobs, action centre | P1 | P4 | P5 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A module reads another module's table, undeclared | 63 | 57 | 54 | 50 | 42 | 36 | 25 | 13 | 13 | 0 | 0 |
+| A module reads another module's table, declared with a reason | 0 | 0 | 0 | 1 | 1 | 3 | 4 | 13 | 13 | 15 | 26 |
+| A module writes another module's table | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| A module touches a kernel table (links, assets, users…) | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
+| A kernel service (search, accounts, settings…) touches a module's table | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 22 | 17 | 17 | 17 |
+| **Total** | **93** | **87** | **84** | **81** | **73** | **69** | **59** | **56** | **51** | **40** | **51** |
+
+The total rose in P5 because the items logic, moved out of `server.js` (which
+the meter never scanned), carries eleven reads of other modules' tables. They
+were always there; now they are counted and declared.
 
 Declared reads so far:
 
@@ -362,6 +381,17 @@ Declared reads so far:
   sums what was delivered against each line inside its one paged, filtered
   query (and its run status comes from production through a fragment handed
   over as text, which the scanner does not see).
+
+- items reads eleven tables (`delivery_challan_items`,
+  `order_material_requirements`, `materials`, `material_group_item_links`,
+  `pipeline_templates`, `clients`, `sub_contractors`, `party_contacts`,
+  `units`, `machines`, `dies`): the item list and a group's row are one
+  statement each with usage counted and the developed-for names joined in,
+  and an item's DTO joins its units, machines and dies for every row of a
+  list. Asking per row would multiply the calls by the length of the list.
+  The single-row reads (a part's unit, machines and dies when saved; the deal's
+  client, contractor and people; a group's material; where one item is used)
+  became asks.
 
 No module reads another module's table without asking or declaring it;
 `module-borders.test.js` now asserts that count is zero. What is left (40) is
@@ -579,6 +609,7 @@ items are verified before anything is done about them.
 | B32 | With the sandbox config gone, the desktop auto-updater (`lib/core/services/auto_updater_service.dart`) reads `latest_version` and `appcast_url` from built-in defaults and so never finds an update. It found none before either on an installation without a configured client. Updates need a new feed if they are wanted | `lib/core/services/auto_updater_service.dart` | Removing the control plane (P1) | Open, needs a decision on whether the desktop app should self-update at all |
 | B33 | `/api/mobile/stage-item`, `remove-staged-item`, `lock-inventory` and `challan-generated` only relayed to socket.io, which nothing listened to. They still answer success and now do nothing; the mobile app still calls them | `modules/settings/routes.js` | Removing socket.io (P1) | Open: remove them from the mobile app and the server together |
 | B34 | Both order reports loaded every machine and every die (`SELECT * FROM machines`, `SELECT * FROM dies`) to key them by id and name; they still do, now through `machines.rows.all` and `dies.rows.all`. A report-sized read, fine for a master of tens of rows; noted so nobody asks a module for its whole table for a per-row lookup | `modules/orders/reports.js` | P4 | Open, by design |
+| B35 | The item list (`getItemsWithUsage`) and an item's DTO are each one statement joining up to eleven tables of six modules. Declared, not split: a per-row ask would multiply the calls by the list's length. The way out is a batch read per owner (`orders.items.usageCounts {itemIds}` and the like) or an event-kept copy; neither exists | `modules/items/reads.js`, `modules/items/dto.js` | P5 | Open; the largest remaining reach across modules |
 | B19 | The unit DTO reads `unit_group_code` and `unit_group_integral_only`, which the units query never selects, so `unitGroupCode` is always null and `unitGroupIntegralOnly` always false in `GET /api/units` | `modules/units/master.js` (`rowToUnitDto`, `UNIT_ROW_SELECT`) | Moving the units code | Open: kept as it was |
 
 ## 6. Change log
@@ -605,3 +636,4 @@ items are verified before anything is done about them.
 | 2026-11-19 | P2. `test/helpers/temp-dir.js`: `makeTempDir(prefix)` is `mkdtempSync` plus removal at process exit. The 92 test files that made their own folder were rewritten mechanically to call it (111 fixed-prefix calls, 18 with a `prefix` variable, one aliased import); the now-unused `mkdtempSync` and `tmpdir` imports went with it. A first attempt named the helper `tempDir`, which the files' own `const tempDir = …` shadowed into a temporal-dead-zone error; renamed. `npm test` leaves zero `paper-*` folders. 441 tests pass. (Mind map change 58.) |
 | 2026-11-19 | P3. `kernel/fields.js` holds the words a contract is written in (`text`, `int`, `num`, `flag`, `id`, `key`, `list`, `obj`, `none`, `both`). Every user operation in every module now names its fields with a type: 43 items operations (the item and group payloads reuse `modules/items/contract.js`), 22 inventory, 42 challans (both spellings of every challan, invoice and template field), 15 production, 7 jobs, 8 action centre, and the untyped ids and payloads left in clients, dies, machines, orders, people, pipelines and process routes. Nothing new is `required`: the services keep refusing in their own words. `plainRequest` gives a moved handler `{}` for a missing body. Evidence run first (report mode, 28 violations: 20 were tests sending bad input on purpose; 8 were contract shapes stricter than the code, all loosened). Behaviour change: a non-numeric path id answers 400 instead of 404. A third test in `contract-surface.test.js` fails on any new untyped field and lists the eleven kept on purpose. 442 tests pass. (Mind map change 59.) |
 | 2026-11-19 | P4. Orders' eleven foreign reads and process routes' two became asks or declared reads. New internal operations: `items.unitConversions.factor`, `inventory.movements.consumedByRun` (joins the caller's transaction), `challans.deliveries.byOrderLines`, `challans.sheets.provenance`, `dies.rows.all`, `machines.rows.all`. Orders asks `units.rows.get`, `clients.subContractors.row`, `clients.rows.get` (order headers and the line summary now read their own row and ask for the client's name), `pipelines.templates.row`. Process routes asks `items.rows.get` and `items.groups.row` twice (the group and its parent). The order list's delivered-quantity subquery is declared in the registry. Crossings 51 → 40; undeclared module reads 0, asserted by the border test. 442 tests pass. (Mind map change 60.) |
+| 2026-11-19 | P5. The items logic left `server.js`: 49 functions (2,700 lines) moved by name into `modules/items/variation-tree.js` (pure), `property-keys.js` (pure), `schema-props.js`, `developed-for.js`, `variations.js`, `dto.js`, `reads.js`, `save.js`, `deletes.js`, assembled by `service.js` (`createItemsService(deps)`); `server.js` destructures the same names from it, so seeds, exports and ~20 test files are unchanged; a dead duplicate `normalizePropertyKey` and three dead functions went. Inventory is handed an items client and requires the pure tree walkers; `items.variationTree`, `items.rowById`, `items.resolveLeaf` are new asks. The move exposed eleven foreign reads: the single-row ones became asks (`units.rows.get`, `units.rows.first`, `machines.rows.get`, `dies.rows.get`, `clients.rows.get`, `clients.subContractors.row`, `clients.contacts.byIds`, `pipelines.templates.row`, `inventory.materials.firstForGroup`, and `orders.items.usageRows`, `challans.items.usageRows`, `inventory.items.usageRows` for where an item is used); the list and DTO joins are declared in the registry with their reason (B35). `server.js` 16,707 → 14,019 lines. 359 operations. 442 tests pass. (Mind map change 61.) |

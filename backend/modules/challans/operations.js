@@ -317,6 +317,23 @@ function userOperations({ all, core, template, invoice, report, removeTemplate }
       run: async (input) => ({ ok: true, value: await removeTemplate(input.id) }),
     },
 
+    'challans.items.usageRows': {
+      internal: true,
+      summary: 'The challan lines that carry an item, with their challan, newest first, at most 50.',
+      input: { fields: { itemId: F.int } },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async (input) => ({
+        ok: true,
+        rows: await all(
+          `SELECT dci.id, dci.challan_id, dc.challan_no, dc.customer_name, dc.date, dc.status
+             FROM delivery_challan_items dci
+             JOIN delivery_challans dc ON dci.challan_id = dc.id
+            WHERE dci.item_id = ? ORDER BY dc.date DESC LIMIT 50`,
+          [input.itemId],
+        ),
+      }),
+    },
+
     'challans.items.lineCount': {
       internal: true,
       summary: 'How many challan lines name an item.',

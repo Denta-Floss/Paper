@@ -271,6 +271,35 @@ function userOperations({ all, work }) {
       }),
     },
 
+    'inventory.materials.firstForGroup': {
+      internal: true,
+      summary: 'The first material that inherits from a group, whose governance the group’s items take their property schema from; or nothing.',
+      input: { fields: { groupId: F.int } },
+      output: { fields: { row: { type: 'object', nullable: true } } },
+      run: async (input) => {
+        const rows = await all('SELECT * FROM materials WHERE linked_group_id = ? ORDER BY id ASC LIMIT 1', [input.groupId]);
+        return { ok: true, row: rows[0] || null };
+      },
+    },
+
+    'inventory.items.usageRows': {
+      internal: true,
+      summary: 'Where an item is used in inventory: the materials that stand for it and the material-group links that name it, newest first, at most 50 each.',
+      input: { fields: { itemId: F.int } },
+      output: { fields: { materials: { type: 'array', required: true }, groupLinks: { type: 'array', required: true } } },
+      run: async (input) => ({
+        ok: true,
+        materials: await all('SELECT id, barcode, name, inventory_state FROM materials WHERE linked_item_id = ? ORDER BY created_at DESC LIMIT 50', [input.itemId]),
+        groupLinks: await all(
+          `SELECT mgil.id, m.barcode, m.name
+             FROM material_group_item_links mgil
+             JOIN materials m ON mgil.material_id = m.id
+            WHERE mgil.item_id = ? LIMIT 50`,
+          [input.itemId],
+        ),
+      }),
+    },
+
     'inventory.items.usage': {
       internal: true,
       summary: 'How many materials and material-group links name an item.',

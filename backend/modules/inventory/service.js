@@ -1,5 +1,19 @@
 'use strict';
 
+const {
+  activeValueSelectionForLeaf,
+  buildVariationPathLabel,
+  activeTopLevelVariationProperties,
+  activeChildrenForNode,
+  findVariationNodeById,
+  activeValuePathForLeaf,
+} = require('../items/variation-tree');
+const {
+  normalizeGroupPropertyDraft,
+  normalizeDiscardedPropertyKeys,
+  normalizePropertyKey,
+} = require('../items/property-keys');
+
 const barcodes = require('../../kernel/barcodes');
 
 // ---------------------------------------------------------------------------
@@ -26,7 +40,7 @@ const barcodes = require('../../kernel/barcodes');
 //   writeLink(type, id, targetType, targetId)   entity_links, write (mounts late)
 //   getPurgeEntityLinks()                       the cascade that clears a deleted
 //                                               record's links, or null
-//   itemHelpers                                 the item and variation tree readers
+//   items                                       the items module, asked at the desk
 //                                               a set line is validated against
 //   rowToUploadedAssetDto(row, withUrl)         a set's primary photo, presigned
 //
@@ -42,7 +56,8 @@ function createInventoryService({
   resolveLinks,
   writeLink,
   getPurgeEntityLinks,
-  itemHelpers,
+  // The items module, asked at the kernel desk (an itemsClient).
+  items,
   rowToUploadedAssetDto,
   // Still defined in server.js; passed by name (all are function declarations).
   parseJson,
@@ -54,27 +69,18 @@ function createInventoryService({
   holdsWholeItemStock,
   normalizeChallanType,
   getMaterialRowByBarcode,
-  normalizeGroupPropertyDraft,
-  normalizeDiscardedPropertyKeys,
-  normalizePropertyKey,
   // The append-only custody ledger belongs to no module; inventory writes to it.
   recordLedgerEvent,
   // For the stock overview, which reads across four modules' tables.
-  resolveLeafSelectionFromDb,
   variationStockRows,
   desk,
   challans,
 }) {
-  const {
-    getItemVariationTree,
-    activeValueSelectionForLeaf,
-    buildVariationPathLabel,
-    getItemRowById,
-    activeTopLevelVariationProperties,
-    activeChildrenForNode,
-    findVariationNodeById,
-    activeValuePathForLeaf,
-  } = itemHelpers;
+  // An item's stored tree and row are the items module's: asked for. Walking
+  // a tree once it is in hand is pure code, shared with items.
+  const getItemVariationTree = (itemId) => items.variationTree(itemId);
+  const getItemRowById = (id) => items.rowById(id);
+  const resolveLeafSelectionFromDb = (leafNodeId) => items.resolveLeaf(leafNodeId);
 
   // --- sets -----------------------------------------------------------------
 

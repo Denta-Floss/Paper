@@ -203,7 +203,22 @@ const MODULES = {
     ],
     // Declared reads: see the note on production's.
     reads: {
-      order_items: 'a group\'s overview and its cover pictures rank items by how often they are ordered, inside the ranking query',
+      order_items: 'a group\'s overview and its cover pictures rank items by how often they are ordered, inside the ranking query; the item list counts them for usage',
+      // The item list and a group's row are one statement each, with usage
+      // counted and the developed-for names joined in; an item's DTO is built
+      // for every row of a list, so its unit, machine and die joins stay too.
+      // Asking per row would multiply the calls by the length of the list.
+      delivery_challan_items: 'the item list counts the challan lines that carry each item, in its one statement',
+      order_material_requirements: 'the item list counts the requirements that name each item, in its one statement',
+      materials: 'the item list and a group\'s row count the materials that stand for them, in their one statement',
+      material_group_item_links: 'the item list counts the material-group links that name each item, in its one statement',
+      pipeline_templates: 'the item list joins each item\'s default pipeline name, in its one statement',
+      clients: 'the item list joins who each item was developed for, in its one statement',
+      sub_contractors: 'the item list joins the contractor each item was developed for, in its one statement',
+      party_contacts: 'the item list folds the people of each item\'s deal into one JSON column, in its one statement',
+      units: 'an item\'s DTO joins the names of its conversion units, for every row of a list',
+      machines: 'an item\'s DTO joins its linked machines, for every row of a list',
+      dies: 'an item\'s DTO joins its linked dies, for every row of a list',
     },
     evacuated: true,
   },

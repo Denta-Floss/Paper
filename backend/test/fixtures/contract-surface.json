@@ -1202,6 +1202,29 @@
       ]
     },
     {
+      "name": "challans.items.usageRows",
+      "module": "challans",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The challan lines that carry an item, with their challan, newest first, at most 50.",
+      "input": {
+        "itemId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
       "name": "challans.list",
       "module": "challans",
       "permission": "challans.read",
@@ -4006,6 +4029,31 @@
       ]
     },
     {
+      "name": "dies.rows.get",
+      "module": "dies",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "A die’s row as stored, or nothing.",
+      "input": {
+        "id": {
+          "type": "integer",
+          "required": true,
+          "gt": 0
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
       "name": "dies.rows.remove",
       "module": "dies",
       "permission": null,
@@ -4065,7 +4113,9 @@
         }
       },
       "output": null,
-      "usedBy": []
+      "usedBy": [
+        "items"
+      ]
     },
     {
       "name": "inventory.governance.retireMissingProperties",
@@ -4146,6 +4196,33 @@
           "type": "integer",
           "required": true,
           "min": 0
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "inventory.items.usageRows",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where an item is used in inventory: the materials that stand for it and the material-group links that name it, newest first, at most 50 each.",
+      "input": {
+        "itemId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "materials": {
+          "type": "array",
+          "required": true
+        },
+        "groupLinks": {
+          "type": "array",
+          "required": true
         }
       },
       "usedBy": [
@@ -4348,6 +4425,29 @@
       },
       "output": null,
       "usedBy": []
+    },
+    {
+      "name": "inventory.materials.firstForGroup",
+      "module": "inventory",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The first material that inherits from a group, whose governance the group’s items take their property schema from; or nothing.",
+      "input": {
+        "groupId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
     },
     {
       "name": "inventory.materials.get",
@@ -5159,7 +5259,9 @@
         }
       },
       "output": null,
-      "usedBy": []
+      "usedBy": [
+        "items"
+      ]
     },
     {
       "name": "inventory.sets.name",
@@ -5217,7 +5319,9 @@
         }
       },
       "output": null,
-      "usedBy": []
+      "usedBy": [
+        "items"
+      ]
     },
     {
       "name": "inventory.sets.update",
@@ -6848,6 +6952,24 @@
       "usedBy": []
     },
     {
+      "name": "items.resolveLeaf",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The item and path a variation leaf belongs to, read from the tree; or nothing.",
+      "input": {
+        "leafNodeId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
       "name": "items.resolveSelection",
       "module": "items",
       "permission": null,
@@ -6863,6 +6985,24 @@
       "output": null,
       "usedBy": [
         "orders"
+      ]
+    },
+    {
+      "name": "items.rowById",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item’s row as stored, with its usage count; or nothing.",
+      "input": {
+        "id": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
       ]
     },
     {
@@ -7612,6 +7752,24 @@
       ]
     },
     {
+      "name": "items.variationTree",
+      "module": "items",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "An item’s variation tree as stored: properties, values, archived flags.",
+      "input": {
+        "itemId": {
+          "type": "any"
+        }
+      },
+      "output": null,
+      "usedBy": [
+        "inventory"
+      ]
+    },
+    {
       "name": "jobs.batches.create",
       "module": "jobs",
       "permission": null,
@@ -8000,6 +8158,7 @@
         }
       },
       "usedBy": [
+        "items",
         "production"
       ]
     },
@@ -8258,6 +8417,33 @@
           "type": "integer",
           "required": true,
           "min": 0
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
+      "name": "orders.items.usageRows",
+      "module": "orders",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "Where an item is used in orders: the lines that are for it and the material requirements that name it, newest first, at most 50 each.",
+      "input": {
+        "itemId": {
+          "type": "integer"
+        }
+      },
+      "output": {
+        "lines": {
+          "type": "array",
+          "required": true
+        },
+        "requirements": {
+          "type": "array",
+          "required": true
         }
       },
       "usedBy": [
@@ -10783,6 +10969,25 @@
       "usedBy": []
     },
     {
+      "name": "units.rows.first",
+      "module": "units",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The lowest-numbered unit, for a caller that needs some unit when none was chosen; or nothing.",
+      "input": {},
+      "output": {
+        "row": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "usedBy": [
+        "items"
+      ]
+    },
+    {
       "name": "units.rows.get",
       "module": "units",
       "permission": null,
@@ -11157,14 +11362,24 @@
     ],
     "items": [
       "challans.items.lineCount",
+      "challans.items.usageRows",
       "clients.contacts.byIds",
       "clients.rows.get",
       "clients.subContractors.row",
+      "dies.rows.get",
+      "inventory.governance.get",
       "inventory.groups.materialCount",
       "inventory.items.usage",
+      "inventory.items.usageRows",
+      "inventory.materials.firstForGroup",
+      "inventory.sets.membershipForItem",
       "inventory.sets.name",
+      "inventory.sets.removeLinesForItem",
+      "machines.rows.get",
       "orders.items.usage",
+      "orders.items.usageRows",
       "pipelines.templates.row",
+      "units.rows.first",
       "units.rows.get"
     ],
     "action_center": [
@@ -11216,11 +11431,14 @@
       "items.groups.row",
       "items.groups.rowById",
       "items.groups.save",
+      "items.resolveLeaf",
+      "items.rowById",
       "items.rows.get",
       "items.selectionSnapshot",
       "items.stock.applyDelta",
       "items.stock.holdsWholeItemStock",
       "items.variationStockRows",
+      "items.variationTree",
       "items.variations.codeForValue",
       "items.variations.node",
       "machines.rows.byAssetOrName",

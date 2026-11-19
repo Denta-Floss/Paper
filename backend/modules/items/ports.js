@@ -47,6 +47,9 @@ function createItemsPorts(impl) {
 
   return {
     describe: counted('describe', impl.describe),
+    variationTree: counted('variationTree', impl.variationTree),
+    rowById: counted('rowById', impl.rowById),
+    resolveLeaf: counted('resolveLeaf', impl.resolveLeaf),
     resolveSelection: counted('resolveSelection', impl.resolveSelection),
     selectionSnapshot: counted('selectionSnapshot', impl.selectionSnapshot),
     stock: {

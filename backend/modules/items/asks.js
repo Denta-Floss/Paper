@@ -49,6 +49,14 @@ module.exports = [
   { port: 'ensureForReconcile', args: ['name', 'groupId', 'unitId', 'options'], joins: true,
     summary: 'A named item in such a group, made if missing.' },
 
+  // Inventory reads an item's tree and row when it shapes a set or a material.
+  { port: 'variationTree', args: ['itemId'],
+    summary: 'An item’s variation tree as stored: properties, values, archived flags.' },
+  { port: 'rowById', args: ['id'],
+    summary: 'An item’s row as stored, with its usage count; or nothing.' },
+  { port: 'resolveLeaf', args: ['leafNodeId'],
+    summary: 'The item and path a variation leaf belongs to, read from the tree; or nothing.' },
+
   // The action centre.
   { port: 'delete', as: 'deleteWithCascade', args: ['type', 'id', 'by'],
     summary: 'Remove an item or a group with everything that hangs off it. `by` says who.' },

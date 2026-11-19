@@ -51,6 +51,21 @@ function createOrdersPorts({ get, all, run, saveOrder, desk }) {
       return Number(row?.count || 0);
     },
 
+    /// The order lines for an item, newest first, at most 50.
+    itemUsageLines: (itemId) => all(
+      'SELECT id, order_no, client_name, status, created_at FROM order_items WHERE item_id = ? ORDER BY created_at DESC LIMIT 50',
+      [itemId],
+    ),
+
+    /// The material requirements that name an item, with their order line.
+    itemRequirementLines: (itemId) => all(
+      `SELECT omr.id, omr.order_id, oi.order_no, oi.client_name
+         FROM order_material_requirements omr
+         JOIN order_items oi ON omr.order_id = oi.id
+        WHERE omr.item_id = ? ORDER BY omr.created_at DESC LIMIT 50`,
+      [itemId],
+    ),
+
     /// How many order lines and material requirements name an item.
     async itemUsage(itemId) {
       const row = await get(

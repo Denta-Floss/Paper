@@ -24,7 +24,11 @@ function rowToUnitDto(row) {
     return null;
   }
 
+  /// The lowest-numbered unit, or undefined.
+  const firstUnitRow = () => get('SELECT id FROM units ORDER BY id LIMIT 1');
+
   return {
+    firstUnitRow,
     id: row.id,
     name: row.name || '',
     symbol: row.symbol || '',

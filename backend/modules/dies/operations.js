@@ -88,6 +88,14 @@ module.exports = function dieOperations({
       },
     },
 
+    'dies.rows.get': {
+      internal: true,
+      summary: 'A die’s row as stored, or nothing.',
+      input: { fields: { id: F.id } },
+      output: { fields: { row: { ...object, nullable: true } } },
+      run: async (input) => ({ ok: true, row: await service.getDieRow(input.id) }),
+    },
+
     'dies.rows.all': {
       internal: true,
       summary: 'Every die as stored. For the order reports, which key dies by id and tool code.',

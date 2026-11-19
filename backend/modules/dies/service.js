@@ -103,6 +103,9 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink, d
     });
   }
 
+  /// A die's row as stored, or undefined.
+  const getDieRow = (id) => get('SELECT * FROM dies WHERE id = ?', [id]);
+
   /// Every die as stored, for a report that keys them by id and tool code.
   const allDieRows = () => all('SELECT * FROM dies');
 
@@ -382,7 +385,7 @@ function createDieService({ get, all, run, parseJson, resolveLinks, writeLink, d
     return before;
   }
 
-  return { rowToDieDto, getDieRowByToolCode, allDieRows, removeDieRow, listDies, getDie, saveDie, deleteDie };
+  return { rowToDieDto, getDieRow, getDieRowByToolCode, allDieRows, removeDieRow, listDies, getDie, saveDie, deleteDie };
 }
 
 module.exports = { createDieService };

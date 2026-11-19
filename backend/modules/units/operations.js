@@ -216,6 +216,14 @@ module.exports = function unitOperations({ master, db, trashAndDelete }) {
       run: async (input) => ({ ok: true, row: await master.getUnitRowById(input.id) }),
     },
 
+    'units.rows.first': {
+      internal: true,
+      summary: 'The lowest-numbered unit, for a caller that needs some unit when none was chosen; or nothing.',
+      input: { fields: {} },
+      output: { fields: { row: { ...object, nullable: true } } },
+      run: async () => ({ ok: true, row: (await master.firstUnitRow()) || null }),
+    },
+
     'units.ensureKilogram': {
       internal: true,
       // Called before the reconcile's transaction opens today; marked so it may
