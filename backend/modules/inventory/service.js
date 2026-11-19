@@ -1,5 +1,7 @@
 'use strict';
 
+const { withTransaction, withSavepoint } = require('../../kernel/db-kit');
+
 const {
   activeValueSelectionForLeaf,
   buildVariationPathLabel,
@@ -1049,6 +1051,7 @@ function createInventoryService({
   }
 
   async function persistMaterialGroupGovernance(materialId, payload, now = new Date().toISOString()) {
+    return withSavepoint(run, 'persistMaterialGroupGovernance', async () => {
     const selectedItemIds = Array.isArray(payload?.selectedItemIds)
       ? [...new Set(
         payload.selectedItemIds
@@ -1172,6 +1175,7 @@ function createInventoryService({
         now,
       ],
     );
+    });
   }
 
   async function getMaterialGroupGovernance(materialId) {
@@ -1279,6 +1283,7 @@ function createInventoryService({
   // --- scans, activity and the stock ledger ------------------------------
 
   async function incrementMaterialScanCount(barcode) {
+    return withSavepoint(run, 'incrementMaterialScanCount', async () => {
     const row = await getMaterialRowByBarcode(barcode);
     if (!row) {
       return null;
@@ -1301,6 +1306,7 @@ function createInventoryService({
       createdAt: now,
     });
     return get('SELECT * FROM materials WHERE id = ?', [row.id]);
+    });
   }
 
   async function getMaterialActivity(barcode) {
@@ -2153,6 +2159,7 @@ function createInventoryService({
   // --- editing, linking and deleting a material --------------------------
 
   async function updateMaterialGroupConfiguration(barcode, payload) {
+    return withSavepoint(run, 'updateMaterialGroupConfiguration', async () => {
     const material = await getMaterialRowByBarcode(barcode);
     if (!material) {
       throw new Error('Material not found.');
@@ -2179,6 +2186,7 @@ function createInventoryService({
       createdAt: now,
     });
     return get('SELECT * FROM materials WHERE id = ?', [material.id]);
+    });
   }
 
   async function logMaterialActivity({
@@ -2200,6 +2208,7 @@ function createInventoryService({
   }
 
   async function createChildMaterial(parentBarcode, payload) {
+    return withSavepoint(run, 'createChildMaterial', async () => {
     const parent = await getMaterialRowByBarcode(parentBarcode);
     if (!parent || parent.kind !== 'parent') {
       throw new Error('Parent material not found.');
@@ -2263,9 +2272,11 @@ function createInventoryService({
     await recomputeMaterialInventorySummary(parent.barcode, createdAt);
 
     return getMaterialRowByBarcode(childBarcode);
+    });
   }
 
   async function updateMaterialRecord(barcode, payload) {
+    return withSavepoint(run, 'updateMaterialRecord', async () => {
     const existing = await getMaterialRowByBarcode(barcode);
     if (!existing) {
       throw new Error('Material not found.');
@@ -2315,9 +2326,11 @@ function createInventoryService({
     });
     await recomputeMaterialInventorySummary(existing.barcode, now);
     return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+    });
   }
 
   async function deleteMaterialRecord(barcode) {
+    return withSavepoint(run, 'deleteMaterialRecord', async () => {
     const existing = await getMaterialRowByBarcode(barcode);
     if (!existing) {
       throw new Error('Material not found.');
@@ -2356,9 +2369,11 @@ function createInventoryService({
     await run('DELETE FROM inventory_reservations WHERE material_barcode = ?', [existing.barcode]);
     await run('DELETE FROM inventory_alerts WHERE material_barcode = ?', [existing.barcode]);
     await run('DELETE FROM materials WHERE id = ?', [existing.id]);
+    });
   }
 
   async function linkMaterialRecordToGroup(barcode, groupId) {
+    return withSavepoint(run, 'linkMaterialRecordToGroup', async () => {
     const existing = await getMaterialRowByBarcode(barcode);
     if (!existing) {
       throw new Error('Material not found.');
@@ -2379,9 +2394,11 @@ function createInventoryService({
       actor: existing.created_by || 'Demo Admin',
     });
     return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+    });
   }
 
   async function linkMaterialRecordToItem(barcode, itemId, variationLeafNodeId = null) {
+    return withSavepoint(run, 'linkMaterialRecordToItem', async () => {
     const existing = await getMaterialRowByBarcode(barcode);
     if (!existing) {
       throw new Error('Material not found.');
@@ -2425,9 +2442,11 @@ function createInventoryService({
       actor: existing.created_by || 'Demo Admin',
     });
     return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+    });
   }
 
   async function unlinkMaterialRecord(barcode) {
+    return withSavepoint(run, 'unlinkMaterialRecord', async () => {
     const existing = await getMaterialRowByBarcode(barcode);
     if (!existing) {
       throw new Error('Material not found.');
@@ -2444,6 +2463,7 @@ function createInventoryService({
       actor: existing.created_by || 'Demo Admin',
     });
     return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+    });
   }
 
   // --- what a challan asks of the stock tables ------------------------------
@@ -2677,6 +2697,7 @@ function createInventoryService({
   /// quantity }` each. Keyed on (run, node): reconciling the same stage again
   /// updates the set it already produced. Answers the set's id.
   async function recordProducedSet({ runId, nodeId, nodeName, lines, producedQty }) {
+    return withSavepoint(run, 'recordProducedSet', async () => {
     // Match the composition against the defined sets: same (item, variation) on
     // both sides, ignoring quantity — a Starter Pack is a Starter Pack whether
     // one or a thousand came off the line.
@@ -2751,6 +2772,7 @@ function createInventoryService({
 
     await stockTemporarySet(setId, name, runId, nodeId, producedQty);
     return setId;
+    });
   }
 
   /**

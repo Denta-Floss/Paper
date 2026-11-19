@@ -91,6 +91,9 @@ function createDesk({
     if (mode !== null && !MODES.has(mode)) throw new Error(`unknown contract mode '${mode}'`);
   }
   const operations = new Map(); // name -> the registered operation, see register()
+  // For tests only: operations whose next call fails before it runs, so a test
+  // can see what a failure in the middle of a flow leaves behind.
+  const tripped = new Map();
   const uses = new Map(); // module -> Set of operation names it may ask for
   const calls = new Map(); // name -> count
   const violations = new Map(); // name -> { input, output } counts
@@ -219,6 +222,12 @@ function createDesk({
 
     const denied = mayAsk(actor, name, operation);
     if (denied) return denied;
+
+    if (tripped.has(name)) {
+      const error = tripped.get(name);
+      tripped.delete(name);
+      throw error;
+    }
 
     const payload = input == null ? {} : input;
     const problems = checkPayload({ entity: name, ...operation.input }, payload);
@@ -363,6 +372,8 @@ function createDesk({
   return {
     register,
     call,
+    /// For tests: the next call of `name` throws `error` instead of running.
+    trip: (name, error) => tripped.set(name, error || new Error(`tripped: ${name}`)),
     as,
     actorFromRequest,
     catalogue,

@@ -1,5 +1,7 @@
 'use strict';
 
+const { withTransaction, withSavepoint } = require('../../kernel/db-kit');
+
 // ---------------------------------------------------------------------------
 // The freelancer job pool: jobs, the tasks a job breaks into, and the batches
 // that hand jobs to a worker.
@@ -73,6 +75,7 @@ function createJobsService({ get, all, run, inventory, desk }) {
 
   /// Gathers jobs into one batch for a worker and issues their sets.
   async function createBatch(freelancerId, jobIds) {
+    return withSavepoint(run, 'createBatch', async () => {
     const batchNumber = 'BATCH-' + Date.now();
     const result = await run(
       'INSERT INTO freelancer_job_batches (freelancer_id, batch_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
@@ -92,11 +95,13 @@ function createJobsService({ get, all, run, inventory, desk }) {
     await issueAssemblySetsForJobs(jobIds || [], freelancerId);
 
     return get('SELECT * FROM freelancer_job_batches WHERE id = ?', [batchId]);
+    });
   }
 
   /// A hand-raised job: one pending job, and a task per BOM line whose
   /// material points at an item.
   async function createJob(itemId, quantity) {
+    return withSavepoint(run, 'createJob', async () => {
     const result = await run(
       `INSERT INTO freelancer_jobs (batch_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
        VALUES (NULL, ?, 0, ?, 'pending', 0, ?, ?)`,
@@ -118,6 +123,7 @@ function createJobsService({ get, all, run, inventory, desk }) {
     }
 
     return get('SELECT * FROM freelancer_jobs WHERE id = ?', [newJobId]);
+    });
   }
 
   async function setStatus(id, status) {
@@ -131,10 +137,10 @@ function createJobsService({ get, all, run, inventory, desk }) {
   /// A job and its tasks, together or not at all. The caller owns the error
   /// path: a failed delete has to roll back, and the route does that.
   async function deleteJob(id) {
-    await run('BEGIN TRANSACTION');
-    await run('DELETE FROM freelancer_job_tasks WHERE job_id = ?', [id]);
-    await run('DELETE FROM freelancer_jobs WHERE id = ?', [id]);
-    await run('COMMIT');
+    return withTransaction(run, async () => {
+      await run('DELETE FROM freelancer_job_tasks WHERE job_id = ?', [id]);
+      await run('DELETE FROM freelancer_jobs WHERE id = ?', [id]);
+    });
   }
 
   /// What one worker's card shows: their batches from the last 30 days, and
@@ -192,6 +198,7 @@ function createJobsService({ get, all, run, inventory, desk }) {
   /// than inserting blind. The caller has already worked out WHICH item the job
   /// is for; this only writes it.
   async function syncAssemblyJob({ runId, nodeId, itemId, qty }) {
+    return withSavepoint(run, 'syncAssemblyJob', async () => {
     const existingJob = await get(
       'SELECT * FROM freelancer_jobs WHERE run_id = ? AND node_id = ?',
       [runId, nodeId],
@@ -236,6 +243,7 @@ function createJobsService({ get, all, run, inventory, desk }) {
         }
       }
     }
+    });
   }
 
   return {

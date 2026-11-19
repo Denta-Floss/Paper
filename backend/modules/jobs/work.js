@@ -57,7 +57,6 @@ function createJobsWork({ run, jobs, desk, portalTokens }) {
       await jobs.deleteJob(req.params.id);
       return answer(200, { success: true, error: null });
     } catch (error) {
-      await run('ROLLBACK');
       return answer(500, { success: false, error: error.message });
     }
   }

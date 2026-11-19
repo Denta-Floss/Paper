@@ -1,5 +1,7 @@
 'use strict';
 
+const { withTransaction, withSavepoint } = require('../../kernel/db-kit');
+
 const barcodes = require('../../kernel/barcodes');
 
 // ---------------------------------------------------------------------------
@@ -1975,7 +1977,16 @@ function createChallanService({
   /// happened, and stock was drawn from it) and a draft vendor return is made
   /// for what is free; the row comes back with `returnChallanRow` and
   /// `cancelNotice` set. If nothing is free, the cancel is refused.
-  async function cancelDeliveryChallan(id, actor = null) {
+  /// `dropInvoiceIds` are draft invoices the caller has decided go with the
+  /// challan; they are removed inside this cancel's transaction, so a cancel
+  /// that fails leaves them too.
+  async function cancelDeliveryChallan(id, actor = null, { dropInvoiceIds = [] } = {}) {
+    const dropInvoices = async () => {
+      for (const invoiceId of dropInvoiceIds) {
+        await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [invoiceId]);
+        await run('DELETE FROM invoice_headers WHERE id = ?', [invoiceId]);
+      }
+    };
     const existing = await getDeliveryChallanRowById(id);
     if (!existing) {
       const error = new Error('Delivery challan not found.');
@@ -2006,11 +2017,14 @@ function createChallanService({
       const row = await getDeliveryChallanRowById(id);
       row.returnChallanRow = returnChallan;
       row.cancelNotice = partlyUsedNotice(usage, returnChallan);
+      // Not a cancel; the invoices still go, as they always did.
+      await dropInvoices();
       return row;
     }
     const now = new Date().toISOString();
     await run('BEGIN TRANSACTION');
     try {
+      await dropInvoices();
       if (existing.status === 'issued') {
         await reverseIssuedStock(existing, usage, actor, now, {
           reasonCode: 'challan_cancel_reversal',
@@ -2050,6 +2064,7 @@ function createChallanService({
   /// Writes a one-line internal note for a stage: `kind` is 'leftover' or
   /// 'scrap'. Answers the new challan's id.
   async function createStageNote({ sourceReference, kind, itemId, quantity }) {
+    return withSavepoint(run, 'createStageNote', async () => {
     const challanNo = await generateChallanNumber('internal');
     const challanRes = await run(
       `INSERT INTO delivery_challans (
@@ -2069,6 +2084,7 @@ function createChallanService({
       ]
     );
     return challanId;
+    });
   }
 
   /// A corrected stage: the note's line takes the new quantity.
@@ -2081,8 +2097,10 @@ function createChallanService({
 
   /// A stage corrected back to nothing left over: the note goes.
   async function removeStageNote(challanId) {
+    return withSavepoint(run, 'removeStageNote', async () => {
     await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
     await run('DELETE FROM delivery_challans WHERE id = ?', [challanId]);
+    });
   }
 
   /// The vendor sheet a scanned tag belongs to, with the reception line and

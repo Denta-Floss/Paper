@@ -534,6 +534,7 @@ function createChallanWork({
     try {
       const id = Number(req.params.id);
       const { action } = req.body;
+      let dropInvoiceIds = [];
     
       const invoices = await all(
         `SELECT DISTINCT ih.id, ih.status 
@@ -555,10 +556,7 @@ function createChallanWork({
             err.statusCode = 400;
             throw err;
           }
-          for (const draft of invoices) {
-            await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [draft.id]);
-            await run('DELETE FROM invoice_headers WHERE id = ?', [draft.id]);
-          }
+          dropInvoiceIds = invoices.map((draft) => draft.id);
         } else {
           const err = new Error('Invalid cancel action.');
           err.statusCode = 400;
@@ -566,7 +564,7 @@ function createChallanWork({
         }
       }
 
-      const challan = await challanService.cancelDeliveryChallan(id, actorFromRequest(req));
+      const challan = await challanService.cancelDeliveryChallan(id, actorFromRequest(req), { dropInvoiceIds });
       // A partly used reception is not cancelled: a draft vendor return is
       // made for what is free, and the answer says so.
       const returnRow = challan.returnChallanRow || null;

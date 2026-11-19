@@ -1,5 +1,7 @@
 'use strict';
 
+const { withTransaction, withSavepoint } = require('../../kernel/db-kit');
+
 // ---------------------------------------------------------------------------
 // Production: runs on the floor and what they leave behind.
 //
@@ -57,6 +59,7 @@ function createProductionService({
   };
 
   async function upsertStageReconciliation(runId, nodeId, metrics) {
+    return withSavepoint(run, 'upsertStageReconciliation', async () => {
     const cols = [];
     const vals = [];
     for (const [key, col] of Object.entries(STAGE_RECON_COLUMNS)) {
@@ -85,6 +88,7 @@ function createProductionService({
         console.warn(`[assembly-set] run ${runId} node ${nodeId}: ${error.message}`);
       }
     }
+    });
   }
 
   /**
@@ -354,6 +358,7 @@ function createProductionService({
     // variation or decline to mint anything.
     { outputVariationLeafNodeId = 0, outputVariationPathLabel = '' } = {},
   ) {
+    return withSavepoint(run, 'createRunFromTemplate', async () => {
     const templateRow = await templateRowById(templateId);
     if (!templateRow) {
       return null;
@@ -408,6 +413,7 @@ function createProductionService({
 
     const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
     return rowToRun(runRow);
+    });
   }
 
   async function ensurePipelineRunRecord({
@@ -422,6 +428,7 @@ function createProductionService({
     overrides,
     barcodeAssignments = [],
   }) {
+    return withSavepoint(run, 'ensurePipelineRunRecord', async () => {
     const templateRow = await templateRowById(templateId);
     if (!templateRow) {
       return null;
@@ -583,6 +590,7 @@ function createProductionService({
 
     const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [id]);
     return rowToRun(runRow);
+    });
   }
 
   let runInputSequence = Math.floor(Math.random() * 1000);
@@ -592,6 +600,7 @@ function createProductionService({
   /// scanned or dragged barcode and for each barcode of an approved quantity
   /// split, so both leave exactly the same records.
   async function assignMaterialToRunNode({ runId, payload, actorName }) {
+    return withSavepoint(run, 'assignMaterialToRunNode', async () => {
     const materialRow = await inventoryPorts.scans.increment(payload.barcode);
     if (!materialRow) {
       const error = new Error(`No material found for barcode ${payload.barcode}.`);
@@ -660,7 +669,7 @@ function createProductionService({
     if (payload.quantity !== undefined && payload.quantity !== null) {
       const qty = Number(payload.quantity);
       if (qty > 0) {
-        await inventoryPorts.movements.apply({
+        await inventoryPorts.movements.applyCore({
           barcode: material.barcode,
           movementType: 'consume',
           qty: qty,
@@ -668,9 +677,10 @@ function createProductionService({
           referenceType: 'pipeline_run',
           referenceId: runId,
           reasonCode: 'PRODUCTION_ASSIGN',
-        });
+        }, { useTransaction: false });
       }
     }
+    });
   }
 
   /// Sets one node's status on a run, with the duration, batch quantity and
@@ -684,6 +694,7 @@ function createProductionService({
   /// Answers `{ run }`, or `{ refusal: { status, body } }` for an unknown run or
   /// a request with no node or status. Moved whole from the route handler.
   async function setNodeStatus({ runId, payload = {}, actor = null }) {
+    return withSavepoint(run, 'setNodeStatus', async () => {
     const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
     if (!runRow) {
       return { refusal: { status: 404, body: { success: false, run: null, error: 'Run not found.' } } };
@@ -1015,6 +1026,7 @@ function createProductionService({
       runId,
     ]);
     return { run: await rowToRun(updatedRow) };
+    });
   }
 
   return {

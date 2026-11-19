@@ -1,5 +1,7 @@
 'use strict';
 
+const { withTransaction, withSavepoint } = require('../../kernel/db-kit');
+
 // ---------------------------------------------------------------------------
 // Production's work on a run: starting one, putting stock on a node and taking
 // it back, a stage's numbers, scrap, finished output, a machine's queue and an
@@ -142,6 +144,7 @@ function createProductionWork({
   }
 
   async function deleteRun(req) {
+    return withSavepoint(run, 'deleteRun', async () => {
     try {
       const existing = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
       if (!existing) {
@@ -155,6 +158,7 @@ function createProductionWork({
     } catch (error) {
       return answer(500, { success: false, error: error.message });
     }
+    });
   }
 
   async function itemPipelineHistory(req) {
@@ -307,6 +311,7 @@ function createProductionWork({
   }
 
   async function assignStock(req) {
+    return withSavepoint(run, 'assignStock', async () => {
     try {
       const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
       if (!runRow) {
@@ -530,7 +535,7 @@ function createProductionWork({
           const wanted = sheetStock.keptByWeight ? Number(sheet.weight || 0) : 1;
           const taken = Math.min(wanted, Math.max(0, Number(sheetStock.onHand || 0)));
           if (taken > 0) {
-            await inventoryPorts.movements.apply({
+            await inventoryPorts.movements.applyCore({
               barcode: sheetStock.barcode,
               movementType: 'consume',
               qty: taken,
@@ -538,7 +543,7 @@ function createProductionWork({
               referenceType: 'pipeline_run',
               referenceId: req.params.id,
               reasonCode: 'PRODUCTION_ASSIGN',
-            });
+            }, { useTransaction: false });
             await run(
               `UPDATE run_barcode_inputs
                   SET consumed_qty = ?,
@@ -610,9 +615,11 @@ function createProductionWork({
     } catch (error) {
       return answer(error.statusCode || 500, { success: false, run: null, error: error.message });
     }
+    });
   }
 
   async function changeStock(req) {
+    return withSavepoint(run, 'changeStock', async () => {
     try {
       const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
       if (!runRow) {
@@ -692,7 +699,7 @@ function createProductionWork({
         const takenBefore = Number(materialPayload.stockQty || 0);
         const stockDiff = quantity - takenBefore;
         if (stockDiff !== 0) {
-          await inventoryPorts.movements.apply({
+          await inventoryPorts.movements.applyCore({
             barcode: sheetStock.barcode,
             movementType: stockDiff > 0 ? 'consume' : 'adjust',
             qty: Math.abs(stockDiff),
@@ -700,7 +707,7 @@ function createProductionWork({
             referenceType: 'pipeline_run',
             referenceId: req.params.id,
             reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
-          });
+          }, { useTransaction: false });
         }
         const weightBefore = Number(existingInput.consumed_weight || 0);
         materialPayload.stockBarcode = sheetStock.barcode;
@@ -745,7 +752,7 @@ function createProductionWork({
       }
 
       if (qtyDiff > 0) {
-        await inventoryPorts.movements.apply({
+        await inventoryPorts.movements.applyCore({
           barcode: barcode,
           movementType: 'consume',
           qty: qtyDiff,
@@ -753,9 +760,9 @@ function createProductionWork({
           referenceType: 'pipeline_run',
           referenceId: req.params.id,
           reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
-        });
+        }, { useTransaction: false });
       } else if (qtyDiff < 0) {
-        await inventoryPorts.movements.apply({
+        await inventoryPorts.movements.applyCore({
           barcode: barcode,
           movementType: 'adjust',
           qty: -qtyDiff,
@@ -763,7 +770,7 @@ function createProductionWork({
           referenceType: 'pipeline_run',
           referenceId: req.params.id,
           reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
-        });
+        }, { useTransaction: false });
       }
 
       materialPayload.quantity = quantity;
@@ -777,9 +784,11 @@ function createProductionWork({
     } catch (error) {
       return answer(error.statusCode || 500, { success: false, run: null, error: error.message });
     }
+    });
   }
 
   async function removeStock(req) {
+    return withSavepoint(run, 'removeStock', async () => {
     try {
       const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
       if (!runRow) {
@@ -837,7 +846,7 @@ function createProductionWork({
       // A sheet's code is not a material; its stock is given back just below,
       // to the material it was taken from.
       if (oldQty > 0 && existingInput.source_kind !== 'sheet') {
-        await inventoryPorts.movements.apply({
+        await inventoryPorts.movements.applyCore({
           barcode: barcode,
           movementType: 'adjust',
           qty: oldQty,
@@ -845,14 +854,14 @@ function createProductionWork({
           referenceType: 'pipeline_run',
           referenceId: req.params.id,
           reasonCode: 'PRODUCTION_ASSIGN_DELETE',
-        });
+        }, { useTransaction: false });
       }
 
       // A sheet took its stock off the material its reception line became, not
       // off its own code, so taking the sheet back off the run returns it there.
       const sheetStockQty = Number(materialPayload.stockQty || 0);
       if (materialPayload.stockBarcode && sheetStockQty > 0) {
-        await inventoryPorts.movements.apply({
+        await inventoryPorts.movements.applyCore({
           barcode: materialPayload.stockBarcode,
           movementType: 'adjust',
           qty: sheetStockQty,
@@ -860,7 +869,7 @@ function createProductionWork({
           referenceType: 'pipeline_run',
           referenceId: req.params.id,
           reasonCode: 'PRODUCTION_ASSIGN_DELETE',
-        });
+        }, { useTransaction: false });
       }
 
       await run(
@@ -878,9 +887,11 @@ function createProductionWork({
     } catch (error) {
       return answer(error.statusCode || 500, { success: false, run: null, error: error.message });
     }
+    });
   }
 
   async function setNodeMetrics(req) {
+    return withSavepoint(run, 'setNodeMetrics', async () => {
     try {
       const { nodeId, metrics } = req.body;
       if (!nodeId || !metrics) {
@@ -1009,6 +1020,7 @@ function createProductionWork({
     } catch (error) {
       return answer(500, { success: false, run: null, error: error.message });
     }
+    });
   }
 
   async function setBatches(req) {
@@ -1033,6 +1045,7 @@ function createProductionWork({
   }
 
   async function recordScrap(req) {
+    return withSavepoint(run, 'recordScrap', async () => {
     try {
       const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, scrapItemId, scrapItemName } = req.body;
       if (!pipelineRunId || !nodeId || !materialBarcode) {
@@ -1121,6 +1134,7 @@ function createProductionWork({
     } catch (error) {
       return answer(500, { success: false, error: error.message });
     }
+    });
   }
 
   async function listScrap(req) {
