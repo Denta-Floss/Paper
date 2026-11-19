@@ -4,10 +4,6 @@
 // Items module — HTTP routes (evacuation step 1: routes moved VERBATIM from
 // server.js; no logic edits — reviewability rule from the evacuation plan).
 //
-// The only mechanical transform applied during the move: the socket server
-// `io` is late-bound in server.js (`let io = null`, assigned at listen), so
-// handlers receive it through ctx.getIo() instead of a closure variable.
-//
 // Domain logic (saveItem, saveGroup, DTOs, usage queries) still lives in
 // legacy server.js and arrives via ctx — it evacuates in the next step, when
 // modules/items/service.js takes it over and the remaining ctx shrinks to

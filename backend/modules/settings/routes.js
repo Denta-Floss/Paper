@@ -136,15 +136,12 @@ function registerSettingsRoutes(app, {
 // These are registered after the /api error handler that sits in the middle of
 // server.js, as they always were, so an error they pass on is caught by the
 // last handler instead.
-// `getIo` answers the socket server, which is created after these are registered.
 function registerSettingsRoutesAfterErrorHandler(app, {
   changeEmitter,
   requireAuth,
-  getIo,
 }) {
   app.post('/api/mobile/stage-item', requireAuth, async (req, res) => {
     try {
-      if (getIo()) getIo().emit('item_staged', req.body);
       changeEmitter.emit('custom-event', { event: 'item_staged', data: req.body });
       res.json({ success: true, error: null });
     } catch (error) {
@@ -154,7 +151,6 @@ function registerSettingsRoutesAfterErrorHandler(app, {
 
   app.post('/api/mobile/remove-staged-item', requireAuth, async (req, res) => {
     try {
-      if (getIo()) getIo().emit('item_removed', req.body);
       changeEmitter.emit('custom-event', { event: 'item_removed', data: req.body });
       res.json({ success: true, error: null });
     } catch (error) {
@@ -164,7 +160,6 @@ function registerSettingsRoutesAfterErrorHandler(app, {
 
   app.post('/api/mobile/lock-inventory', requireAuth, async (req, res) => {
     try {
-      if (getIo()) getIo().emit('inventory_locked', req.body);
       changeEmitter.emit('custom-event', { event: 'inventory_locked', data: req.body });
       res.json({ success: true, error: null });
     } catch (error) {
@@ -174,7 +169,6 @@ function registerSettingsRoutesAfterErrorHandler(app, {
 
   app.post('/api/mobile/challan-generated', requireAuth, async (req, res) => {
     try {
-      if (getIo()) getIo().emit('challan_generated_ok', req.body);
       changeEmitter.emit('custom-event', { event: 'challan_generated_ok', data: req.body });
       res.json({ success: true, error: null });
     } catch (error) {

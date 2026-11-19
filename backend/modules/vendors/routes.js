@@ -22,15 +22,8 @@
 const { httpKit } = require('../../kernel/desk-kit');
 
 module.exports = function registerVendorRoutes(ctx) {
-  const { app, desk, requirePermission, trackCreate, trackUpdate, trackDelete, getIo } = ctx;
+  const { app, desk, requirePermission, trackCreate, trackUpdate, trackDelete } = ctx;
   const { ask } = httpKit(desk);
-
-  const emit = (event, payload) => {
-    const io = getIo();
-    if (io) {
-      io.emit(event, payload);
-    }
-  };
 
   app.get('/api/vendors', requirePermission('config.read'), async (req, res) => {
     try {
@@ -74,7 +67,6 @@ module.exports = function registerVendorRoutes(ctx) {
       if (!result.ok) {
         return res.status(result.status || 400).json({ success: false, vendor: null, error: result.error });
       }
-      emit('vendor_added', result.vendor);
       trackCreate('vendors', result.row.id, result.row, req);
       res.status(201).json({ success: true, vendor: result.vendor, error: null });
     } catch (error) {
@@ -94,7 +86,6 @@ module.exports = function registerVendorRoutes(ctx) {
         });
       }
       trackDelete('vendors', id, result.before, req);
-      emit('vendor_deleted', { id });
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -108,7 +99,6 @@ module.exports = function registerVendorRoutes(ctx) {
       if (!result.ok) {
         return res.status(result.status || 400).json({ success: false, vendor: null, error: result.error });
       }
-      emit('vendor_updated', result.vendor);
       trackUpdate('vendors', id, result.before, result.after, req);
       res.json({ success: true, vendor: result.vendor, error: null });
     } catch (error) {

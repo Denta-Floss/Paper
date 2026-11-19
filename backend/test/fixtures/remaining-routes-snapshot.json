@@ -8,15 +8,6 @@
   },
   "error": "Authentication required."
  },
- "anonymous GET /api/appcast/:clientId.xml": {
-  "status": 401,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Authentication required."
- },
  "anonymous GET /api/assets/documents": {
   "status": 401,
   "type": "application/json",
@@ -395,62 +386,6 @@
   },
   "error": "Authentication required."
  },
- "anonymous GET /sandbox-config/:clientId": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "catalog": {
-    "purchaseItems": "boolean"
-   },
-   "challans": {
-    "reconciliation": "boolean",
-    "singleTypeView": "boolean"
-   },
-   "enhancements": {
-    "boardingPassCards": "boolean",
-    "catalogInventory": "boolean"
-   },
-   "features": {
-    "disableMachineCustomFields": "boolean"
-   },
-   "masters": {
-    "linkColumns": "boolean"
-   },
-   "modules": {
-    "actionCenter": "boolean",
-    "delivery_challans": "boolean",
-    "inventory": "boolean",
-    "jobs": "boolean",
-    "masters": "boolean",
-    "orders": "boolean",
-    "pm": "boolean",
-    "production": "boolean"
-   },
-   "orders": {
-    "allowCustomActions": "boolean",
-    "allowOrdersCreation": "boolean",
-    "showReport": "boolean",
-    "statusColors": "{…}"
-   },
-   "production": {
-    "materialVariationPaths": "boolean",
-    "multiScrapItems": "boolean"
-   },
-   "purchase": {
-    "flowV2": "boolean"
-   },
-   "routes": {
-    "listLens": "boolean"
-   },
-   "units": {
-    "families": "boolean"
-   },
-   "update": {
-    "channel": "string",
-    "latest_version": "string"
-   }
-  }
- },
  "anonymous PUT /api/assets/local/*key": {
   "status": 403,
   "type": "application/json",
@@ -594,15 +529,6 @@
    "success": "boolean"
   },
   "error": "Authentication required."
- },
- "anonymous POST /api/activation/activate": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing required activation parameters"
  },
  "anonymous POST /api/admins": {
   "status": 401,
@@ -795,15 +721,6 @@
   },
   "error": "Authentication required."
  },
- "anonymous POST /api/sandbox-sync/:clientId": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing sync data"
- },
  "anonymous POST /api/search/clicks": {
   "status": 401,
   "type": "application/json",
@@ -821,15 +738,6 @@
    "success": "boolean"
   },
   "error": "Authentication required."
- },
- "anonymous POST /api/session-replay/:clientId": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing replay data"
  },
  "anonymous POST /api/unit-groups": {
   "status": 401,
@@ -877,15 +785,6 @@
   "error": "Authentication required."
  },
  "anonymous POST /api/users/:id/sessions/revoke": {
-  "status": 401,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Authentication required."
- },
- "anonymous DELETE /api/activate/:clientId/:fingerprint": {
   "status": 401,
   "type": "application/json",
   "shape": {
@@ -976,11 +875,6 @@
    "success": "boolean",
    "total": "number"
   }
- },
- "owner GET /api/appcast/:clientId.xml": {
-  "status": 200,
-  "type": "application/xml",
-  "shape": null
  },
  "owner GET /api/assets/documents": {
   "status": 400,
@@ -1438,62 +1332,6 @@
   },
   "error": "User not found."
  },
- "owner GET /sandbox-config/:clientId": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "catalog": {
-    "purchaseItems": "boolean"
-   },
-   "challans": {
-    "reconciliation": "boolean",
-    "singleTypeView": "boolean"
-   },
-   "enhancements": {
-    "boardingPassCards": "boolean",
-    "catalogInventory": "boolean"
-   },
-   "features": {
-    "disableMachineCustomFields": "boolean"
-   },
-   "masters": {
-    "linkColumns": "boolean"
-   },
-   "modules": {
-    "actionCenter": "boolean",
-    "delivery_challans": "boolean",
-    "inventory": "boolean",
-    "jobs": "boolean",
-    "masters": "boolean",
-    "orders": "boolean",
-    "pm": "boolean",
-    "production": "boolean"
-   },
-   "orders": {
-    "allowCustomActions": "boolean",
-    "allowOrdersCreation": "boolean",
-    "showReport": "boolean",
-    "statusColors": "{…}"
-   },
-   "production": {
-    "materialVariationPaths": "boolean",
-    "multiScrapItems": "boolean"
-   },
-   "purchase": {
-    "flowV2": "boolean"
-   },
-   "routes": {
-    "listLens": "boolean"
-   },
-   "units": {
-    "families": "boolean"
-   },
-   "update": {
-    "channel": "string",
-    "latest_version": "string"
-   }
-  }
- },
  "owner PUT /api/assets/local/*key": {
   "status": 403,
   "type": "application/json",
@@ -1645,15 +1483,6 @@
    "user": "null"
   },
   "error": "User not found."
- },
- "owner POST /api/activation/activate": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing required activation parameters"
  },
  "owner POST /api/admins": {
   "status": 400,
@@ -1855,15 +1684,6 @@
   },
   "error": "Photo request not found."
  },
- "owner POST /api/sandbox-sync/:clientId": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing sync data"
- },
  "owner POST /api/search/clicks": {
   "status": 200,
   "type": "application/json",
@@ -1877,15 +1697,6 @@
   "shape": {
    "success": "boolean"
   }
- },
- "owner POST /api/session-replay/:clientId": {
-  "status": 400,
-  "type": "application/json",
-  "shape": {
-   "error": "string",
-   "success": "boolean"
-  },
-  "error": "Missing replay data"
  },
  "owner POST /api/unit-groups": {
   "status": 400,
@@ -1942,13 +1753,6 @@
    "success": "boolean"
   },
   "error": "User not found."
- },
- "owner DELETE /api/activate/:clientId/:fingerprint": {
-  "status": 200,
-  "type": "application/json",
-  "shape": {
-   "success": "boolean"
-  }
  },
  "owner DELETE /api/assets/:id": {
   "status": 404,

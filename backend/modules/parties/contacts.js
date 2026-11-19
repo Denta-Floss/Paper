@@ -346,7 +346,7 @@ function createClientContactService({ get, all, run }) {
 /// The routes. Each asks the clients module's operations at the kernel desk,
 /// writes the Track entry (which needs the request) and tells other sessions.
 function registerPartyContactRoutes(ctx) {
-  const { app, desk, requirePermission, trackCreate, trackUpdate, emit } = ctx;
+  const { app, desk, requirePermission, trackCreate, trackUpdate } = ctx;
   const ask = (req, name, input) => desk.call(name, input, { actor: desk.actorFromRequest(req) });
 
   const fail = (res, error) =>
@@ -372,7 +372,6 @@ function registerPartyContactRoutes(ctx) {
       });
       if (!result.ok) return refuse(res, result);
       if (trackCreate) trackCreate('party_contacts', result.id, result.row, req);
-      if (emit) emit(result.clientId);
       res.status(201).json({ success: true, contact: result.contact });
     } catch (error) {
       fail(res, error);
@@ -387,7 +386,6 @@ function registerPartyContactRoutes(ctx) {
     });
     if (!result.ok) return refuse(res, result);
     if (trackUpdate) trackUpdate('party_contacts', result.id, result.before, result.after, req);
-    if (emit) emit(result.clientId);
     res.json({ success: true, contact: result.contact });
   };
 

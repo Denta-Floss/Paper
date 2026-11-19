@@ -19,7 +19,6 @@ function createChallanWork({
   get,
   all,
   run,
-  getIo,
   nowIso,
   rowToUploadedAssetDto,
   normalizeChallanType,
@@ -45,23 +44,6 @@ function createChallanWork({
       unit_id: item.unit_id,
       unit_symbol: unit ? unit.symbol : null,
     };
-  }
-
-  /// Tells other screens an item's stock changed, after a challan moved it.
-  /// The answer has been decided by the time this runs, and a broadcast that
-  /// fails must not turn it into an error, so nothing thrown here escapes.
-  async function announceStockChange(challan) {
-    try {
-      if (getIo() && challan && Number(challan.maintain_stocks || 1) !== 0) {
-        const items = await all('SELECT item_id FROM delivery_challan_items WHERE challan_id = ?', [challan.id]);
-        const uniqueItemIds = new Set(items.map(i => i.item_id).filter(id => Number.isFinite(id) && id > 0));
-        for (const itemId of uniqueItemIds) {
-          getIo().emit('item_updated', { id: itemId });
-        }
-      }
-    } catch (_) {
-      // Deliberately nothing.
-    }
   }
 
   async function handleListChallans(req) {
@@ -98,9 +80,6 @@ function createChallanWork({
         challan.type,
       );
       const challanDto = await challanService.rowToDeliveryChallanDto(challan);
-      if (getIo()) {
-        getIo().emit('challan_generated_ok', challanDto);
-      }
       return answer(201, {
         success: true,
         data: challanDto,
@@ -271,7 +250,6 @@ function createChallanWork({
     try {
       const challan = await challanService.issueDeliveryChallan(Number(req.params.id), actorFromRequest(req));
       const sent = answer(200, { success: true, data: await challanService.rowToDeliveryChallanDto(challan), error: null });
-      await announceStockChange(challan);
       return sent;
     } catch (error) {
       return answer(error.statusCode || 500, {
@@ -502,11 +480,6 @@ function createChallanWork({
 
       const updatedRow = await challanService.getDeliveryChallanRowById(challanId);
       const dto = await challanService.rowToDeliveryChallanDto(updatedRow);
-      if (getIo()) {
-        getIo().emit('challan_generated_ok', dto);
-        for (const itemId of affectedItemIds) getIo().emit('item_updated', { id: itemId });
-      }
-
       return answer(200, {
         success: true,
         data: dto,
@@ -610,7 +583,6 @@ function createChallanWork({
         error: null,
       });
 
-      await announceStockChange(challan);
       return sent;
     } catch (error) {
       return answer(error.statusCode || 500, {

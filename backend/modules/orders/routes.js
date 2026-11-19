@@ -41,14 +41,8 @@ module.exports = function registerOrderRoutes(ctx) {
     desk,
     requirePermission,
     cacheMasterData,
-    getIo,
     orders,
   } = ctx;
-
-  const emitOrdersChanged = () => {
-    const io = getIo();
-    if (io) io.emit('orders_changed');
-  };
 
   const ask = (req, name, input) => desk.call(name, input, { actor: desk.actorFromRequest(req) });
 
@@ -109,7 +103,6 @@ module.exports = function registerOrderRoutes(ctx) {
         res.status(result.status || 400).json({ success: false, order: null, error: result.error });
         return;
       }
-      emitOrdersChanged();
       const { ok, ...saved } = result;
       res.status(saved.merged ? 200 : 201).json({ success: true, ...saved, error: null });
     } catch (error) {
@@ -281,7 +274,6 @@ module.exports = function registerOrderRoutes(ctx) {
         res.status(result.status || 400).json({ success: false, error: result.error });
         return;
       }
-      emitOrdersChanged();
       res.json({ success: true, order: result.order, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, error: error.message });
@@ -299,7 +291,6 @@ module.exports = function registerOrderRoutes(ctx) {
         res.status(result.status || 400).json({ success: false, error: result.error });
         return;
       }
-      emitOrdersChanged();
       res.json({ success: true, recoveredMovements: result.recoveredMovements, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, error: error.message });

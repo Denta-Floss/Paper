@@ -58,7 +58,6 @@ function createItemsWork({
   arrangeEntityPhotos,
   MAX_PART_PHOTOS,
   itemsPorts,
-  getIo,
 }) {
 
   // Groups had no realtime signal at all: a group created, renamed, deleted or
@@ -422,7 +421,6 @@ function createItemsWork({
 
   async function setShortCode(req) {
     try {
-      const io = getIo();
       const id = Number(req.params.id);
       const shortCode = req.body.shortCode || '';
 
@@ -443,10 +441,6 @@ function createItemsWork({
       const updatedRow = await get('SELECT * FROM items WHERE id = ?', [id]);
       const itemDto = await rowToItemDto(updatedRow);
 
-      if (io) {
-        io.emit('item_updated', itemDto);
-      }
-
       return answer(200, { success: true, item: itemDto, error: null });
     } catch (error) {
       return answer(500, { success: false, error: error.message });
@@ -455,12 +449,8 @@ function createItemsWork({
 
   async function createItem(req) {
     try {
-      const io = getIo();
       const item = await saveItem(req.body || {});
       const itemDto = await rowToItemDto(item);
-      if (io) {
-        io.emit('item_added', itemDto);
-      }
       req.track('create', 'items', item.id, item);
       return answer(201, { success: true, item: itemDto, error: null });
     } catch (error) {
@@ -474,7 +464,6 @@ function createItemsWork({
 
   async function updateItem(req) {
     try {
-      const io = getIo();
       const id = Number(req.params.id);
       const before = await get('SELECT * FROM items WHERE id = ?', [id]);
       const item = await saveItem({
@@ -482,9 +471,6 @@ function createItemsWork({
         id,
       });
       const itemDto = await rowToItemDto(item);
-      if (io) {
-        io.emit('item_updated', itemDto);
-      }
       const after = await get('SELECT * FROM items WHERE id = ?', [id]);
       req.track('update', 'items', id, before, after);
       return answer(200, { success: true, item: itemDto, error: null });
@@ -521,8 +507,6 @@ function createItemsWork({
         const after = await get('SELECT * FROM items WHERE id = ?', [id]);
         req.track('update', 'items', id, before, after);
         const itemDto = await rowToItemDto(await getItemRowById(id));
-        const io = getIo();
-        if (io) io.emit('item_updated', itemDto);
         return answer(200, { success: true, item: itemDto, links, error: null });
       } catch (error) {
         await run('ROLLBACK');

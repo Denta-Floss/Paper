@@ -25,9 +25,7 @@
 //
 // `challans` and `delivery-challans` map to the challans module in the central
 // gate (reconcile to challans.reconcile); the order-path route is gated as
-// orders. Handlers are the ones that lived in server.js, moved whole. Notifying
-// other screens (challan_generated_ok, item_updated) goes through getIo(),
-// because the socket server is created after this module is registered.
+// orders.
 //
 // NOT here: GET /api/delivery-challans/health stays in server.js, ahead of the
 // login gate.

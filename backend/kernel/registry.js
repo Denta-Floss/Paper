@@ -274,8 +274,6 @@ const KERNEL_TABLES = [
   'role_permissions', 'user_permission_overrides', 'user_permission_templates',
   'permission_templates', 'permission_template_permissions', 'user_record_permissions',
   'company_profiles', 'uploaded_assets', 'asset_upload_sessions',
-  'sandbox_activated_machines', 'sandbox_client_configs', 'sandbox_client_pins',
-  'sandbox_client_users', 'sandbox_replays', 'sandbox_sync_states',
   'search_history', 'search_clicks', 'entity_activity_log',
   'entity_links',
   'entity_variation_nodes', 'entity_variation_versions',

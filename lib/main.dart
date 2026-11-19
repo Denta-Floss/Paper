@@ -31,8 +31,6 @@ import 'package:core_erp/features/die_makers/data/die_maker_repository.dart';
 import 'package:core_erp/features/die_makers/presentation/providers/die_makers_provider.dart';
 import 'package:core_erp/features/items/data/sheet_property_repository.dart';
 import 'package:core_erp/features/items/presentation/providers/sheet_properties_provider.dart';
-import 'package:paper/core/services/activation_service.dart';
-import 'package:paper/features/auth/presentation/screens/activation_screen.dart';
 import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -102,8 +100,6 @@ import 'package:core_erp/features/search/data/repositories/api_search_repository
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/services/auto_updater_service.dart';
-import 'core/services/data_sync_service.dart';
-import 'core/services/session_replay_service.dart';
 import 'package:core_erp/core/services/app_performance.dart';
 import 'package:core_erp/core/services/socket_service.dart';
 
@@ -127,10 +123,6 @@ const _autoLoginPassword = String.fromEnvironment(
   defaultValue: 'Paper@12345',
 );
 
-const _skipActivation = bool.fromEnvironment(
-  'PAPER_SKIP_ACTIVATION',
-  defaultValue: false,
-);
 
 /// One response cache for the whole app, shared by every repository.
 ///
@@ -215,10 +207,6 @@ Future<void> main() async {
     clientId,
     isDemoMode: _isDemoMode,
   );
-
-  DataSyncService.instance.initialize(_resolveApiBaseUrl(), clientId);
-
-  SessionReplayService.instance.initialize(_resolveApiBaseUrl(), clientId);
 
   await AutoUpdaterService.instance.initialize();
 
@@ -854,7 +842,6 @@ class MyApp extends StatelessWidget {
       child: _RealtimeSocketConnector(
         child: MaterialApp(
           navigatorKey: appNavigatorKey,
-          navigatorObservers: [ReplayNavigatorObserver()],
           title: 'Paper',
           debugShowCheckedModeBanner: false,
           theme: base.copyWith(
@@ -864,18 +851,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
           builder: (context, child) {
-            final app = Listener(
-              onPointerDown: (event) {
-                final media = MediaQuery.of(context);
-                SessionReplayService.instance.recordTap(
-                  event.position.dx,
-                  event.position.dy,
-                  media.size.width,
-                  media.size.height,
-                );
-              },
-              child: child ?? const SizedBox(),
-            );
+            final app = child ?? const SizedBox();
             // Debug only: the tool reads the element behind a pointer out of
             // RenderObject.debugCreator, which a release build does not fill
             // in. Gated here rather than inside, so release does not even
@@ -1101,31 +1077,6 @@ class _AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<_AuthGate> {
   String? _lastRefreshToken;
-  bool? _isActivated;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkActivation();
-  }
-
-  Future<void> _checkActivation() async {
-    if (widget.isDemoMode || _skipActivation) {
-      if (mounted) {
-        setState(() {
-          _isActivated = true;
-        });
-      }
-      return;
-    }
-
-    final activated = await ActivationService.isActivated();
-    if (mounted) {
-      setState(() {
-        _isActivated = activated;
-      });
-    }
-  }
 
   void _refreshAfterAuthentication(String token) {
     if (_lastRefreshToken == token) {
@@ -1174,25 +1125,6 @@ class _AuthGateState extends State<_AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isActivated == null) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF8B5CF6)),
-        ),
-      );
-    }
-
-    if (!_isActivated!) {
-      return ActivationScreen(
-        onActivated: () {
-          setState(() {
-            _isActivated = true;
-          });
-        },
-      );
-    }
-
     final auth = context.watch<AuthProvider>();
     final authenticated = auth.isAuthenticated;
     final token = auth.token;

@@ -33,15 +33,8 @@
 const { httpKit } = require('../../kernel/desk-kit');
 
 module.exports = function registerClientRoutes(ctx) {
-  const { app, desk, requirePermission, trackCreate, trackUpdate, trackDelete, getIo } = ctx;
+  const { app, desk, requirePermission, trackCreate, trackUpdate, trackDelete } = ctx;
   const { ask, refuse } = httpKit(desk);
-
-  const emit = (event, payload) => {
-    const io = getIo();
-    if (io) {
-      io.emit(event, payload);
-    }
-  };
 
   /// A client write's refusal. Archive and unarchive say `code` even when there
   /// is none; a client that is not there is answered with the error alone.
@@ -83,7 +76,6 @@ module.exports = function registerClientRoutes(ctx) {
     try {
       const result = await ask(req, 'clients.create', { ...(req.body || {}) });
       if (!result.ok) return refuseClient(res, result);
-      emit('client_added', result.client);
       trackCreate('clients', result.row.id, result.row, req);
       res.status(201).json({ success: true, client: result.client, error: null });
     } catch (error) {
@@ -103,7 +95,6 @@ module.exports = function registerClientRoutes(ctx) {
       if (!result.already) {
         // Every other client write broadcasts; this one never did, so an archive
         // stayed invisible to every other session until it reloaded.
-        emit('client_updated', result.client);
         trackUpdate('clients', id, result.before, result.after, req);
       }
       // The updated row, so the caller knows the new state without refetching
@@ -126,7 +117,6 @@ module.exports = function registerClientRoutes(ctx) {
       const id = Number(req.params.id);
       const result = await ask(req, 'clients.unarchive', { id });
       if (!result.ok) return refuseClient(res, result, { withCode: true });
-      emit('client_updated', result.client);
       trackUpdate('clients', id, result.before, result.after, req);
       res.json({ success: true, client: result.client, error: null });
     } catch (error) {
@@ -151,7 +141,6 @@ module.exports = function registerClientRoutes(ctx) {
         });
       }
       trackDelete('clients', id, result.before, req);
-      emit('client_deleted', { id });
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -163,7 +152,6 @@ module.exports = function registerClientRoutes(ctx) {
       const id = Number(req.params.id);
       const result = await ask(req, 'clients.update', { ...(req.body || {}), id });
       if (!result.ok) return refuseClient(res, result);
-      emit('client_updated', result.client);
       trackUpdate('clients', id, result.before, result.after, req);
       res.json({ success: true, client: result.client, error: null });
     } catch (error) {

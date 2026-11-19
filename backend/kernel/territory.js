@@ -18,10 +18,8 @@ const registry = require('./registry');
 const KERNEL_SEGMENTS = new Set([
   ...registry.MODULE_GATE_EXCLUDED_SEGMENTS,
   'kernel',
-  // Deployment/ops infrastructure: updater feed, build/activation, factory
-  // reset, sandbox fleet sync + replay, SSE events.
-  'admin', 'appcast', 'activation', 'activate',
-  'sandbox-sync', 'session-replay', 'events',
+  // Ops: factory reset and the SSE event stream.
+  'admin', 'events',
 ]);
 // Deliberately NOT kernel: payroll, search, portal, freelancer-jobs,
 // freelancer-portal, mobile, production-scrap, company-profile — business

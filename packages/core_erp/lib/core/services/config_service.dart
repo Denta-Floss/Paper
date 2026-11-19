@@ -1,8 +1,3 @@
-import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dev_config.dart';
 import 'feature_flags.dart';
 
@@ -12,7 +7,6 @@ class ConfigService {
   static final ConfigService instance = ConfigService._();
 
   Map<String, dynamic> _config = {};
-  Timer? _pollingTimer;
   bool _isDemoMode = false;
 
   // In offline dev mode, overlay dev_config.dart live on every read so hot
@@ -80,63 +74,13 @@ class ConfigService {
       return; // no remote fetch, no polling, no stale cache
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final cacheKey = 'cached_config_$clientId';
-
-    // 1. Instantly load from cache
-    final cachedStr = prefs.getString(cacheKey);
-    if (cachedStr != null) {
-      try {
-        final clientConfig = jsonDecode(cachedStr) as Map<String, dynamic>;
-        _config = _deepMerge(
-          Map<String, dynamic>.from(_globalDefaults),
-          clientConfig,
-        );
-        FeatureFlags.setConfig(_config);
-      } catch (e) {
-        _loadDefaultConfig();
-      }
-    } else {
-      _loadDefaultConfig();
-    }
-
-    // 2. Fetch asynchronously
-    await _fetchRemote(baseUrl, clientId, prefs, cacheKey);
-
-    // 3. Start 15-minute polling
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(minutes: 15), (_) {
-      _fetchRemote(baseUrl, clientId, prefs, cacheKey);
-    });
+    // The per-client configuration used to be fetched from the server's sandbox
+    // control plane and polled every fifteen minutes. That was removed on
+    // 2026-11-19; the built-in defaults are the configuration.
+    _loadDefaultConfig();
   }
 
-  Future<void> _fetchRemote(
-    String baseUrl,
-    String clientId,
-    SharedPreferences prefs,
-    String cacheKey,
-  ) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/sandbox-config/$clientId'),
-      );
-      if (response.statusCode == 200) {
-        final clientConfig = jsonDecode(response.body) as Map<String, dynamic>;
-        await prefs.setString(cacheKey, response.body);
-        _config = _deepMerge(
-          Map<String, dynamic>.from(_globalDefaults),
-          clientConfig,
-        );
-        FeatureFlags.setConfig(_config);
-      }
-    } catch (e) {
-      debugPrint('Failed to load remote config in polling: $e');
-    }
-  }
-
-  void dispose() {
-    _pollingTimer?.cancel();
-  }
+  void dispose() {}
 
   /// Seeds [FeatureFlags] with the built-in global defaults — no backend fetch,
   /// no polling, no clientId. Use at startup in an app that has no per-client

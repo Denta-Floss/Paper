@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const compression = require('compression');
-const { Server } = require('socket.io');
 const { Bonjour } = require('bonjour-service');
 const {
   GetObjectCommand,
@@ -2308,15 +2307,6 @@ function currentActor(req) {
 }
 
 async function requireAuth(req, res, next) {
-  // No login for what an installed app sends before anyone has signed in:
-  // state sync, session replay, activation and its configuration.
-  if (req.path.startsWith('/sandbox-sync') ||
-      req.path.startsWith('/session-replay') ||
-      req.path.startsWith('/activation') ||
-      req.path.startsWith('/config')) {
-    return next();
-  }
-
   const header = String(req.headers.authorization || '');
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) {
@@ -2584,13 +2574,6 @@ function requireApiWritePermission(req, res, next) {
   // Per-module CRUD is already enforced by requireApiModulePermission for
   // mapped business paths; don't double-gate them with the legacy write check.
   if (req._moduleGated) {
-    return next();
-  }
-  // The same paths skip the write check.
-  if (req.path.startsWith('/sandbox-sync') ||
-      req.path.startsWith('/session-replay') ||
-      req.path.startsWith('/activation') ||
-      req.path.startsWith('/config')) {
     return next();
   }
   // Generic asset staging/management routes enforce their own entity-aware
@@ -6046,147 +6029,6 @@ async function initDb() {
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMachinesAndDiesIfEmpty();
-  }
-
-  // Create Sandbox Control Plane Tables
-  await run(`
-    CREATE TABLE IF NOT EXISTS sandbox_client_configs (
-      client_id TEXT PRIMARY KEY,
-      config_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS sandbox_sync_states (
-      client_id TEXT PRIMARY KEY,
-      db_state TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS sandbox_replays (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      events_json TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS sandbox_client_pins (
-      client_id TEXT PRIMARY KEY,
-      activation_pin TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS sandbox_activated_machines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id TEXT NOT NULL,
-      machine_fingerprint TEXT NOT NULL,
-      token TEXT NOT NULL,
-      activated_at TEXT NOT NULL,
-      UNIQUE(client_id, machine_fingerprint)
-    )
-  `);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS sandbox_client_users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id TEXT NOT NULL,
-      user_email TEXT NOT NULL,
-      role TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      UNIQUE(client_id, user_email)
-    )
-  `);
-
-  // Insert default client config if not exists, or update existing default config with all new feature flags
-  const initialConfig = {
-    "modules": {
-      "orders": true,
-      "masters": true,
-      "inventory": true,
-      "production": true,
-      "pm": true,
-      "jobs": true,
-      "delivery_challans": true,
-      "actionCenter": true
-    },
-    "orders": {
-      "statusColors": {
-        "pending": "#FFA500",
-        "in_progress": "#1E90FF",
-        "completed": "#32CD32"
-      },
-      "allowCustomActions": true,
-      "allowOrdersCreation": true,
-      "showReport": true
-    },
-    "features": {
-      "disableMachineCustomFields": false
-    },
-    "production": {
-      "multiScrapItems": true,
-      "materialVariationPaths": true
-    },
-    "enhancements": {
-      "catalogInventory": true,
-      "boardingPassCards": true
-    },
-    "challans": {
-      "singleTypeView": true,
-      "reconciliation": true
-    },
-    "catalog": {
-      "purchaseItems": true
-    },
-    "purchase": {
-      "flowV2": true
-    },
-    "update": {
-      "channel": "stable",
-      "latest_version": "1.0.0"
-    },
-    "masters": {
-      "linkColumns": true
-    },
-    "routes": {
-      "listLens": false
-    },
-    "units": {
-      "families": true
-    }
-  };
-
-  const defaultConfRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', ['default']);
-  if (!defaultConfRow) {
-    await run(
-      'INSERT INTO sandbox_client_configs (client_id, config_json, updated_at) VALUES (?, ?, datetime(\'now\'))',
-      ['default', JSON.stringify(initialConfig)]
-    );
-  } else {
-    try {
-      const existing = JSON.parse(defaultConfRow.config_json);
-      const merged = Object.assign({}, initialConfig, existing);
-      // Ensure nested keys present
-      merged.modules = Object.assign({}, initialConfig.modules, existing.modules || {});
-      merged.orders = Object.assign({}, initialConfig.orders, existing.orders || {});
-      merged.features = Object.assign({}, initialConfig.features, existing.features || {});
-      merged.production = Object.assign({}, initialConfig.production, existing.production || {});
-      merged.enhancements = Object.assign({}, initialConfig.enhancements, existing.enhancements || {});
-      merged.challans = Object.assign({}, initialConfig.challans, existing.challans || {});
-      merged.catalog = Object.assign({}, initialConfig.catalog, existing.catalog || {});
-      merged.purchase = Object.assign({}, initialConfig.purchase, existing.purchase || {});
-      await run(
-        'UPDATE sandbox_client_configs SET config_json = ?, updated_at = datetime(\'now\') WHERE client_id = ?',
-        [JSON.stringify(merged), 'default']
-      );
-    } catch (_) {}
   }
 
   await run(`
@@ -14334,13 +14176,6 @@ app.use('/runs', (req, res, next) => {
   next();
 });
 
-// registerControlPlaneRoutes: its routes are in modules/control_plane/routes.js and are registered into this
-// router further down, where everything they use exists. The router holds
-// their place in the matching order here.
-const controlPlaneRouter = express.Router();
-app.use(controlPlaneRouter);
-
-// ── SANDBOX CONTROL PLANE ROUTES ──
 
 
 Sentry.setupExpressErrorHandler(app);
@@ -15661,8 +15496,7 @@ desk.register('items', {
       arrangeEntityPhotos,
       MAX_PART_PHOTOS,
       itemsPorts,
-      getIo: () => io,
-    }),
+        }),
     masterData: require('./modules/items/master-data').createMasterDataWork({
       get,
       all,
@@ -15766,7 +15600,6 @@ registerVendorRoutes({
   trackCreate,
   trackUpdate,
   trackDelete,
-  getIo: () => io,
 });
 
 // The freelancer job pool. `run` is passed for the delete route's rollback.
@@ -15858,7 +15691,6 @@ registerClientRoutes({
   trackCreate,
   trackUpdate,
   trackDelete,
-  getIo: () => io,
 });
 registerClientPortalRoutes({ app, desk });
 
@@ -15992,7 +15824,6 @@ registerOrderRoutes({
   desk,
   requirePermission,
   cacheMasterData,
-  getIo: () => io,
   orders: ordersService,
 });
 
@@ -16029,8 +15860,7 @@ desk.register('challans', {
       get,
       all,
       run,
-      getIo: () => io,
-      nowIso,
+          nowIso,
       rowToUploadedAssetDto,
       normalizeChallanType,
       createAssetUploadIntent,
@@ -16134,13 +15964,6 @@ partyContacts({
   requirePermission,
   trackCreate,
   trackUpdate,
-  emit: async (clientId) => {
-    if (!io) return;
-    const row = await getClientRowById(clientId);
-    if (!row) return;
-    await partyContacts.attachClientContacts({ all }, row);
-    io.emit('client_updated', rowToClientDto(row));
-  },
 });
 
 // Die makers — the master behind a die's "made by". Gated as `dies`, not as a
@@ -16190,9 +16013,6 @@ const {
   registerSettingsRoutes,
   registerSettingsRoutesAfterErrorHandler,
 } = require('./modules/settings/routes.js');
-const {
-  registerControlPlaneRoutes,
-} = require('./modules/control_plane/routes.js');
 const {
   registerPayrollRoutes,
 } = require('./modules/payroll/routes.js');
@@ -16342,9 +16162,7 @@ registerSettingsRoutes(settingsRouter, {
 registerSettingsRoutesAfterErrorHandler(settingsAfterErrorHandlerRouter, {
   changeEmitter,
   requireAuth,
-  getIo: () => io,
 });
-registerControlPlaneRoutes(controlPlaneRouter, { get, run });
 registerPayrollRoutes(payrollRouter, {
   all,
   get,
@@ -16375,7 +16193,6 @@ app.get("/api/kernel/territory", async (req, res) => {
   }
 });
 
-let io = null;
 let bonjour = null;
 
 function startServer() {
@@ -16393,37 +16210,6 @@ function startServer() {
       } catch (e) {
         console.warn('Failed to publish mDNS service:', e);
       }
-
-      // Initialize Socket.io
-      io = new Server(server, {
-        cors: buildCorsOptions()
-      });
-      
-      io.on('connection', (socket) => {
-        console.log(`Socket connected: ${socket.id}`);
-        
-        // Mobile staging workflow events
-        socket.on('stage_item', (data) => {
-          console.log(`Item staged by mobile (WS):`, data);
-          socket.broadcast.emit('item_staged', data);
-        });
-
-        socket.on('remove_staged_item', (data) => {
-          socket.broadcast.emit('item_removed', data);
-        });
-        
-        socket.on('lock_inventory', (data) => {
-          socket.broadcast.emit('inventory_locked', data);
-        });
-        
-        socket.on('challan_generated', (data) => {
-          socket.broadcast.emit('challan_generated_ok', data);
-        });
-
-        socket.on('disconnect', () => {
-          console.log(`Socket disconnected: ${socket.id}`);
-        });
-      });
 
       try {
         console.log('Running migrations...');
