@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c73["⟳ Change 73: a cold replica is one request, and a warm one replays from where it was"]
+      c74["⟳ Change 74: B43, the replica does not serve while a launch replay is running"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -47,10 +47,11 @@ mindmap
         w7b["sign_in 18 requests 53.5 KB and inventory_overview 1 request now assert; the N+1s inside stock and sets left: in-process, no bytes"]
       w8["items list: node createdAt, updatedAt, itemId, position, isArchived dropped; 26.7 to 21.8 KB; list row == detail row less those"]
         w8a["B42 open: saves send back the whole list object, so any other field dropped from the list is erased; six masters ~15 KB total, not split"]
-      w9["⟳ GET /api/replica/bootstrap: head first, then the 13 list endpoints over loopback with the caller's token; missing vs refused"]
-        w9a["⟳ ReplicaCatchUp: no cursor = bootstrap (or head then lists 4 at a time); cursor = paged /api/changes; below oldestAvailable = fresh copy"]
-        w9b["⟳ B41: the cursor never left 0, every launch re-downloaded 13 lists; now head recorded, live SSE ids carried, held during catch-up"]
-        w9c["⟳ B40: the list fill now mirrors item variation nodes"]
+      w9["GET /api/replica/bootstrap: head first, then the 13 list endpoints over loopback with the caller's token; missing vs refused"]
+        w9a["ReplicaCatchUp: no cursor = bootstrap (or head then lists 4 at a time); cursor = paged /api/changes; below oldestAvailable = fresh copy"]
+        w9b["B41: the cursor never left 0, every launch re-downloaded 13 lists; now head recorded, live SSE ids carried, held during catch-up"]
+        w9c["B40: the list fill now mirrors item variation nodes"]
+      w10["⟳ B43: isHydrated is false while catchUp runs, so a launch reads the network until the replay is in"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
@@ -705,3 +706,4 @@ mindmap
 | 71 | Step 3 of the wire plan. Backend: `work.overview` composes `listMaterials`, `stock`, `listSets` and `health` in parallel; operation `inventory.overview` with an output contract; route `GET /api/inventory/overview` with `cacheMasterData`. `test/inventory-overview.test.js`: every part deep-equals its own endpoint, `?materials=0` drops only the materials, ETag gives 304 until a movement. Client: `InventoryOverview` + `InventoryOverviewReader` in `inventory_repository.dart`; `ApiInventoryRepository.getOverview` (stock parser lifted to `_stockFromJson`); `LocalFirstInventoryRepository.getOverview` reads materials off the replica and asks for the rest; `InventoryProvider._loadEverything` uses it via a type pattern, and the health estimate became `_estimatedHealth()`. `wire-budget.test.js`: sign_in and inventory_overview out of PENDING. | Backend, App, Tests |
 | 72 | Step 4 of the wire plan, the safe part. `modules/items/work.js` `listItems` maps each tree through `listNode`, which drops `createdAt`, `updatedAt`, `itemId`, `position`, `isArchived` from every node; `GET /api/items/:id` is unchanged. Traced: no Dart reader of those on a node, none in `ItemVariationNodeRequest`, the replica mirror reads only `item_id`. `wire-weight.test.js`: a list row deep-equals its detail row less those five, and `code`, `nameJoin`, `materialTypeId`, `parentNodeId`, `displayName` survive. B40, B41, B42 logged. | Backend, Tests |
 | 73 | Step 5 of the wire plan. Backend `modules/realtime/routes.js`: `REPLICA_LISTS`, `firstList`, `GET /api/replica/bootstrap` (head before lists; loopback fetches with the caller's authorization; `missing` and `refused`). Client: `replica_catch_up.dart` (`ChangesPage`, `ReplicaBootstrap`, `ReplicaCatchUp.run`); `ReplicaApi.fetchChangesPage` / `fetchBootstrap` / `parseChanges`; `DeltaSyncEngine` gets `_replaceTable` (with the node mirror), `applyListRows`, a chunked `hydrateLists`; `ReplicaSyncService.catchUp` and `resync` go through `ReplicaCatchUp`, and `_drain` withholds the cursor while `_catchingUp`; `SocketService` emits `changelogId` per block; `lib/main.dart` passes it and wires the two new fetchers. Tests: `replica-bootstrap.test.js`, `replica_catch_up_test.dart` (9). | Backend, App, Tests |
+| 74 | B43. `ReplicaSyncService.isHydrated` returns `_hydrated && !_catchingUp`. Found designing step 6: once B41 kept the cursor, every local-first read at sign-in would have come from the replica before the launch replay applied. | App |

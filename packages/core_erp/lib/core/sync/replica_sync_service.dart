@@ -74,7 +74,13 @@ class ReplicaSyncService {
   /// True once the replica holds a first copy. Until then a repository should
   /// delegate to the network rather than serve an empty list, which would look
   /// like a workspace with nothing in it.
-  bool get isHydrated => _hydrated;
+  ///
+  /// False while a catch-up runs, too. A replica whose cursor survived the last
+  /// session is a copy as of then: until the replay of what changed meanwhile
+  /// is in, a screen loading from it would show yesterday's data, and nothing
+  /// re-reads when the replay lands. Offline, the catch-up fails at once and
+  /// the copy serves.
+  bool get isHydrated => _hydrated && !_catchingUp;
   bool _hydrated = false;
 
   Future<void> start(String userNamespace) async {
