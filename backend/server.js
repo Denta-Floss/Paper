@@ -220,7 +220,8 @@ desk.register('search', {
 // The kernel's own services publish what modules need of their tables, and
 // ask the modules that name a user to forget one being deleted.
 desk.register('accounts', {
-  operations: require('./modules/accounts/operations')({ get, all, run }),
+  // Deferred: the hasher is made further down, once the JWT secret is known.
+  operations: require('./modules/accounts/operations')({ get, all, run, hashPin: (pin) => pinHasher.hash(pin) }),
   uses: ['clients.rows.byIds', 'action_center.users.forget', 'orders.users.forget', 'challans.users.forget'],
 });
 desk.register('assets', { operations: require('./modules/assets/operations')({ get, all, run }) });
@@ -472,6 +473,11 @@ const SEED_DEMO_DATA_ON_BOOT = parseBooleanEnv(
   false,
 );
 const JWT_SECRET = resolveJwtSecret();
+// Staff login PINs are stored as a keyed hash (kernel/pin-hash.js): the key is
+// in the environment, never in the database a backup copies.
+const pinHasher = require('./kernel/pin-hash').createPinHasher(
+  require('./kernel/pin-hash').resolvePinKey({ jwtSecret: JWT_SECRET }),
+);
 const JWT_TTL_SECONDS = Number(process.env.PAPER_JWT_TTL_SECONDS || 60 * 60 * 12);
 const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
@@ -1024,6 +1030,17 @@ const deleteDb = new sqlite3.Database(DB_PATH, (error) => {
 // write waited for the shared connection) and the timed WAL checkpoint. Started
 // by the running server; a test that wants them starts and stops them, since
 // the profile hook holds the process open (kernel/telemetry.js).
+// Hot backups (kernel/backup.js): VACUUM INTO on a connection of its own, each
+// checked with integrity_check. Every PAPER_BACKUP_EVERY_HOURS (24 by default
+// in production, off elsewhere) into PAPER_BACKUP_DIR (beside the database by
+// default), the newest PAPER_BACKUP_KEEP (14) kept.
+const serverBackups = require('./kernel/backup').createBackups({
+  dbPath: DB_PATH,
+  dir: process.env.PAPER_BACKUP_DIR || path.join(path.dirname(DB_PATH), 'backups'),
+  keep: Number(process.env.PAPER_BACKUP_KEEP || 14),
+});
+const BACKUP_EVERY_HOURS = Number(process.env.PAPER_BACKUP_EVERY_HOURS ?? (IS_PRODUCTION ? 24 : 0));
+
 function startServerTelemetry() {
   serverTelemetry.watchConnection(db);
   serverTelemetry.watchConnection(deleteDb);
@@ -1656,7 +1673,12 @@ function safeUserDto(row, permissionMap = null, activeSession = null) {
     updatedAt: row.updated_at,
   };
   if (row.mobile_pin !== undefined) {
-    dto.mobilePin = row.mobile_pin;
+    // The stored PIN is a keyed hash: whether there is one, never what it is.
+    dto.hasMobilePin = Boolean(row.mobile_pin);
+  }
+  // The one moment a PIN can be shown: in the answer that issued it.
+  if (row.issued_mobile_pin) {
+    dto.mobilePin = row.issued_mobile_pin;
   }
   if (activeSession !== undefined) {
     dto.activeSession = activeSession ? {
@@ -2205,7 +2227,7 @@ function canManageUser(actorRole, targetRole) {
 async function generateUniqueMobilePin() {
   for (let i = 0; i < 1000; i++) {
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
-    const existing = await get('SELECT id FROM users WHERE mobile_pin = ?', [pin]);
+    const existing = await get('SELECT id FROM users WHERE mobile_pin = ?', [pinHasher.hash(pin)]);
     if (!existing) {
       return pin;
     }
@@ -2229,7 +2251,7 @@ async function nextFreeMobilePin(preferred, excludeUserId = null) {
     if (pin === '0000') return false;
     const row = await get(
       'SELECT id FROM users WHERE mobile_pin = ? AND (? IS NULL OR id != ?)',
-      [pin, excludeUserId, excludeUserId],
+      [pinHasher.hash(pin), excludeUserId, excludeUserId],
     );
     return !row;
   };
@@ -2297,11 +2319,13 @@ async function createUserAccount({
       createdByUserId,
       now,
       now,
-      mobilePin,
+      pinHasher.hash(mobilePin),
       clientId,
     ],
   );
-  return get('SELECT * FROM users WHERE id = ?', [result.lastID]);
+  const created = await get('SELECT * FROM users WHERE id = ?', [result.lastID]);
+  // Shown once, in the answer to whoever made the account; never stored plain.
+  return created ? { ...created, issued_mobile_pin: mobilePin } : created;
 }
 
 async function findActiveUserById(id) {
@@ -3860,6 +3884,10 @@ async function initDb() {
     setTimeout(sweep, 30 * 1000).unref();
     setInterval(sweep, 3600 * 1000).unref();
   }
+
+  // PINs stored plain before they were hashed are hashed now, once.
+  const pinsHashed = await pinHasher.migrate({ all, run });
+  if (pinsHashed) console.log(`Hashed ${pinsHashed} staff login PIN(s) that were stored as plain text.`);
 
   dbReady = true;
 }
@@ -11264,8 +11292,11 @@ registerAccountsRoutesBeforeLogin(accountsBeforeLoginRouter, {
   registerLoginFailure,
   safeUserDto,
   verifyPassword,
+  hashPin: pinHasher.hash,
 });
 registerAccountsRoutes(accountsRouter, {
+  hashPin: pinHasher.hash,
+  generateUniqueMobilePin,
   RECORD_OPTION_SOURCES,
   desk: desk.as('accounts'),
   RECORD_PERMISSION_OPS,
@@ -11310,6 +11341,8 @@ require('./kernel/system-routes').registerSystemRoutesBeforeLogin(systemBeforeLo
   get,
   requireAuth,
   telemetry: serverTelemetry,
+  backups: serverBackups,
+  backupEveryHours: BACKUP_EVERY_HOURS,
   dbPath: DB_PATH,
   release: RELEASE_INFO,
   serverVersion: process.env.APP_VERSION || require('./package.json').version,
@@ -11464,6 +11497,7 @@ function startServer() {
         // SQLite profiling and a timed PASSIVE wal_checkpoint every few
         // minutes (kernel/telemetry.js).
         startServerTelemetry();
+        serverBackups.schedule(BACKUP_EVERY_HOURS * 60 * 60 * 1000);
         // Portal passwords stored as plain text by older versions are hashed
         // before the server takes a request.
         const rehashed = await clientPortalService.hashStoredPlainPasswords();
@@ -11826,6 +11860,7 @@ app.use((error, req, res, _next) => {
 });
 
 module.exports = {
+  serverBackups,
   serverTelemetry,
   startServerTelemetry,
   stopServerTelemetry,

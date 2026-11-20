@@ -55,6 +55,7 @@ function registerAccountsRoutesBeforeLogin(app, {
   registerLoginFailure,
   safeUserDto,
   verifyPassword,
+  hashPin,
 }) {
   app.post('/api/auth/login', async (req, res) => {
     try {
@@ -66,7 +67,8 @@ function registerAccountsRoutesBeforeLogin(app, {
       if (pin && pin.length === 4) {
         // Code login: match the user's assigned 4-digit code. (No hardcoded
         // master PIN — that was a backdoor into the super admin account.)
-        user = await get('SELECT * FROM users WHERE mobile_pin = ?', [pin]);
+        // Stored as a keyed hash (kernel/pin-hash.js): hash what was typed.
+        user = await get('SELECT * FROM users WHERE mobile_pin = ?', [hashPin(pin)]);
       } else {
         user = await get('SELECT * FROM users WHERE email = ?', [email]);
       }
@@ -125,6 +127,8 @@ function registerAccountsRoutesBeforeLogin(app, {
 // `serverDir` is the backend's own directory (where server.js is): files these
 // handlers read or write are found from there, not from this module's folder.
 function registerAccountsRoutes(app, {
+  hashPin,
+  generateUniqueMobilePin,
   RECORD_OPTION_SOURCES,
   desk,
   RECORD_PERMISSION_OPS,
@@ -1074,6 +1078,37 @@ function registerAccountsRoutes(app, {
       });
     
       res.json({ success: true, error: null });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // A new 4-digit staff login PIN. PINs are stored as a keyed hash
+  // (kernel/pin-hash.js), so nobody can look one up afterwards; this is how a
+  // forgotten one is replaced. The new PIN is in this answer and nowhere else.
+  app.post('/api/users/:id/mobile-pin', requirePermission('users.reset_password'), async (req, res) => {
+    try {
+      const targetId = Number(req.params.id);
+      const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+      if (!target) {
+        res.status(404).json({ success: false, error: 'User not found.' });
+        return;
+      }
+      if (!canManageUser(req.user.role, target.role)) {
+        res.status(403).json({ success: false, error: 'You can only issue PINs for accounts below your own role level.' });
+        return;
+      }
+      const pin = await generateUniqueMobilePin();
+      await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [hashPin(pin), new Date().toISOString(), targetId]);
+      await logAuthEvent({
+        eventType: 'mobile_pin_reset',
+        actorUserId: req.user.id,
+        targetUserId: targetId,
+        ipAddress: getRequestIp(req),
+        userAgent: getRequestUserAgent(req),
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, pin, error: null });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
     }

@@ -5,8 +5,12 @@ class EmployeeLogin {
   final String role;
   final bool isActive;
 
-  /// The staff member's simple 4-digit login code (derived from DOB).
+  /// Always empty from a current server: PINs are stored as a keyed hash and
+  /// never sent back (backend kernel/pin-hash.js). Kept for older servers.
   final String loginCode;
+
+  /// Whether the account has a 4-digit staff login PIN.
+  final bool hasLoginCode;
 
   const EmployeeLogin({
     required this.userId,
@@ -14,6 +18,7 @@ class EmployeeLogin {
     this.role = '',
     this.isActive = true,
     this.loginCode = '',
+    this.hasLoginCode = false,
   });
 
   factory EmployeeLogin.fromJson(Map<String, dynamic> json) {
@@ -23,6 +28,7 @@ class EmployeeLogin {
       role: json['role'] as String? ?? '',
       isActive: json['isActive'] as bool? ?? true,
       loginCode: json['loginCode'] as String? ?? '',
+      hasLoginCode: json['hasLoginCode'] as bool? ?? ((json['loginCode'] as String? ?? '').isNotEmpty),
     );
   }
 }

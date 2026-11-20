@@ -10,11 +10,11 @@ const F = require('../../kernel/fields');
 
 const loginFields = 'id, email, role, is_active, mobile_pin';
 
-module.exports = function accountOperations({ get, all, run }) {
+module.exports = function accountOperations({ get, all, run, hashPin }) {
   return {
     'accounts.users.get': {
       internal: true,
-      summary: 'A login account’s id, email, role, active flag and staff code; or nothing.',
+      summary: 'A login account’s id, email, role, active flag and staff code (hashed: whether one is set, not what it is); or nothing.',
       input: { fields: { id: F.int } },
       output: { fields: { row: { type: 'object', nullable: true } } },
       run: async (input) => ({ ok: true, row: (await get(`SELECT ${loginFields} FROM users WHERE id = ?`, [input.id])) || null }),
@@ -35,13 +35,14 @@ module.exports = function accountOperations({ get, all, run }) {
     'accounts.users.setMobilePin': {
       internal: true,
       joinsCallerTransaction: true,
-      summary: 'Set an account’s 4-digit staff login code. People does this from the employee’s date of birth.',
+      summary: 'Set an account’s 4-digit staff login code (stored as a keyed hash). People does this from the employee’s date of birth.',
       input: { fields: { id: F.int, pin: F.text, updatedAt: F.text } },
       run: async (input) => {
+        const stored = hashPin(input.pin);
         if (input.updatedAt) {
-          await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [input.pin, input.updatedAt, input.id]);
+          await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [stored, input.updatedAt, input.id]);
         } else {
-          await run('UPDATE users SET mobile_pin = ? WHERE id = ?', [input.pin, input.id]);
+          await run('UPDATE users SET mobile_pin = ? WHERE id = ?', [stored, input.id]);
         }
         return { ok: true };
       },

@@ -68,6 +68,7 @@ void main() {
     permissions: ['login.desktop', 'login.mobile', 'items.read', 'items.update', 'dies.read'],
     isActive: true,
     mobilePin: '1703',
+    hasMobilePin: true,
   );
 
   Future<_Me> open(WidgetTester tester, AuthUser user) async {
@@ -99,7 +100,9 @@ void main() {
     expect(find.text('a@b.c'), findsOneWidget);
     expect(find.text('Anil Manjre · Staff'), findsOneWidget);
     expect(find.text('ACTIVE'), findsOneWidget);
-    expect(find.text('PIN 1703'), findsOneWidget);
+    // PINs are stored as a keyed hash; the card says one is set, never which.
+    expect(find.text('Phone PIN set'), findsOneWidget);
+    expect(find.textContaining('1703'), findsNothing);
     expect(find.text('Desktop Access'), findsOneWidget);
     expect(find.text('Mobile Access'), findsOneWidget);
     expect(find.text('Everything you have changed across the app.'), findsOneWidget);

@@ -254,6 +254,26 @@ class AuthApi {
     }
   }
 
+  /// Issues a new 4-digit staff login PIN and returns it. The only time anyone
+  /// sees it: the server keeps a keyed hash.
+  Future<String> issueMobilePin({required int userId}) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/users/$userId/mobile-pin'),
+      headers: _jsonHeaders,
+      body: '{}',
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['pin'] is! String) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to issue a PIN.',
+      );
+    }
+    return payload['pin'] as String;
+  }
+
   Future<void> changeOwnPassword({
     required String currentPassword,
     required String newPassword,

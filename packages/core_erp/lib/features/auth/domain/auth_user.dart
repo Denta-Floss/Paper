@@ -7,6 +7,7 @@ class AuthUser {
     required this.permissions,
     required this.isActive,
     this.mobilePin,
+    this.hasMobilePin = false,
     this.activeSession,
   });
 
@@ -16,7 +17,12 @@ class AuthUser {
   final String role;
   final List<String> permissions;
   final bool isActive;
+  /// Present only in the answer that issued it (account created). PINs are
+  /// stored as a keyed hash; the server never sends one back afterwards.
   final String? mobilePin;
+
+  /// Whether the account has a 4-digit staff login PIN.
+  final bool hasMobilePin;
   final Map<String, dynamic>? activeSession;
 
   bool get isSuperAdmin => role == 'super_admin';
@@ -36,6 +42,7 @@ class AuthUser {
           .toList(growable: false),
       isActive: json['isActive'] as bool? ?? false,
       mobilePin: json['mobilePin'] as String?,
+      hasMobilePin: json['hasMobilePin'] as bool? ?? ((json['mobilePin'] as String?)?.isNotEmpty ?? false),
       activeSession: json['activeSession'] as Map<String, dynamic>?,
     );
   }

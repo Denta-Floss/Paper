@@ -79,7 +79,8 @@ class _MyAccountBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pin = user.mobilePin?.trim() ?? '';
+    // PINs are stored hashed; the server says only whether there is one.
+    final hasPin = user.hasMobilePin || (user.mobilePin?.trim().isNotEmpty ?? false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -141,7 +142,7 @@ class _MyAccountBody extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (pin.isNotEmpty) AccountMetaChip(icon: Icons.pin_outlined, label: 'PIN $pin'),
+                  if (hasPin) const AccountMetaChip(icon: Icons.pin_outlined, label: 'Phone PIN set'),
                   if (user.can('login.desktop'))
                     const AccountMetaChip(icon: Icons.desktop_windows_outlined, label: 'Desktop Access'),
                   if (user.can('login.mobile'))

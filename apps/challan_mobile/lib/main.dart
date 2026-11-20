@@ -63,6 +63,7 @@ import 'photos/photo_queue_gate.dart';
 import 'package:core_erp/core/sync/sync_health.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'widgets/offline_banner.dart';
+import 'widgets/phone_settings_sheet.dart';
 import 'screens/home_screen.dart';
 import 'package:challan_mobile/screens/passcode_screen.dart';
 import 'services/network_discovery_service.dart';
@@ -978,6 +979,10 @@ class _AuthGateState extends State<_AuthGate> {
     });
   }
 
+  /// An explicit sign-out also forgets the offline unlock: otherwise the PIN
+  /// would still open this phone onto its copy without the server.
+  Future<void> _signOut() => signOutPhone(context.read<AuthProvider>(), widget.offlineUnlock);
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -1001,8 +1006,24 @@ class _AuthGateState extends State<_AuthGate> {
     // itself, beside the keypad, with Try again.
 
     // Signed in, the camera opens by itself for a photo the desktop sends.
+    // The gear's sheet signs out through _signOut (B55).
     return authenticated
-        ? const OfflineBanner(child: PhotoQueueGate(child: HomeScreen()))
+        ? OfflineBanner(
+            child: PhotoQueueGate(
+              child: HomeScreen(
+                session: PhoneSession(
+                  serverUrl: widget.apiUrl,
+                  signOut: _signOut,
+                  changeServer: widget.onChangeServer == null
+                      ? null
+                      : () async {
+                          await _signOut();
+                          widget.onChangeServer!();
+                        },
+                ),
+              ),
+            ),
+          )
         : PasscodeScreen(
             offlineUnlock: widget.offlineUnlock,
             onChangeServer: widget.onChangeServer,

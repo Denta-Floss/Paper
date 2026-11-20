@@ -33,7 +33,7 @@
       "internal": true,
       "mode": "enforce",
       "joinsCallerTransaction": false,
-      "summary": "A login account’s id, email, role, active flag and staff code; or nothing.",
+      "summary": "A login account’s id, email, role, active flag and staff code (hashed: whether one is set, not what it is); or nothing.",
       "input": {
         "id": {
           "type": "integer"
@@ -56,7 +56,7 @@
       "internal": true,
       "mode": "enforce",
       "joinsCallerTransaction": true,
-      "summary": "Set an account’s 4-digit staff login code. People does this from the employee’s date of birth.",
+      "summary": "Set an account’s 4-digit staff login code (stored as a keyed hash). People does this from the employee’s date of birth.",
       "input": {
         "id": {
           "type": "integer"

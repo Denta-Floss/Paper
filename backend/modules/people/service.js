@@ -70,8 +70,11 @@ function createPeopleService({ get, all, run, auth, desk }) {
             email: row.login_email || '',
             role: row.login_role || '',
             isActive: Number(row.login_is_active || 0) === 1,
-            // The simple 4-digit staff login code (from DOB, adjusted on clash).
-            loginCode: row.login_mobile_pin || '',
+            // The 4-digit staff login code is stored hashed (kernel/pin-hash.js):
+            // whether there is one, never what it is. `loginCode` stays for
+            // older clients and is always empty.
+            loginCode: '',
+            hasLoginCode: Boolean(row.login_mobile_pin),
           }
         : null,
     };

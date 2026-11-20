@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:core_erp/core/widgets/app_settings_dialog.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import '../widgets/phone_settings_sheet.dart';
 import 'package:core_erp/core/sync/sync_health.dart';
 import 'package:core_erp/features/sync_health/sync_health_screen.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
@@ -23,7 +24,11 @@ import 'purchase_challan_screens.dart';
 /// was — you can start a challan, jump to Inventory to check stock, and return
 /// without losing anything.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.session});
+
+  /// Sign out, change server — what the settings sheet offers. Null in tests
+  /// that build the shell alone; the gear then shows only Sync Health.
+  final PhoneSession? session;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -102,13 +107,14 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             IconButton(
+              key: const Key('open_settings'),
+              tooltip: 'Settings',
               icon: const Icon(Icons.settings),
-              onPressed: () {
-                showDialog<void>(
-                  context: context,
-                  builder: (context) => const AppSettingsDialog(),
-                );
-              },
+              onPressed: () => showPhoneSettingsSheet(
+                context,
+                widget.session ??
+                    PhoneSession(serverUrl: '', signOut: () async => context.read<AuthProvider>().logout()),
+              ),
             ),
           ],
         ),

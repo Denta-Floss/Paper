@@ -11,6 +11,9 @@
 //                             as its Bearer token — kernel/telemetry.js. JSON,
 //                             or the Prometheus text format for
 //                             ?format=prometheus or an Accept of text/plain.
+//   GET  /api/system/backups  an admin — the backups on disk, the last result,
+//                             the schedule (kernel/backup.js).
+//   POST /api/system/backups  an admin — make one now and check it.
 //
 // Registered ahead of the login gate so the scraper's token can be checked
 // before a session is asked for; each route carries its own guard.
@@ -41,6 +44,8 @@ function registerSystemRoutesBeforeLogin(app, {
   get,
   requireAuth,
   telemetry,
+  backups,
+  backupEveryHours = 0,
   dbPath,
   release,
   serverVersion,
@@ -81,6 +86,41 @@ function registerSystemRoutesBeforeLogin(app, {
     }
     res.json({ success: true, serverVersion, apiVersion: API_VERSION, ...snap });
   };
+
+  const adminOnly = (req, res, next) => requireAuth(req, res, (error) => {
+    if (error) {
+      next(error);
+      return;
+    }
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      res.status(403).json({ success: false, error: 'Only an admin can manage backups.' });
+      return;
+    }
+    next();
+  });
+
+  if (backups) {
+    app.get('/api/system/backups', adminOnly, (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({
+        success: true,
+        everyHours: backupEveryHours,
+        last: backups.last ? { ...backups.last, path: undefined } : null,
+        backups: backups.list(),
+      });
+    });
+
+    app.post('/api/system/backups', adminOnly, async (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      try {
+        const made = await backups.backup();
+        // The file name, not where the disk keeps it.
+        res.status(201).json({ success: true, backup: { ...made, path: undefined } });
+      } catch (error) {
+        res.status(500).json({ success: false, error: `Backup failed: ${error.message}` });
+      }
+    });
+  }
 
   app.get('/api/system/metrics', (req, res, next) => {
     if (tokenMatches(bearer(req), metricsToken)) {

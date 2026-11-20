@@ -174,14 +174,25 @@ test('people: an in-house employee is given a login whose code comes from the bi
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.employee.login.email, 'login.person@example.test');
   assert.equal(created.body.employee.login.role, 'user', 'a staff login by default');
-  assert.equal(created.body.employee.login.loginCode, '1503', 'DDMM of the birth date');
+  // The code is DDMM of the birth date. It is stored as a keyed hash, so the
+  // answer says only that there is one; the proof is signing in with it.
+  assert.equal(created.body.employee.login.loginCode, '', 'a PIN is never sent back');
+  assert.equal(created.body.employee.login.hasLoginCode, true);
+  const pinSignIn = async (pin) => (await fetch(`${ctx.baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
+  })).status;
+  // 401 is "no account has this PIN"; anything else means the PIN matched
+  // (a staff account without mobile login is then refused for that reason).
+  assert.notEqual(await pinSignIn('1503'), 401, 'DDMM of the birth date is the code');
   assert.ok(created.body.employee.userId);
 
   const again = await api(ctx, 'POST', `/api/employees/${emp.id}/create-login`, { password: 'Str0ng!Passw0rd#1' });
   assert.equal(again.status, 409);
 
   const moved = await api(ctx, 'PATCH', `/api/employees/${emp.id}`, { dateOfBirth: '1991-07-02' });
-  assert.equal(moved.body.employee.login.loginCode, '0207', 'a new birth date re-derives the code');
+  assert.equal(moved.body.employee.login.hasLoginCode, true);
+  assert.notEqual(await pinSignIn('0207'), 401, 'a new birth date re-derives the code');
+  assert.equal(await pinSignIn('1503'), 401, 'and the old one no longer signs in');
 
   const contractor = (await api(ctx, 'POST', '/api/employees', {
     departmentId: dept.id,

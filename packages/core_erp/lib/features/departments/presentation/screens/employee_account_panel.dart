@@ -1,3 +1,4 @@
+import 'package:core_erp/core/widgets/confirm_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -447,10 +448,12 @@ class _AccountControlsState extends State<_AccountControls> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (login.loginCode.isNotEmpty)
-                    AccountMetaChip(
+                  // Stored as a keyed hash: whether there is one, never
+                  // what it is. "New PIN" below issues and shows one.
+                  if (login.hasLoginCode || login.loginCode.isNotEmpty)
+                    const AccountMetaChip(
                       icon: Icons.pin_outlined,
-                      label: 'PIN ${login.loginCode}',
+                      label: 'Phone PIN set',
                     ),
                   if (_desktopAccess == true)
                     const AccountMetaChip(
@@ -478,6 +481,15 @@ class _AccountControlsState extends State<_AccountControls> {
                 subtitle: 'Set a new sign-in password.',
                 onTap: auth.can('users.manage_permissions')
                     ? () => _showResetPassword(context, userId, widget.emp.name)
+                    : null,
+              ),
+              AccountActionRow(
+                key: const Key('employee_issue_pin'),
+                icon: Icons.pin_outlined,
+                label: 'New phone PIN',
+                subtitle: 'Issue a new 4-digit PIN. It is shown once.',
+                onTap: auth.can('users.reset_password')
+                    ? () => _issuePin(context, userId, widget.emp.name)
                     : null,
               ),
               AccountActionRow(
@@ -612,6 +624,54 @@ Future<void> _showResetPassword(
     ),
   );
   controller.dispose();
+}
+
+/// Issues a new phone PIN and shows it — once. PINs are stored as a keyed hash,
+/// so nobody can look this one up again; a forgotten PIN gets a new one.
+Future<void> _issuePin(BuildContext context, int userId, String name) async {
+  final confirmed = await showConfirmDialog(
+    context,
+    title: 'New phone PIN for $name?',
+    message: 'Their current PIN stops working. The new one is shown once — '
+        'give it to them now.',
+    confirmLabel: 'Issue PIN',
+    destructive: false,
+  );
+  if (!confirmed || !context.mounted) return;
+  final auth = context.read<AuthProvider>();
+  final pin = await auth.issueMobilePin(userId: userId);
+  if (!context.mounted) return;
+  if (pin == null) {
+    showGlobalToast(auth.errorMessage ?? 'Failed to issue a PIN.', kind: AppToastKind.error);
+    return;
+  }
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text('$name\'s new phone PIN'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            pin,
+            key: const Key('issued_pin'),
+            style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, letterSpacing: 8),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'This is the only time it is shown.',
+            style: TextStyle(fontSize: 14),
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Done'),
+        ),
+      ],
+    ),
+  );
 }
 
 Future<void> _showSessions(

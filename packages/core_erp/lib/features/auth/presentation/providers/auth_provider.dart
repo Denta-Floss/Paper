@@ -451,6 +451,24 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// A new staff login PIN for [userId], or null (with [errorMessage]).
+  Future<String?> issueMobilePin({required int userId}) async {
+    if (!can('users.reset_password')) {
+      _errorMessage = 'You do not have permission to issue PINs.';
+      notifyListeners();
+      return null;
+    }
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      return await _api.issueMobilePin(userId: userId);
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to issue a PIN.');
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<bool> setUserActive({
     required int userId,
     required bool active,
