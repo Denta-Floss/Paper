@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c81["⟳ Change 81: the phone keeps its own copy, and says when it is offline"]
+      c82["⟳ Change 82: the phone remembers its server and starts offline"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -62,9 +62,13 @@ mindmap
       w14["step 8 dropped: 041 triggers announce order lines live and the SQL takes ms; a projection would only be a drift risk"]
       w15["B42 fixed: ItemsProvider._currentForSave, ItemSheetBinding fetches before its update, the editor opens through _FullItemRecord; no read, no save"]
       w16["items list less attachments and empty CAD (20.9 KB); unitConversions kept for ten quantity-conversion readers"]
-      w17["⟳ phone replica: 8 tables, bootstrap ?tables=, scoped catch-up moves the cursor past skipped changes, one shared ReplicaSession for both apps"]
-        w17a["⟳ first load waits for catch-up (3 s max) in both apps; offline banner off SocketService.streamLive with the last sync time"]
-        w17b["⟳ emulator: warm relaunch = one /api/changes; live vendor = one GET; offline keeps the stock screen; B44 stuck auth error, B45 server forgotten"]
+      w17["phone replica: 8 tables, bootstrap ?tables=, scoped catch-up moves the cursor past skipped changes, one shared ReplicaSession for both apps"]
+        w17a["first load waits for catch-up (3 s max) in both apps; offline banner off SocketService.streamLive with the last sync time"]
+        w17b["emulator: warm relaunch = one /api/changes; live vendor = one GET; offline keeps the stock screen; B44 stuck auth error, B45 server forgotten"]
+      w18["⟳ B44: passcode errors beside the keypad with Try again; the shell never swaps the screen out"]
+      w19["⟳ B45: server in SharedPreferences, Change server; OfflineUnlock (secure storage, salted hash, bound to server) only when unreachable"]
+        w19a["⟳ ConditionalCacheClient serves its stored copy, marked stale, when a GET cannot reach the server; never over an answer"]
+        w19b["⟳ ReplicaSession catches up whenever SocketService.streamLive comes up; catchUp: false for an offline start"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
@@ -727,3 +731,4 @@ mindmap
 | 79 | B42. `items_provider.dart`: `_currentForSave` (via `fetchFresh`) replaces the list lookup in `addUnitConversion`, `appendVariationValue`, `appendTopLevelPropertyWithValue`, `appendTopLevelProperty`, `_updateOneField`; `_saveReadFailure` carries the reason. `item_sheet_binding.dart` `saveRow` fetches the existing part. `items_screen.dart`: `_FullItemRecord` around `openEditor` and the workflow details pane (variant rows already hold server rows). | App, Tests |
 | 80 | Step 4 finished. `modules/items/work.js` `listItems` omits `attachments` and, when empty, `cadFileKey`/`cadFileName`. `wire-weight.test.js`: list row == detail row less those and the five node fields; a part with a CAD file keeps it on the list; `unitConversions` asserted present. | Backend, Tests |
 | 81 | Step 7 finished. Backend `realtime/routes.js`: bootstrap `?tables=`. Core: `replica_session.dart` (`ReplicaSession.start`, `lastSyncedAt`), `ReplicaCatchUp.inScope`, `ReplicaSyncService(tables:)`, `ReplicaApi.fetchBootstrap(tables:)`, `SocketService.streamLive`. Desktop `lib/main.dart`: `startReplicaSync` delegates to the session; first load awaits it (3 s). Phone `main.dart`: eight local-first repositories, `kPhoneReplicaTables`, session at sign-in, first load awaits it; `widgets/offline_banner.dart`. Tests: bootstrap subset, scoped catch-up, three banner tests. | Backend, App, Mobile, Tests |
+| 82 | B44, B45. Core: `AuthUser.toJson` (no PIN), `AuthProvider.clearError/signInOffline/isOffline/lastFailureWasUnreachable` and a 10 s PIN-login timeout; `ConditionalCacheClient` stale fallback (`x-paper-cache: stale`, `staleServed`); `ReplicaSession` `catchUp:` and a `streamLive` listener. Phone: `services/offline_unlock.dart`, `NetworkDiscoveryService` remembers/forgets the server, `PasscodeScreen` inline error + Try again + Change server + offline fallback (scrolls on short screens), `_AuthGate` without the error page, `crypto` dependency. Tests: offline_unlock (5), passcode_offline (6), server_memory (4), cache stale (4). | Core, Mobile, Tests |

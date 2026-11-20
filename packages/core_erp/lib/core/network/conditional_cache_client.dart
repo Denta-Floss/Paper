@@ -67,7 +67,12 @@ class ConditionalCacheClient extends http.BaseClient {
     _loading = null;
     hits = 0;
     misses = 0;
+    staleServed = 0;
   }
+
+  /// How many answers were the stored copy because the server could not be
+  /// reached.
+  int staleServed = 0;
 
   /// How many responses were served from the local copy rather than the wire.
   int hits = 0;
@@ -88,7 +93,27 @@ class ConditionalCacheClient extends http.BaseClient {
       request.headers['If-None-Match'] = cached.etag;
     }
 
-    final response = await _inner.send(request);
+    final http.StreamedResponse response;
+    try {
+      response = await _inner.send(request);
+    } catch (error) {
+      // The server could not be asked at all — no route, refused, timed out.
+      // The last copy it gave this user is a truer answer than an error, so it
+      // is served, marked stale (`x-paper-cache: stale`) for whoever wants to
+      // say so. Only ever in place of a failure: a server that answers — even
+      // with an error — is believed, and nothing stale is served over a live
+      // response. The phone's offline banner says the screen is as of a time.
+      if (cached == null) rethrow;
+      staleServed += 1;
+      return http.StreamedResponse(
+        Stream<List<int>>.value(cached.body),
+        200,
+        contentLength: cached.body.length,
+        request: request,
+        headers: <String, String>{...cached.headers, 'x-paper-cache': 'stale'},
+        reasonPhrase: 'OK (stale, server unreachable)',
+      );
+    }
 
     if (response.statusCode == 304 && cached != null) {
       hits += 1;

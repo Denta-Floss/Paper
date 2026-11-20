@@ -21,6 +21,7 @@ class _Origin {
   int requests = 0;
   int conditionalRequests = 0;
   int notModified = 0;
+  int? failWith;
   late HttpServer _server;
 
   String get etag => '"v${body.hashCode}"';
@@ -30,6 +31,11 @@ class _Origin {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server.listen((request) async {
       requests += 1;
+      if (failWith != null) {
+        request.response.statusCode = failWith!;
+        await request.response.close();
+        return;
+      }
       final inm = request.headers.value('if-none-match');
       if (inm != null) conditionalRequests += 1;
       request.response.headers.set('ETag', etag);
@@ -71,6 +77,50 @@ void main() {
 
   ConditionalCacheClient clientOn(Directory directory) =>
       ConditionalCacheClient(inner: http.Client(), storageDirectory: directory);
+
+  test('with the server gone, the last copy is served, marked stale', () async {
+    final client = clientOn(temp);
+    final url = '${origin.url}/api/items';
+    final first = await client.get(Uri.parse(url));
+    expect(first.body, '{"items":[1,2,3]}');
+
+    await origin.stop();
+    final offline = await client.get(Uri.parse(url));
+    expect(offline.statusCode, 200);
+    expect(offline.body, '{"items":[1,2,3]}');
+    expect(offline.headers['x-paper-cache'], 'stale');
+    expect(client.staleServed, 1);
+    await origin.start(); // for tearDown
+  });
+
+  test('a fresh start with the server gone still has the copy from disk', () async {
+    final url = '${origin.url}/api/items';
+    await clientOn(temp).get(Uri.parse(url));
+    await Future<void>.delayed(const Duration(milliseconds: 100)); // the write is not awaited
+    await origin.stop();
+
+    final relaunched = clientOn(temp);
+    final offline = await relaunched.get(Uri.parse(url));
+    expect(offline.body, '{"items":[1,2,3]}');
+    expect(offline.headers['x-paper-cache'], 'stale');
+    await origin.start();
+  });
+
+  test('nothing stored and the server gone is still a failure', () async {
+    final url = '${origin.url}/api/never-fetched';
+    await origin.stop();
+    await expectLater(clientOn(temp).get(Uri.parse(url)), throwsA(isA<Exception>()));
+    await origin.start();
+  });
+
+  test('a server that answers is believed, even with an error', () async {
+    final client = clientOn(temp);
+    await client.get(Uri.parse('${origin.url}/api/items'));
+    origin.failWith = 500;
+    final answered = await client.get(Uri.parse('${origin.url}/api/items'));
+    expect(answered.statusCode, 500, reason: 'stale copies stand in for no answer, never for an answer');
+    expect(client.staleServed, 0);
+  });
 
   test('the second request revalidates and is answered 304', () async {
     final client = clientOn(temp);

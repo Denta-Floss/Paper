@@ -43,6 +43,7 @@ class ReplicaSession {
     required String baseUrl,
     required String namespace,
     Set<String>? tables,
+    bool catchUp = true,
   }) async {
     try {
       final api = ReplicaApi(client: client, baseUrl: baseUrl);
@@ -62,7 +63,14 @@ class ReplicaSession {
       await service.start(namespace);
       SocketService.instance.off('table-change', _onTableChange);
       SocketService.instance.on('table-change', _onTableChange);
-      await service.catchUp();
+      // Whenever the change stream comes up — a reconnect, or the first
+      // connect of a phone that started offline — whatever happened while it
+      // was down is replayed. One small request when nothing did.
+      SocketService.instance.streamLive.removeListener(_onStreamLive);
+      SocketService.instance.streamLive.addListener(_onStreamLive);
+      // An offline start skips it: the server is known to be away, and the
+      // copy should answer at once rather than after a request times out.
+      if (catchUp) await service.catchUp();
       await _readLastSync();
     } catch (error) {
       debugPrint('Replica unavailable, staying on the network: $error');
@@ -77,6 +85,12 @@ class ReplicaSession {
     } catch (_) {
       // Unknown is shown as unknown; nothing depends on it.
     }
+  }
+
+  void _onStreamLive() {
+    final service = _service;
+    if (service == null || !SocketService.instance.streamLive.value) return;
+    service.catchUp().then((_) => _readLastSync());
   }
 
   void _onTableChange(dynamic data) {

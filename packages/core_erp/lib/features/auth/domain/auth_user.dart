@@ -39,6 +39,19 @@ class AuthUser {
       activeSession: json['activeSession'] as Map<String, dynamic>?,
     );
   }
+
+  /// What a device may keep to sign this person in offline. Never the PIN —
+  /// the server's user record can carry it, and a stored copy would be the
+  /// PIN in plain text on the phone — and not the session, which is the
+  /// server's to describe.
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'name': name,
+        'email': email,
+        'role': role,
+        'permissions': permissions,
+        'isActive': isActive,
+      };
 }
 
 class PermissionDescriptor {

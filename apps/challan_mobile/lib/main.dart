@@ -63,6 +63,7 @@ import 'widgets/offline_banner.dart';
 import 'screens/home_screen.dart';
 import 'package:challan_mobile/screens/passcode_screen.dart';
 import 'services/network_discovery_service.dart';
+import 'services/offline_unlock.dart';
 import 'services/socket_service.dart';
 
 void main() {
@@ -385,7 +386,10 @@ class _BootstrapGateState extends State<BootstrapGate> {
       );
     }
 
-    return MyApp(apiUrl: discovery.discoveredUrl!);
+    return MyApp(
+      apiUrl: discovery.discoveredUrl!,
+      onChangeServer: () => discovery.forget(),
+    );
   }
 }
 
@@ -480,12 +484,21 @@ class MyApp extends StatelessWidget {
   /// directory; a test names a fresh one.
   final Directory? cacheDirectory;
 
+  /// The offline unlock (B45). Null builds the app's own, on secure storage;
+  /// a test hands in one on a map.
+  final OfflineUnlock? offlineUnlock;
+
+  /// Forgets the server and goes back to its setup screen.
+  final VoidCallback? onChangeServer;
+
   const MyApp({
     super.key,
     required this.apiUrl,
     this.httpClient,
     this.demoMode = _isDemoModeBuild,
     this.cacheDirectory,
+    this.offlineUnlock,
+    this.onChangeServer,
   });
 
   static const _isDemoModeBuild = bool.fromEnvironment('PAPER_DEMO_MODE', defaultValue: false);
@@ -819,6 +832,8 @@ class MyApp extends StatelessWidget {
           cache: cacheFor(httpClient, directory: cacheDirectory),
           apiUrl: apiUrl,
           demoMode: demoMode,
+          offlineUnlock: demoMode ? null : (offlineUnlock ?? OfflineUnlock(serverUrl: apiUrl)),
+          onChangeServer: onChangeServer,
         ),
       ),
     );
@@ -840,7 +855,19 @@ const Set<String> kPhoneReplicaTables = <String>{
 };
 
 class _AuthGate extends StatefulWidget {
-  const _AuthGate({required this.cache, required this.apiUrl, required this.demoMode});
+  const _AuthGate({
+    required this.cache,
+    required this.apiUrl,
+    required this.demoMode,
+    this.offlineUnlock,
+    this.onChangeServer,
+  });
+
+  /// Opens the phone without the server for its last signed-in user (B45).
+  final OfflineUnlock? offlineUnlock;
+
+  /// Back to the server setup screen.
+  final VoidCallback? onChangeServer;
 
   /// Pointed at the signed-in user's own copies before anything is fetched.
   final ConditionalCacheClient cache;
@@ -874,6 +901,9 @@ class _AuthGateState extends State<_AuthGate> {
             baseUrl: widget.apiUrl,
             namespace: namespace,
             tables: kPhoneReplicaTables,
+            // Signed in offline: the server is known to be away, so the copy
+            // answers at once; it catches up when the change stream is back.
+            catchUp: !auth.isOffline,
           );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // The first load waits for the copy to catch up — a few seconds at most.
@@ -915,20 +945,17 @@ class _AuthGateState extends State<_AuthGate> {
       _refreshAfterAuthentication(sessionKey);
     }
     
-    if (auth.errorMessage != null && !authenticated) {
-      return Scaffold(
-        body: Center(
-          child: Text(
-            "Auth Error: ${auth.errorMessage}",
-            style: const TextStyle(color: Colors.red),
-          ),
-        ),
-      );
-    }
-    
+    // No separate error page any more (B44). A failed sign-in used to swap
+    // the passcode screen for a bare "Auth Error" with no way back, and only
+    // killing the app recovered; the passcode screen now shows the reason
+    // itself, beside the keypad, with Try again.
+
     // Signed in, the camera opens by itself for a photo the desktop sends.
     return authenticated
         ? const OfflineBanner(child: PhotoQueueGate(child: HomeScreen()))
-        : const PasscodeScreen();
+        : PasscodeScreen(
+            offlineUnlock: widget.offlineUnlock,
+            onChangeServer: widget.onChangeServer,
+          );
   }
 }

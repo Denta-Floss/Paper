@@ -49,6 +49,38 @@ class AuthProvider extends ChangeNotifier {
   String? get token => _token;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  /// Whether the last sign-in failed because the server could not be reached,
+  /// rather than because it said no. Only then may a device fall back to an
+  /// offline unlock; a refused PIN is refused.
+  bool get lastFailureWasUnreachable => _lastFailureWasUnreachable;
+  bool _lastFailureWasUnreachable = false;
+
+  /// Signed in on this device without the server, from a previous online
+  /// sign-in (see [signInOffline]).
+  bool get isOffline => _offline;
+  bool _offline = false;
+
+  /// Forgets the last error, so a screen showing it can go back to the form.
+  void clearError() {
+    if (_errorMessage == null) return;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Signs in as [user] without the server — the device has checked the PIN
+  /// against what it kept from that person's last online sign-in. [token] is
+  /// that sign-in's, used again once the server is back; if it has expired by
+  /// then, the next request is refused and the person signs in again.
+  void signInOffline({required AuthUser user, required String token}) {
+    _user = user;
+    _token = token;
+    _api.token = token;
+    _offline = true;
+    _errorMessage = null;
+    _lastFailureWasUnreachable = false;
+    notifyListeners();
+  }
   List<AuthUser> get users => _users;
   List<DeleteRequest> get deleteRequests => _deleteRequests;
   List<AuthSession> get mySessions => _mySessions;
@@ -148,13 +180,24 @@ class AuthProvider extends ChangeNotifier {
         platform = 'desktop';
       }
 
-      final result = await _api.loginWithPin(pin: pin, platform: platform);
+      _lastFailureWasUnreachable = false;
+      // Bounded: on a phone with no network a connect can hang for minutes,
+      // and the fallback to an offline unlock waits on this.
+      final result = await _api
+          .loginWithPin(pin: pin, platform: platform)
+          .timeout(const Duration(seconds: 10));
       _user = result.user;
       _token = result.token;
       _api.token = _token;
+      _offline = false;
       return true;
     } catch (error) {
-      _errorMessage = _friendly(error, fallback: 'Login failed.');
+      // The server answering no is an AuthApiException; anything else (no
+      // route, refused, timed out) means it was never asked.
+      _lastFailureWasUnreachable = error is! AuthApiException;
+      _errorMessage = _lastFailureWasUnreachable
+          ? 'The server could not be reached.'
+          : _friendly(error, fallback: 'Login failed.');
       return false;
     } finally {
       _isLoading = false;
@@ -165,6 +208,7 @@ class AuthProvider extends ChangeNotifier {
   void logout() {
     _user = null;
     _token = null;
+    _offline = false;
     _api.token = null;
     _users = const [];
     _deleteRequests = const [];
