@@ -26,10 +26,10 @@ const KB = 1024;
 
 // Sequence                 budget                       measured 2026-11-19 (sized workspace)
 const BUDGETS = {
-  sign_in: { requests: 20, bytes: 120 * KB }, // 21 requests, 57.3 KB (step 3 takes it to 18)
+  sign_in: { requests: 20, bytes: 120 * KB }, // 21 requests, 57.3 KB; 18 requests after step 3
   orders_list_page: { requests: 1, bytes: 40 * KB }, // 1 request, 7.8 KB
   items_list_page: { requests: 1, bytes: 60 * KB }, // 1 request, 26.7 KB
-  inventory_overview: { requests: 1, bytes: 40 * KB }, // 4 requests today (step 3 makes it one)
+  inventory_overview: { requests: 1, bytes: 40 * KB }, // 4 requests, 8.9 KB; 1 request after step 3
   replica_hydration: { requests: 3, bytes: 160 * KB }, // 14 requests today (step 5 makes it three)
 };
 
@@ -39,7 +39,7 @@ const BUDGETS = {
 // calls is listed in that order.
 const SIGN_IN = [
   '/api/orders',
-  '/api/materials', '/api/inventory/stock', '/api/inventory/sets', '/api/inventory/health',
+  '/api/inventory/overview',
   '/api/units', '/api/units/gauge-table',
   '/api/groups',
   '/api/clients',
@@ -67,17 +67,13 @@ const SEQUENCES = {
   sign_in: SIGN_IN,
   orders_list_page: ['/api/orders'],
   items_list_page: ['/api/items'],
-  inventory_overview: ['/api/materials', '/api/inventory/stock', '/api/inventory/sets', '/api/inventory/health'],
+  inventory_overview: ['/api/inventory/overview'],
   replica_hydration: REPLICA_HYDRATION,
 };
 
 // Pending until the step that lands them; asserted from then on. A budget
 // here is still printed, so the figure is visible before the step.
 const PENDING = {
-  // 21 today: the budget is 20, and inventory's four calls becoming one is
-  // what gets there.
-  sign_in: 'step 3 — inventory makes one call, not four',
-  inventory_overview: 'step 3 — one GET /api/inventory/overview',
   replica_hydration: 'step 5 — a bootstrap endpoint and a delta-first hydration',
 };
 

@@ -69,6 +69,8 @@ class _GatedRepository implements InventoryRepository {
 }
 
 void main() {
+  overviewTests();
+
   test('the three list reads are in flight together', () async {
     final repository = _GatedRepository();
     final provider = InventoryProvider(repository: repository);
@@ -121,5 +123,49 @@ void main() {
     }
     await later;
     expect(repository.materialsCalls, 3);
+  });
+}
+
+/// A repository that can answer the screen in one call (the overview).
+class _OverviewRepository extends _GatedRepository implements InventoryOverviewReader {
+  _OverviewRepository({this.health});
+
+  final InventoryHealthSnapshot? health;
+  int overviewCalls = 0;
+
+  @override
+  Future<InventoryOverview> getOverview({bool includeMaterials = true}) async {
+    overviewCalls += 1;
+    return InventoryOverview(
+      materials: const <MaterialRecord>[],
+      variationStock: const <VariationStockRecord>[],
+      sets: const <InventorySetDefinition>[],
+      health: health,
+    );
+  }
+}
+
+void overviewTests() {
+  test('a repository with the overview is asked once, and nothing else', () async {
+    final repository = _OverviewRepository(
+      health: const InventoryHealthSnapshot(lowStockCount: 4),
+    );
+    final provider = InventoryProvider(repository: repository);
+    await provider.refresh();
+
+    expect(repository.overviewCalls, 1);
+    expect(repository.materialsCalls + repository.stockCalls + repository.setsCalls + repository.healthCalls, 0,
+        reason: 'the four reads are not made beside it');
+    expect(provider.healthSnapshot.lowStockCount, 4, reason: "the server's tiles are used");
+  });
+
+  test('an overview without tiles falls back to the estimate, not to a second call', () async {
+    final repository = _OverviewRepository();
+    final provider = InventoryProvider(repository: repository);
+    await provider.refresh();
+
+    expect(repository.overviewCalls, 1);
+    expect(repository.healthCalls, 0);
+    expect(provider.healthSnapshot.lowStockCount, 0);
   });
 }

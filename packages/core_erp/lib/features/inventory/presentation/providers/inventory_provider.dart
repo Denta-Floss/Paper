@@ -132,7 +132,18 @@ class InventoryProvider extends ChangeNotifier {
   /// for answers that do not depend on each other. The health summary falls
   /// back to a local estimate from the materials on failure, so it is awaited
   /// after the three lists rather than beside them.
+  ///
+  /// A repository that can answer all four at once (GET /api/inventory/overview)
+  /// is asked once instead.
   Future<void> _loadEverything() async {
+    if (_repository case final InventoryOverviewReader reader) {
+      final overview = await reader.getOverview();
+      _materials = overview.materials ?? await _repository.getAllMaterials();
+      _variationStock = overview.variationStock;
+      _sets = overview.sets;
+      _healthSnapshot = overview.health ?? _estimatedHealth();
+      return;
+    }
     await Future.wait<void>([
       _reloadMaterials(),
       _reloadVariationStock(),
@@ -395,6 +406,18 @@ class InventoryProvider extends ChangeNotifier {
     try {
       _healthSnapshot = await _repository.getInventoryHealth();
     } catch (_) {
+      _healthSnapshot = _estimatedHealth();
+    }
+    if (!silent) {
+      notifyListeners();
+    }
+    return _healthSnapshot;
+  }
+
+  /// The tiles worked out from the materials in hand, for when the server's
+  /// summary is not available.
+  InventoryHealthSnapshot _estimatedHealth() {
+    {
       // BUG-09: The original fallback used the exact same predicate
       // (pendingAlertCount > 0) for BOTH unitMismatchCount and
       // pendingReconciliationCount, making both KPIs identical.
@@ -405,7 +428,7 @@ class InventoryProvider extends ChangeNotifier {
       final reservedRisk = _materials
           .where((item) => item.reserved > item.onHand && item.reserved > 0)
           .length;
-      _healthSnapshot = InventoryHealthSnapshot(
+      return InventoryHealthSnapshot(
         lowStockCount: lowStock,
         reservedRiskCount: reservedRisk,
         incomingTodayCount: _materials
@@ -428,10 +451,6 @@ class InventoryProvider extends ChangeNotifier {
             .length,
       );
     }
-    if (!silent) {
-      notifyListeners();
-    }
-    return _healthSnapshot;
   }
 
   Future<MaterialControlTowerDetail?> loadMaterialControlTowerDetail(

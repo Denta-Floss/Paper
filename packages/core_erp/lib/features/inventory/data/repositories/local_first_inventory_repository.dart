@@ -27,7 +27,7 @@ import 'inventory_repository.dart';
 /// Only the list is local. Stock positions, sets and health have no local
 /// tables — no endpoint even emits an `inventory_stock_positions` id, so a delta
 /// could not address one — and every write still goes to the server.
-class LocalFirstInventoryRepository implements InventoryRepository {
+class LocalFirstInventoryRepository implements InventoryRepository, InventoryOverviewReader {
   LocalFirstInventoryRepository({
     required InventoryRepository remote,
     required Future<Database?> Function() replica,
@@ -49,6 +49,32 @@ class LocalFirstInventoryRepository implements InventoryRepository {
       fromJson: (json) => MaterialDto.fromJson(json).toRecord(),
     );
     return local ?? _remote.getAllMaterials();
+  }
+
+  /// The screen in one request. With a hydrated replica the materials come off
+  /// disk and the server is asked for everything else (`?materials=0`); the
+  /// list was the largest part of the answer.
+  @override
+  Future<InventoryOverview> getOverview({bool includeMaterials = true}) async {
+    final local = includeMaterials
+        ? await _reader.readAll<MaterialRecord>(
+            'local_materials',
+            orderBy: 'kind ASC, created_at DESC, barcode ASC',
+            fromJson: (json) => MaterialDto.fromJson(json).toRecord(),
+          )
+        : null;
+    final remote = _remote;
+    if (remote case final InventoryOverviewReader reader) {
+      final overview = await reader
+          .getOverview(includeMaterials: includeMaterials && local == null);
+      return local == null ? overview : overview.withMaterials(local);
+    }
+    return InventoryOverview(
+      materials: includeMaterials ? (local ?? await remote.getAllMaterials()) : null,
+      variationStock: await remote.getVariationStock(),
+      sets: await remote.getSets(),
+      health: await remote.getInventoryHealth(),
+    );
   }
 
   @override

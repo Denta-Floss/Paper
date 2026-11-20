@@ -11,6 +11,42 @@ import '../../domain/material_record.dart';
 
 import '../../domain/variation_stock_record.dart';
 
+/// What GET /api/inventory/overview answers: the inventory screen's four
+/// reads at once.
+///
+/// [materials] is null when they were not asked for (a local replica already
+/// holds them); [health] is null when the server could not work the tiles out,
+/// which the provider answers with its own estimate, as it always has.
+class InventoryOverview {
+  const InventoryOverview({
+    required this.materials,
+    required this.variationStock,
+    required this.sets,
+    required this.health,
+  });
+
+  final List<MaterialRecord>? materials;
+  final List<VariationStockRecord> variationStock;
+  final List<InventorySetDefinition> sets;
+  final InventoryHealthSnapshot? health;
+
+  InventoryOverview withMaterials(List<MaterialRecord> value) => InventoryOverview(
+        materials: value,
+        variationStock: variationStock,
+        sets: sets,
+        health: health,
+      );
+}
+
+/// A repository that can answer the inventory screen in one round trip.
+///
+/// Its own interface rather than a member of [InventoryRepository], so the
+/// many test fakes and the demo store that implement that one keep compiling;
+/// the provider uses this when it is there and the four reads when it is not.
+abstract class InventoryOverviewReader {
+  Future<InventoryOverview> getOverview({bool includeMaterials = true});
+}
+
 abstract class InventoryRepository {
   Future<void> init();
   Future<void> seedIfEmpty();

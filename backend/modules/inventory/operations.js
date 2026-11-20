@@ -119,6 +119,22 @@ function userOperations({ all, work }) {
       run: (input, ctx) => runMoved(work.listMaterials, ctx, { query: input.query || {} }),
     },
 
+    'inventory.overview': {
+      permission: 'inventory.read',
+      summary: "The inventory screen's reads in one answer: materials (unless ?materials=0), stock by item and variation, sets, and the summary tiles.",
+      input: { fields: { query: F.obj({ materials: F.text }), data: F.none } },
+      output: {
+        fields: {
+          materials: { type: 'array' },
+          stock: { type: 'array', required: true },
+          sets: { type: 'array', required: true },
+          health: { type: 'object', nullable: true },
+          healthError: { type: 'string', nullable: true },
+        },
+      },
+      run: (input, ctx) => runMoved(work.overview, ctx, { query: input.query || {} }),
+    },
+
     'inventory.health': {
       permission: 'inventory.read',
       summary: 'The inventory summary tiles.',

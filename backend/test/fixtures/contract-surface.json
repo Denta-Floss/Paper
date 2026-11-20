@@ -5319,6 +5319,50 @@
       ]
     },
     {
+      "name": "inventory.overview",
+      "module": "inventory",
+      "permission": "inventory.read",
+      "internal": false,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The inventory screen's reads in one answer: materials (unless ?materials=0), stock by item and variation, sets, and the summary tiles.",
+      "input": {
+        "query": {
+          "type": "object",
+          "fields": {
+            "materials": {
+              "type": "string"
+            }
+          }
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "output": {
+        "materials": {
+          "type": "array"
+        },
+        "stock": {
+          "type": "array",
+          "required": true
+        },
+        "sets": {
+          "type": "array",
+          "required": true
+        },
+        "health": {
+          "type": "object",
+          "nullable": true
+        },
+        "healthError": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "usedBy": []
+    },
+    {
       "name": "inventory.receipts.materialForChallanLine",
       "module": "inventory",
       "permission": null,

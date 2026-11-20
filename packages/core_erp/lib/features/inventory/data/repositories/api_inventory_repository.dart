@@ -17,7 +17,7 @@ import '../../domain/variation_stock_record.dart';
 import '../models/api_models.dart';
 import 'inventory_repository.dart';
 
-class ApiInventoryRepository implements InventoryRepository {
+class ApiInventoryRepository implements InventoryRepository, InventoryOverviewReader {
   ApiInventoryRepository({
     http.Client? client,
     this.baseUrl = 'http://localhost:8080',
@@ -543,7 +543,58 @@ class ApiInventoryRepository implements InventoryRepository {
       throw InventoryApiException('Failed to fetch variation stock list.');
     }
 
-    final List<dynamic> rawList = payload['stock'] ?? [];
+    return _stockFromJson(payload['stock']);
+  }
+
+  @override
+  Future<InventoryOverview> getOverview({bool includeMaterials = true}) async {
+    if (useMockResponses) {
+      // The demo store has no overview; it answers the four reads it has.
+      return InventoryOverview(
+        materials: includeMaterials ? await getAllMaterials() : null,
+        variationStock: await getVariationStock(),
+        sets: await getSets(),
+        health: await getInventoryHealth(),
+      );
+    }
+    final uri = Uri.parse(
+      includeMaterials
+          ? '$baseUrl/api/inventory/overview'
+          : '$baseUrl/api/inventory/overview?materials=0',
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw InventoryApiException(
+        payload['error'] as String? ?? 'Failed to load inventory.',
+      );
+    }
+    final rawMaterials = payload['materials'];
+    return InventoryOverview(
+      materials: rawMaterials is List
+          ? MaterialsListResponse.fromJson(<String, dynamic>{
+              'success': true,
+              'materials': rawMaterials,
+            }).materials.map((material) => material.toRecord()).toList(growable: false)
+          : null,
+      variationStock: _stockFromJson(payload['stock']),
+      sets: InventorySetsListResponse.fromJson(<String, dynamic>{
+        'success': true,
+        'sets': payload['sets'],
+      }).sets.map((set) => set.toDomain()).toList(growable: false),
+      health: payload['health'] is Map<String, dynamic>
+          ? InventoryHealthResponse.fromJson(<String, dynamic>{
+              'success': true,
+              'health': payload['health'],
+            }).health
+          : null,
+    );
+  }
+
+  static List<VariationStockRecord> _stockFromJson(Object? raw) {
+    final List<dynamic> rawList = raw is List ? raw : const <dynamic>[];
     return rawList.map((dynamic row) {
       final map = row as Map<String, dynamic>;
       // `naming_format` may arrive already-parsed as a List (the backend

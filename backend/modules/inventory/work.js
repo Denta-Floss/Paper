@@ -147,6 +147,44 @@ function createInventoryWork({
     }
   }
 
+  // The inventory screen's four reads in one answer: materials, stock by item
+  // and variation, sets and the summary tiles. Each part is exactly what its
+  // own endpoint answers, so a client can switch without a second parser.
+  //
+  // `?materials=0` leaves the materials out, for a client that already reads
+  // them from its replica: it still costs one request, and not the largest
+  // part of it.
+  //
+  // The tiles are an estimate a client can make for itself, so a failure there
+  // is reported (`healthError`) and does not fail the answer; any other part
+  // failing does.
+  async function overview(req) {
+    const withMaterials = String(req.query?.materials ?? '1') !== '0';
+    const [materials, stockAnswer, setsAnswer, healthAnswer] = await Promise.all([
+      withMaterials ? listMaterials(req) : null,
+      stock(req),
+      listSets(req),
+      health(req),
+    ]);
+    const failed = [materials, stockAnswer, setsAnswer].find((part) => part && part.status >= 400);
+    if (failed) {
+      return answer(failed.status, {
+        success: false,
+        error: failed.body.error || 'Failed to load inventory.',
+        code: failed.body.code ?? null,
+      });
+    }
+    return answer(200, {
+      success: true,
+      ...(materials ? { materials: materials.body.materials } : {}),
+      stock: stockAnswer.body.stock,
+      sets: setsAnswer.body.sets,
+      health: healthAnswer.status < 400 ? healthAnswer.body.health : null,
+      healthError: healthAnswer.status < 400 ? null : healthAnswer.body.error,
+      error: null,
+    });
+  }
+
   async function health(req) {
     try {
       const health = await inventory.getInventoryHealthSummary();
@@ -445,6 +483,7 @@ function createInventoryWork({
     stock,
     stockSources,
     listMaterials,
+    overview,
     health,
     getMaterial,
     materialDetail,

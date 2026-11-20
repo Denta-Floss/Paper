@@ -25,6 +25,9 @@
 //   PATCH  /api/materials/:barcode/scan/reset   clear the trace
 //   DELETE /api/materials/:barcode              remove it (a parent takes its children)
 //   POST   /api/inventory/movements             receive, issue, transfer
+//   GET    /api/inventory/overview              materials, stock, sets and tiles
+//                                               in one answer (?materials=0 to
+//                                               leave the materials out)
 //   GET    /api/inventory/health                the summary tiles
 //   GET    /api/inventory/stock                 stock by item and variation
 //
@@ -66,6 +69,9 @@ module.exports = function registerInventoryRoutes(ctx) {
 
   app.get('/api/materials', requirePermission('inventory.read'), cacheMasterData,
     send('inventory.materials.list', (req) => ({ query: req.query })));
+
+  app.get('/api/inventory/overview', requirePermission('inventory.read'), cacheMasterData,
+    send('inventory.overview', (req) => ({ query: req.query })));
 
   app.get('/api/inventory/health', requirePermission('inventory.read'),
     send('inventory.health', (req) => ({ query: req.query })));

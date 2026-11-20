@@ -88,6 +88,7 @@
   "GET /api/groups/:id/overview",
   "GET /api/groups/:id/schema-impact",
   "GET /api/inventory/health",
+  "GET /api/inventory/overview",
   "GET /api/inventory/sets",
   "GET /api/inventory/stock",
   "GET /api/inventory/stock-sources",
