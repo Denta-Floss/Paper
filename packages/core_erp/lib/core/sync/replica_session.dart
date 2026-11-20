@@ -89,6 +89,19 @@ class ReplicaSession {
     }
   }
 
+  /// The last changelog id this copy has applied, or null when there is no
+  /// copy to ask. Compared with the server's head, it says how far behind the
+  /// copy is (the Sync Health screen).
+  Future<int?> cursor() async {
+    if (_service == null) return null;
+    try {
+      final db = await LocalDatabaseHelper.instance.database;
+      return await SyncMetadataStore(db).lastChangelogId();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _readLastSync() async {
     try {
       final db = await LocalDatabaseHelper.instance.database;

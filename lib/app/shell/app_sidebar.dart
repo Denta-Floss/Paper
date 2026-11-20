@@ -23,6 +23,8 @@ import 'package:core_erp/features/orders/presentation/providers/orders_provider.
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
 import 'package:core_erp/features/die_makers/presentation/providers/die_makers_provider.dart';
+import 'package:core_erp/core/sync/sync_health.dart';
+import 'package:core_erp/features/sync_health/sync_health_screen.dart';
 import '../../features/dies/presentation/providers/die_provider.dart';
 import '../../features/machines/presentation/providers/machine_provider.dart';
 import 'navigation_provider.dart';
@@ -412,6 +414,35 @@ class _AppSidebarState extends State<AppSidebar> {
                           ),
                         ),
                       ),
+                      if (!widget.compact && !canOpenSettings) ...[
+                        // Settings holds destructive data controls and stays
+                        // admin-only; Sync Health is for whoever is at the
+                        // terminal, so it gets its own way in.
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          key: const Key('sidebar_sync_health'),
+                          onPressed: () => showDialog<void>(
+                            context: context,
+                            builder: (dialogContext) => Dialog(
+                              child: SizedBox(
+                                width: 640,
+                                height: 720,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(28),
+                                  child: SyncHealthScreen(
+                                    probe: context.read<SyncHealthProbe>(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          icon: const Icon(Icons.monitor_heart_outlined),
+                          label: const Text(
+                            'Sync Health',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ],
                       if (!widget.compact && canOpenSettings) ...[
                         const SizedBox(height: 8),
                         InkWell(
@@ -814,7 +845,7 @@ class _SettingsPreferencesDialog extends StatefulWidget {
 }
 
 /// Panes listed in the settings sidebar, in display order.
-enum _SettingsPane { itemCreation, modules, workspaceData }
+enum _SettingsPane { itemCreation, modules, workspaceData, syncHealth }
 
 class _SettingsNavItem {
   const _SettingsNavItem({
@@ -907,6 +938,25 @@ class _SettingsPreferencesDialogState
               'factory reset',
               'nuke',
               'fulfilment',
+            ],
+          ),
+        ],
+        <_SettingsNavItem>[
+          _SettingsNavItem(
+            pane: _SettingsPane.syncHealth,
+            label: 'Sync Health',
+            icon: Icons.monitor_heart_outlined,
+            tint: Color(0xFF0F8B45),
+            keywords: <String>[
+              'sync',
+              'health',
+              'offline',
+              'outbox',
+              'ping',
+              'latency',
+              'replica',
+              'version',
+              'connection',
             ],
           ),
         ],
@@ -1341,6 +1391,10 @@ class _SettingsPreferencesDialogState
       case _SettingsPane.workspaceData:
         return 'Rebuild a demo workspace or wipe operational data. Users, '
             'sessions, permissions and audit data stay intact.';
+      case _SettingsPane.syncHealth:
+        return 'Whether this computer reaches the server, how far behind its '
+            'copy is, what it is still waiting to send, and whether the app '
+            'and server versions work together.';
     }
   }
 
@@ -1352,6 +1406,13 @@ class _SettingsPreferencesDialogState
         return _buildModulesPane();
       case _SettingsPane.workspaceData:
         return _buildWorkspaceDataPane();
+      case _SettingsPane.syncHealth:
+        return <Widget>[
+          SyncHealthScreen(
+            probe: context.read<SyncHealthProbe>(),
+            embedded: true,
+          ),
+        ];
     }
   }
 

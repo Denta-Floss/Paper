@@ -15,6 +15,8 @@ import 'dart:async';
 import 'package:core_erp/core/database/local_database_helper.dart';
 import 'package:core_erp/core/sync/replica_sync_service.dart';
 import 'package:core_erp/core/sync/outbox_session.dart';
+import 'package:core_erp/core/sync/sync_health.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:core_erp/core/sync/replica_session.dart';
 import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/local_first_client_repository.dart';
@@ -503,6 +505,20 @@ class MyApp extends StatelessWidget {
         Provider<SearchRepository>(
           create: (context) =>
               _buildSearchRepository(context.read<AuthProvider>()),
+        ),
+        // What the Sync Health pane reads (core_erp features/sync_health).
+        Provider<SyncHealthProbe>(
+          create: (context) => SyncHealthProbe(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            appVersion: () async {
+              final info = await PackageInfo.fromPlatform();
+              return '${info.version}+${info.buildNumber}';
+            },
+            localCursor: ReplicaSession.instance.cursor,
+            lastSyncedAt: () => ReplicaSession.instance.lastSyncedAt.value,
+            outbox: () => OutboxSession.instance.engine,
+          ),
         ),
         Provider<ProductionRepository>(
           create: (_) => SqliteProductionRepository(),

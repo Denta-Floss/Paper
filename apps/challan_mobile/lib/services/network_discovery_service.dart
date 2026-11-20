@@ -15,16 +15,32 @@ class NetworkDiscoveryService extends ChangeNotifier {
   bool get isSearching => _isSearching;
   bool get hasTimedOut => _hasTimedOut;
 
+  /// The server's URL from what was typed: `10.0.2.2`, `10.0.2.2:18080`,
+  /// `http://host:8080/` all work. The default port is added only when none
+  /// was typed — "10.0.2.2:18080" used to become "http://10.0.2.2:18080:18080",
+  /// which was then remembered and failed every launch as "cannot be reached"
+  /// (B54).
+  static String serverUrlFrom(String typed) {
+    var text = typed.trim();
+    while (text.endsWith('/')) {
+      text = text.substring(0, text.length - 1);
+    }
+    final withScheme = text.startsWith('http://') || text.startsWith('https://') ? text : 'http://$text';
+    final uri = Uri.tryParse(withScheme);
+    if (uri == null || uri.host.isEmpty) return withScheme;
+    final typedScheme = text.startsWith('http://') || text.startsWith('https://');
+    // A typed scheme with no port means that scheme's own port (an AWS URL);
+    // a bare address means the factory server's.
+    if (uri.hasPort || typedScheme) return withScheme;
+    return '$withScheme:18080';
+  }
+
   /// Where the server this phone last connected to is remembered (B45).
   /// Without it every launch started at the setup screen.
   static const String serverKey = 'paper_server_url';
 
   void manualConnect(String ipAddress) {
-    if (ipAddress.startsWith('http://') || ipAddress.startsWith('https://')) {
-      _discoveredUrl = ipAddress;
-    } else {
-      _discoveredUrl = 'http://$ipAddress:18080';
-    }
+    _discoveredUrl = serverUrlFrom(ipAddress);
     _isSearching = false;
     _remember(_discoveredUrl!);
     notifyListeners();

@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c86["Change 86: the phone follows item changes, says kg for weights, and shows its own past challans offline"]
+      c87["⟳ Change 87: the server measures itself (/api/system/metrics) and each device shows its own sync health"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -78,12 +78,17 @@ mindmap
         w21b["any refusal = conflict for a person (Needs review: Send again / Discard), never resolved alone; a dependent {ref:} entry follows its parent"]
         w21c["challans: negative id + 'Pending upload' until synced; online submits go through it too and a refusal is still shown on the form"]
         w21d["emulator: offline Purchase → kept across a restart → server back → one POST + one issue, one row, RC-00001; B49 found and fixed"]
-      w22["⟳ B50: ReplicaSession.changedTables → ItemsProvider(replicaChanges:) re-reads when local_items changed, after the copy holds it"]
-      w23["⟳ B53: offline, type/mine lists answered from the copy filtered by created_by; outbox first; a refusal is not offline"]
-      w24["⟳ B51: DeliveryChallanItem.weightUnitSymbol = kg; the item's unit says how it is counted, not what the weight means"]
+      w22["B50: ReplicaSession.changedTables → ItemsProvider(replicaChanges:) re-reads when local_items changed, after the copy holds it"]
+      w23["B53: offline, type/mine lists answered from the copy filtered by created_by; outbox first; a refusal is not offline"]
+      w24["B51: DeliveryChallanItem.weightUnitSymbol = kg; the item's unit says how it is counted, not what the weight means"]
+      w25["⟳ Sync Health (core_erp): round trip (a stale cached answer is not a ping), copy cursor vs server head, outbox with Flush now, N / N-1 versions"]
+        w25a["⟳ phone app-bar button; desktop Settings pane for admins + sidebar button for everyone else"]
+        w25b["⟳ B54: a typed host:port got :18080 appended and was remembered; fixed. B55 open: phone Settings needs PreferencesProvider"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
-    Kernel
+    Kernel ⟳
       k20["idempotency.js: X-Idempotency-Key per user for a day; replay, 422 reused, 409 in progress / applied / unknown"]
+        k20b["⟳ telemetry.js: per-route p50/95/99, bytes on the wire, status classes; write lock wait = elapsed − profiled exec (ms resolution, upper bound); timed PASSIVE checkpoint; file sizes"]
+        k20c["⟳ system-routes.js: /api/system/status for anyone signed in; /api/system/metrics for admins or PAPER_METRICS_TOKEN, JSON or Prometheus"]
         k20a["run() calls beforeCommit() on every COMMIT: the key is marked inside the write's own transaction, all 61 transaction sites, none changed"]
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
       k2["territory.js: meters routes and tables per module"]
@@ -750,3 +755,4 @@ mindmap
 | 84 | Stage 2f Track 1. `backend/test/benchmarks/{throttle-proxy,network-throttle}.js`, `test/throttle-proxy.test.js`, `npm run bench:network`, `Docs/benchmarks/2026-11-constrained-network-results.md`. Fixes it drove: `items/dto.js` (`RELATED` queries shared by one-part and list reads, `preloadRelated`, `rowsToItemDtos`), `variations.js` `getItemVariationTrees`, `schema-props.js` `getItemPropertySchemas`, `challans/service.js` `preloadChallanSummaries`/`rowsToDeliveryChallanSummaries`, `assets.forEntities`; indexes on order_items, delivery_challan_items, order_material_requirements (item_id), item_variation_nodes, item_property_schema. `kernel/db-timing.js` + `run/get/all` instrumented. Tests: `challan-list-batch.test.js`, stronger `wire-weight.test.js`. | Backend, Kernel, Tests, Docs |
 | 85 | Stage 2f Track 2, client. `packages/core_erp/lib/core/sync/outbox.dart` (`OutboxStore`: table `client_outbox` in its own SQLite file per user, `recover` puts cut-off sends back, `prune`; `OutboxSyncEngine`: `submit`, single-flight `drain`, strict FIFO, backoff 1 s doubling to 30 s, entry id as `X-Idempotency-Key`, `{ref:<id>}` endpoints resolved to the parent's server id, 2xx and `idempotency_already_applied` settle it, `in_progress`/401/5xx/network back off, any other refusal is a conflict, `retry`/`discard`); `outbox_session.dart` (one per user, drains when `SocketService.streamLive` comes up). `LocalFirstChallanRepository`: `createChallan`/`issueChallan` through the outbox, pending challans (negative id, "Pending upload") lead the list, kept even when the server part of the list cannot be read (B49). `DeliveryChallan.outboxId/outboxState/outboxError`. Both apps start the session at sign-in; the phone's Challan Book shows Pending sync / Needs review with Send again and Discard; editor, purchase wizard and vendor return say "saved on this phone"; the photo step scrolls (B52). Tests: `outbox_sync_engine_test.dart` (8), `outbox_challan_repository_test.dart` (5). | Sync, Challans, Mobile, Tests |
 | 86 | B50, B51, B53. `ReplicaSession.changedTables` relays `ReplicaSyncService.changedTables`; `ItemsProvider(replicaChanges:)` re-reads on `local_items` (one at a time, a burst costs one more), the phone passes it. `LocalFirstChallanRepository(currentUserId:)`: on an unreachable server, `_fromCopy` reads `local_delivery_challans` filtered by type and `created_by`, pending first; both apps pass the signed-in user. `DeliveryChallanItem.weightUnitSymbol`; the purchase wizard's three weight labels use it. Tests: `items_provider_replica_changes_test.dart` (4), two more in `outbox_challan_repository_test.dart`. | Sync, Items, Challans, Mobile, Tests |
+| 87 | Stage 2f Track 3. Backend: `kernel/telemetry.js` (`createTelemetry`: middleware before compression, `timedWrite` in `rawRun`/`runOnDelete`, `watchConnection`/`unwatchConnection` for the profile hook, `checkpoint`/`startCheckpoints`, `snapshot`, `prometheus`), `kernel/system-routes.js`, `server.js` (`serverTelemetry`, `startServerTelemetry`/`stopServerTelemetry` in the boot path, `systemBeforeLoginRouter`), registry: `system` excluded from the module gate. Client: `core/sync/sync_health.dart`, `features/sync_health/sync_health_screen.dart`, `OutboxSyncEngine.flushNow`, `ReplicaSession.cursor`; phone app-bar button + `Provider<SyncHealthProbe>` after AuthProvider + `package_info_plus`; desktop Settings pane + sidebar button. B54 `serverUrlFrom`. Tests: `system-telemetry.test.js`, `sync_health_test.dart`, `sync_health_sidebar_test.dart`, `sync_health_entry_test.dart`, `server_url_test.dart`. | Kernel, Sync, Mobile, Desktop shell, Tests |

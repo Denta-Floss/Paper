@@ -128,6 +128,13 @@ const app = express();
 // First, so a request's whole stay is inside it: how long it spent in SQLite,
 // as Server-Timing, when PAPER_DB_TIMING=1 (kernel/db-timing.js).
 app.use(require('./kernel/db-timing').middleware);
+// Request latency, bytes and status per route, SQLite write and WAL numbers
+// (kernel/telemetry.js), read at GET /api/system/metrics. Before compression,
+// so the bytes out it counts are the ones on the wire.
+const serverTelemetry = require('./kernel/telemetry').createTelemetry({
+  checkpointEveryMs: Number(process.env.PAPER_WAL_CHECKPOINT_MS ?? 5 * 60 * 1000),
+});
+app.use(serverTelemetry.middleware);
 // The kernel desk: every module's operations, asked for by name from a
 // terminal, an HTTP route or another module (kernel/desk.js). A signed-in
 // caller is checked with the same hasPermission the HTTP border uses.
@@ -1013,6 +1020,22 @@ const deleteDb = new sqlite3.Database(DB_PATH, (error) => {
   }
 });
 
+// SQLite's own execution time per statement (to separate it from the time a
+// write waited for the shared connection) and the timed WAL checkpoint. Started
+// by the running server; a test that wants them starts and stops them, since
+// the profile hook holds the process open (kernel/telemetry.js).
+function startServerTelemetry() {
+  serverTelemetry.watchConnection(db);
+  serverTelemetry.watchConnection(deleteDb);
+  serverTelemetry.startCheckpoints(get);
+}
+
+function stopServerTelemetry() {
+  serverTelemetry.unwatchConnection(db);
+  serverTelemetry.unwatchConnection(deleteDb);
+  serverTelemetry.stop();
+}
+
 const PROCESS_HANDLER_GUARD = '__paperProcessHandlersRegistered';
 if (!globalThis[PROCESS_HANDLER_GUARD]) {
   process.on('uncaughtException', (error) => {
@@ -1160,14 +1183,15 @@ const dbTiming = require('./kernel/db-timing');
 
 function rawRun(sql, params = []) {
   return new Promise((resolve, reject) => {
-    dbTiming.timed((done) => db.run(sql, params, function onRun(error) {
+    dbTiming.timed((done) => serverTelemetry.timedWrite('main', sql, (written) => db.run(sql, params, function onRun(error) {
+      written(error);
       done();
       if (error) {
         reject(error);
         return;
       }
       resolve(this);
-    }));
+    })));
   });
 }
 
@@ -1185,13 +1209,14 @@ function run(sql, params = []) {
 // Runs a statement on the dedicated FK-off delete connection.
 function runOnDelete(sql, params = []) {
   return new Promise((resolve, reject) => {
-    deleteDb.run(sql, params, function onRun(error) {
+    serverTelemetry.timedWrite('delete', sql, (written) => deleteDb.run(sql, params, function onRun(error) {
+      written(error);
       if (error) {
         reject(error);
         return;
       }
       resolve(this);
-    });
+    }));
   });
 }
 
@@ -8681,6 +8706,10 @@ app.use(accountsBeforeLoginRouter);
 // their place in the matching order here.
 const realtimeBeforeLoginRouter = express.Router();
 app.use(realtimeBeforeLoginRouter);
+// GET /api/system/status and /api/system/metrics (kernel/system-routes.js),
+// registered further down; each carries its own guard.
+const systemBeforeLoginRouter = express.Router();
+app.use(systemBeforeLoginRouter);
 
 app.get('/api/delivery-challans/health', (_req, res) => {
   res.json({
@@ -11277,6 +11306,15 @@ registerAccountsRoutes(accountsRouter, {
   verifyPassword,
   serverDir: __dirname,
 });
+require('./kernel/system-routes').registerSystemRoutesBeforeLogin(systemBeforeLoginRouter, {
+  get,
+  requireAuth,
+  telemetry: serverTelemetry,
+  dbPath: DB_PATH,
+  release: RELEASE_INFO,
+  serverVersion: process.env.APP_VERSION || require('./package.json').version,
+  environment: process.env.PAPER_ENV || (IS_PRODUCTION ? 'production' : 'development'),
+});
 registerRealtimeRoutesBeforeLogin(realtimeBeforeLoginRouter, {
   all,
   changeEmitter,
@@ -11423,6 +11461,9 @@ function startServer() {
         // Operations cut off by the last stop cannot be known to have landed.
         await idempotency.recover();
         setInterval(() => idempotency.prune().catch(() => {}), 60 * 60 * 1000).unref();
+        // SQLite profiling and a timed PASSIVE wal_checkpoint every few
+        // minutes (kernel/telemetry.js).
+        startServerTelemetry();
         // Portal passwords stored as plain text by older versions are hashed
         // before the server takes a request.
         const rehashed = await clientPortalService.hashStoredPlainPasswords();
@@ -11785,6 +11826,9 @@ app.use((error, req, res, _next) => {
 });
 
 module.exports = {
+  serverTelemetry,
+  startServerTelemetry,
+  stopServerTelemetry,
   desk,
   idempotency,
   rowToDeliveryChallanDto,

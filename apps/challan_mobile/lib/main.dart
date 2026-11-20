@@ -60,6 +60,8 @@ import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/photo_requests.dart';
 
 import 'photos/photo_queue_gate.dart';
+import 'package:core_erp/core/sync/sync_health.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'widgets/offline_banner.dart';
 import 'screens/home_screen.dart';
 import 'package:challan_mobile/screens/passcode_screen.dart';
@@ -680,6 +682,25 @@ class MyApp extends StatelessWidget {
               currentUserId: () => context.read<AuthProvider>().user?.id,
             );
           },
+        ),
+        // What the Sync Health screen reads (core_erp features/sync_health).
+        // After AuthProvider: a provider can read only those listed above it.
+        // Listed first, the tap threw and the button did nothing.
+        // Its inputs:
+        // the server's status through the signed-in client, the replica's
+        // cursor and last sync, and the outbox.
+        Provider<SyncHealthProbe>(
+          create: (context) => SyncHealthProbe(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: apiUrl,
+            appVersion: () async {
+              final info = await PackageInfo.fromPlatform();
+              return '${info.version}+${info.buildNumber}';
+            },
+            localCursor: ReplicaSession.instance.cursor,
+            lastSyncedAt: () => ReplicaSession.instance.lastSyncedAt.value,
+            outbox: () => OutboxSession.instance.engine,
+          ),
         ),
         Provider<SearchRepository>(
           create: (context) => ApiSearchRepository(

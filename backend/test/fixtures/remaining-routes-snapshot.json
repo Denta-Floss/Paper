@@ -278,6 +278,24 @@
   },
   "error": "Authentication required."
  },
+ "anonymous GET /api/system/metrics": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
+ "anonymous GET /api/system/status": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
  "anonymous GET /api/templates/:id/test-print": {
   "status": 401,
   "type": "application/json",
@@ -1217,6 +1235,61 @@
   "type": "application/json",
   "shape": {
    "history": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/system/metrics": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "apiVersion": "number",
+   "capturedAt": "string",
+   "files": {
+    "db": "number",
+    "shm": "number",
+    "wal": "number"
+   },
+   "requests": {
+    "routes": "{…}",
+    "total": "{…}"
+   },
+   "serverVersion": "string",
+   "sqlite": {
+    "busyErrors": "number",
+    "byConnection": "{…}",
+    "elapsedMsTotal": "number",
+    "execMsTotal": "number",
+    "lockWaitMsPerWrite": "null",
+    "lockWaitMsTotal": "null",
+    "note": "string",
+    "profiledWrites": "number",
+    "profiling": "boolean",
+    "writes": "{…}"
+   },
+   "startedAt": "string",
+   "success": "boolean",
+   "walCheckpoint": {
+    "durations": "{…}",
+    "everyMs": "number",
+    "failures": "number",
+    "last": "null",
+    "runs": "number"
+   }
+  }
+ },
+ "owner GET /api/system/status": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "apiVersion": "number",
+   "changelogHead": "number",
+   "commit": "null",
+   "environment": "string",
+   "minClientApiVersion": "number",
+   "release": "null",
+   "serverTime": "string",
+   "serverVersion": "string",
+   "startedAt": "string",
    "success": "boolean"
   }
  },

@@ -97,4 +97,5 @@ jobs:
             test/features/production/production_run_provider_test.dart \
             test/groups_logic_test.dart \
             test/produce_monitor_smoke_test.dart \
-            test/sidebar_nesting_test.dart
+            test/sidebar_nesting_test.dart \
+            test/sync_health_sidebar_test.dart

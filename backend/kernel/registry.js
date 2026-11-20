@@ -359,6 +359,9 @@ const MODULE_GATE_EXCLUDED_SEGMENTS = new Set([
   'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
   'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
   'record-options', 'links', 'variations', 'dev',
+  // kernel/system-routes.js: status for any signed-in user, metrics for an
+  // admin or the metrics token — guarded there, not by a module's CRUD keys.
+  'system',
 ]);
 
 // Capability keys — signed off individually, NOT part of the module CRUD grid.

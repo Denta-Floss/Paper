@@ -411,6 +411,21 @@ class OutboxSyncEngine {
     await drain();
   }
 
+  /// "Flush now": what is waiting is sent at once instead of when its backoff
+  /// ends — a person has just seen the connection is back. Conflicts are left
+  /// alone: those wait for a person's decision about each one, not a button.
+  Future<void> flushNow() async {
+    await store.db.update(
+      'client_outbox',
+      <String, Object?>{'next_attempt_at': null},
+      where: 'status = ?',
+      whereArgs: <Object?>[OutboxStatus.pending],
+    );
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    await drain();
+  }
+
   /// Gives a write up. Its id is never sent again.
   Future<void> discard(String id) async {
     await store.delete(id);

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/widgets/app_settings_dialog.dart';
+import 'package:core_erp/core/sync/sync_health.dart';
+import 'package:core_erp/features/sync_health/sync_health_screen.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 
 import 'challan_staging_screen.dart';
@@ -88,6 +90,17 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: const Text('Factory Server'),
           actions: [
+            IconButton(
+              key: const Key('open_sync_health'),
+              tooltip: 'Sync health',
+              icon: const Icon(Icons.monitor_heart_outlined),
+              onPressed: () {
+                final probe = context.read<SyncHealthProbe>();
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => SyncHealthScreen(probe: probe),
+                ));
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.settings),
               onPressed: () {

@@ -158,6 +158,8 @@
   "GET /api/search",
   "GET /api/search/history",
   "GET /api/sub-contractors",
+  "GET /api/system/metrics",
+  "GET /api/system/status",
   "GET /api/templates/:id/test-print",
   "GET /api/track/:entityType/:id",
   "GET /api/track/actor/:userId",
