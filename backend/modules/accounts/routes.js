@@ -56,6 +56,7 @@ function registerAccountsRoutesBeforeLogin(app, {
   safeUserDto,
   verifyPassword,
   hashPin,
+  pinThrottle,
 }) {
   app.post('/api/auth/login', async (req, res) => {
     try {
@@ -64,11 +65,33 @@ function registerAccountsRoutesBeforeLogin(app, {
       const pin = String(req.body?.pin || '').trim();
 
       let user;
+      let pinTicket = null;
       if (pin && pin.length === 4) {
+        // Guessing is slowed per address, never locked per address: phones on
+        // one factory network share it (kernel/pin-throttle.js, B59).
+        pinTicket = pinThrottle.begin(getRequestIp(req));
+        if (pinTicket.blocked) {
+          if (pinTicket.started) {
+            await logAuthEvent({
+              eventType: 'login_pin_throttled',
+              ipAddress: getRequestIp(req),
+              userAgent: getRequestUserAgent(req),
+              metadata: { retryAfterSeconds: pinTicket.retryAfterSeconds },
+            });
+          }
+          res.setHeader('Retry-After', String(pinTicket.retryAfterSeconds));
+          res.status(429).json({
+            success: false, user: null, token: null,
+            error: `Too many wrong PINs from this network. Try again in ${pinTicket.retryAfterSeconds} seconds.`,
+          });
+          return;
+        }
         // Code login: match the user's assigned 4-digit code. (No hardcoded
         // master PIN — that was a backdoor into the super admin account.)
         // Stored as a keyed hash (kernel/pin-hash.js): hash what was typed.
         user = await get('SELECT * FROM users WHERE mobile_pin = ?', [hashPin(pin)]);
+        // A right PIN gives its place in the window back; a wrong one keeps it.
+        if (user && Number(user.is_active || 0) === 1) pinThrottle.succeeded(pinTicket);
       } else {
         user = await get('SELECT * FROM users WHERE email = ?', [email]);
       }
@@ -88,6 +111,7 @@ function registerAccountsRoutesBeforeLogin(app, {
       if (pin && pin.length === 4) {
         if (!user || Number(user.is_active || 0) !== 1) {
           await registerLoginFailure({ user, email: 'pin-login', req });
+          await pinThrottle.failed(pinTicket); // the tarpit: answered after a second
           res.status(401).json({ success: false, user: null, token: null, error: 'Invalid PIN.' });
           return;
         }

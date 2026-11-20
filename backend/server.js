@@ -11293,6 +11293,11 @@ registerAccountsRoutesBeforeLogin(accountsBeforeLoginRouter, {
   safeUserDto,
   verifyPassword,
   hashPin: pinHasher.hash,
+  // B59: a wrong PIN waits PAPER_PIN_TARPIT_MS (1 s); more than 15 wrong or
+  // pending PIN attempts a minute from one address get 429 for a minute.
+  pinThrottle: require('./kernel/pin-throttle').createPinThrottle({
+    delayMs: Number(process.env.PAPER_PIN_TARPIT_MS ?? 1000),
+  }),
 });
 registerAccountsRoutes(accountsRouter, {
   hashPin: pinHasher.hash,
