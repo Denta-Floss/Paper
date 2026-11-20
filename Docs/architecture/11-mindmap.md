@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c71["⟳ Change 71: the inventory screen is one request, GET /api/inventory/overview"]
+      c72["⟳ Change 72: the items list drops five tree-node fields nobody reads; the rest is blocked on B42"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -42,9 +42,11 @@ mindmap
       w4["start-up: inventory 3 reads together then health; units 2 and action centre 2 overlap; a refresh during a refresh joins one follow-up"]
       w5["phone: providers refresh once per sign-in from _AuthGate (keyed on the user when the demo build has no token), not in every ProxyProvider update, not on tab mount"]
       w6["B39: item editor set buttons keep their guard until the card re-reads its sets"]
-      w7["⟳ GET /api/inventory/overview: materials, stock, sets, tiles; ETag; ?materials=0 when the replica has them; healthError instead of failing"]
-        w7a["⟳ InventoryOverviewReader beside InventoryRepository: API and local-first implement it, fakes need not; the provider asks once when it can"]
-        w7b["⟳ sign_in 18 requests 53.5 KB and inventory_overview 1 request now assert; the N+1s inside stock and sets left: in-process, no bytes"]
+      w7["GET /api/inventory/overview: materials, stock, sets, tiles; ETag; ?materials=0 when the replica has them; healthError instead of failing"]
+        w7a["InventoryOverviewReader beside InventoryRepository: API and local-first implement it, fakes need not; the provider asks once when it can"]
+        w7b["sign_in 18 requests 53.5 KB and inventory_overview 1 request now assert; the N+1s inside stock and sets left: in-process, no bytes"]
+      w8["⟳ items list: node createdAt, updatedAt, itemId, position, isArchived dropped; 26.7 to 21.8 KB; list row == detail row less those"]
+        w8a["⟳ B42 open: saves send back the whole list object, so any other field dropped from the list is erased; six masters ~15 KB total, not split"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
@@ -697,3 +699,4 @@ mindmap
 | 69 | Step 1 of the wire plan. `test/wire-budget.test.js` replays the desktop's cold sign-in (21 GETs, traced provider by provider), the orders and items list pages, inventory's four refresh calls and the replica's 13 list GETs plus first delta poll, against budgets of requests and compressed bytes; `test/helpers/sized-workspace.js` fills a seeded server to a few hundred rows per master through the API first, because the demo seed is 11 KB and no budget would trip on it. Measured: sign-in 57.3 KB; sign_in (21 > 20), inventory_overview (4 > 1) and replica_hydration (14 > 3) are pending on steps 3 and 5 and assert they are still over until then. 460 tests. | Tests |
 | 70 | Step 2 of the wire plan. `InventoryProvider` starts materials, variation stock and sets together and reads health after (its fallback reads the materials); `refresh()` called during a refresh returns one shared follow-up run. `UnitsProvider` and `ActionCenterProvider` start their two reads before awaiting either. Mobile `main.dart`: no refresh in the nine ProxyProvider `update`s; `_AuthGate` refreshes once per session (token, or user id in the demo build) and now includes favourites and challans; `HomeScreen` and `InventoryStockScreen` no longer reload on mount. `MyApp` takes `httpClient` and `demoMode` so a test can count requests. B39: `_runSetWrite` lowers its guard after `_loadMembership`, in a `finally`. Tests: `startup_requests_test.dart`, `inventory_provider_refresh_test.dart`; the mobile smoke test looks for the passcode screen it actually opens on. | App, Tests |
 | 71 | Step 3 of the wire plan. Backend: `work.overview` composes `listMaterials`, `stock`, `listSets` and `health` in parallel; operation `inventory.overview` with an output contract; route `GET /api/inventory/overview` with `cacheMasterData`. `test/inventory-overview.test.js`: every part deep-equals its own endpoint, `?materials=0` drops only the materials, ETag gives 304 until a movement. Client: `InventoryOverview` + `InventoryOverviewReader` in `inventory_repository.dart`; `ApiInventoryRepository.getOverview` (stock parser lifted to `_stockFromJson`); `LocalFirstInventoryRepository.getOverview` reads materials off the replica and asks for the rest; `InventoryProvider._loadEverything` uses it via a type pattern, and the health estimate became `_estimatedHealth()`. `wire-budget.test.js`: sign_in and inventory_overview out of PENDING. | Backend, App, Tests |
+| 72 | Step 4 of the wire plan, the safe part. `modules/items/work.js` `listItems` maps each tree through `listNode`, which drops `createdAt`, `updatedAt`, `itemId`, `position`, `isArchived` from every node; `GET /api/items/:id` is unchanged. Traced: no Dart reader of those on a node, none in `ItemVariationNodeRequest`, the replica mirror reads only `item_id`. `wire-weight.test.js`: a list row deep-equals its detail row less those five, and `code`, `nameJoin`, `materialTypeId`, `parentNodeId`, `displayName` survive. B40, B41, B42 logged. | Backend, Tests |

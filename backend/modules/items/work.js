@@ -328,10 +328,32 @@ function createItemsWork({
     }
   }
 
+  // The variation tree as the list carries it: without the five node fields no
+  // client reads or sends back — each node's own timestamps, its item id (the
+  // item it sits in says that), its position (the array order says that), and
+  // isArchived (only live nodes are listed). 18% of the list, compressed.
+  //
+  // Nothing else may leave a list row. The app saves a part by sending back the
+  // whole object it holds, and the object it holds comes from this list (or the
+  // replica filled from it), so a field missing here is a field the next save
+  // erases. `GET /api/items/:id` keeps the full node.
+  const LIST_NODE_FIELDS_DROPPED = ['createdAt', 'updatedAt', 'itemId', 'position', 'isArchived'];
+  function listNode(node) {
+    const out = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (!LIST_NODE_FIELDS_DROPPED.includes(key)) out[key] = value;
+    }
+    out.children = (node.children || []).map(listNode);
+    return out;
+  }
+
   async function listItems(req) {
     try {
       const rows = await getItemsWithUsage();
-      const items = await Promise.all(rows.map(rowToItemDto));
+      const items = (await Promise.all(rows.map(rowToItemDto))).map((item) => ({
+        ...item,
+        variationTree: (item.variationTree || []).map(listNode),
+      }));
       return answer(200, { success: true, items, error: null });
     } catch (error) {
       return answer(500, { success: false, items: [], error: error.message });

@@ -564,3 +564,61 @@ test('asking for ids that match nothing returns nothing, not everything', async 
   const real = all.orders[0].id;
   assert.deepEqual((await ask(`?ids=${real},nonsense`)).map((o) => o.id), [real]);
 });
+
+test('an item in the list is the item in full, less five tree-node fields nobody reads', async (t) => {
+  // The app saves a part by sending back the whole object it holds, and that
+  // object comes from the list (or the replica the list filled). So the list
+  // may drop only what no client reads AND no save sends back — anything else
+  // missing here is erased by the next save. These five were traced through
+  // every reader and every request body on 2026-11-20; together they were 18%
+  // of the compressed list.
+  const ctx = await boot('paper-wire-items-list-', 'wire-items-list@paper.test');
+  t.after(async () => {
+    await closeServer(ctx.server);
+  });
+
+  const group = await ctx.backend.get("SELECT id FROM groups WHERE is_archived = 0 ORDER BY id LIMIT 1");
+  const unit = await ctx.backend.get('SELECT id FROM units WHERE is_archived = 0 ORDER BY id LIMIT 1');
+  const made = await fetch(`${ctx.baseUrl}/api/items`, {
+    method: 'POST',
+    headers: ctx.headers,
+    body: JSON.stringify({
+      name: 'Wire List Part',
+      groupId: group.id,
+      unitId: unit.id,
+      variationTree: [{
+        kind: 'property', name: 'Finish', code: 'F', nameJoin: '-',
+        children: [{ kind: 'value', name: 'Zinc', code: 'ZN', displayName: 'Zinc plated', children: [] }],
+      }],
+    }),
+  }).then((r) => r.json());
+  const id = (made.item || made).id;
+
+  const list = await (await fetch(`${ctx.baseUrl}/api/items`, { headers: ctx.headers })).json();
+  const row = list.items.find((entry) => entry.id === id);
+  const detail = await (await fetch(`${ctx.baseUrl}/api/items/${id}`, { headers: ctx.headers })).json();
+  const full = detail.item || detail.data;
+
+  const DROPPED = ['createdAt', 'updatedAt', 'itemId', 'position', 'isArchived'];
+  const withoutDropped = (node) => {
+    const out = {};
+    for (const [key, value] of Object.entries(node)) if (!DROPPED.includes(key)) out[key] = value;
+    out.children = (node.children || []).map(withoutDropped);
+    return out;
+  };
+  assert.deepEqual(
+    { ...row, variationTree: null },
+    { ...full, variationTree: null },
+    'every item-level field is in the list exactly as in the detail',
+  );
+  assert.deepEqual(row.variationTree, full.variationTree.map(withoutDropped));
+
+  // And what a save sends back is all still there.
+  const property = row.variationTree[0];
+  assert.equal(property.code, 'F');
+  assert.equal(property.nameJoin, '-');
+  assert.ok('materialTypeId' in property);
+  assert.equal(property.children[0].parentNodeId, property.id, 'leaf-to-root walks read it');
+  assert.equal(property.children[0].displayName, 'Zinc plated');
+  for (const key of DROPPED) assert.ok(key in full.variationTree[0], `the detail keeps ${key}`);
+});
