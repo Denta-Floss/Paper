@@ -1011,7 +1011,10 @@ class _PhotoStep extends StatelessWidget {
       children: [
         Expanded(
           child: photos.isEmpty
+              // Scrolls when the space is short — the offline banner takes some
+              // — so "Skip — no photo" is never pushed off the bottom.
               ? Center(
+                  child: SingleChildScrollView(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Column(
@@ -1064,6 +1067,7 @@ class _PhotoStep extends StatelessWidget {
                         ),
                       ],
                     ),
+                  ),
                   ),
                 )
               : GridView.builder(
@@ -1266,7 +1270,9 @@ class _DoneStep extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isIssued ? 'Issued ${challan.challanNo}' : 'Saved draft ${challan.challanNo}',
+                      challan.isPendingSync
+                          ? 'Saved on this phone'
+                          : isIssued ? 'Issued ${challan.challanNo}' : 'Saved draft ${challan.challanNo}',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 18,
@@ -1275,9 +1281,13 @@ class _DoneStep extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      isIssued
-                          ? 'Print barcode tags for the received pieces.'
-                          : 'Could not issue — finish it from the desktop.',
+                      challan.isPendingSync
+                          // Tags carry the challan's number, which the server
+                          // gives it when it arrives.
+                          ? 'It will be sent and numbered when the connection is back. Print its tags from the Challan Book then.'
+                          : isIssued
+                              ? 'Print barcode tags for the received pieces.'
+                              : 'Could not issue — finish it from the desktop.',
                       style: TextStyle(
                         color: isIssued ? Colors.green.shade800 : Colors.orange.shade800,
                         fontWeight: FontWeight.w500,

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/sync/outbox_session.dart';
 import 'package:provider/provider.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -20,10 +23,23 @@ class _ChallanBookScreenState extends State<ChallanBookScreen> {
   String? _error;
   List<DeliveryChallan> _challans = const [];
 
+  StreamSubscription<void>? _outboxChanges;
+
   @override
   void initState() {
     super.initState();
     _load();
+    // A challan made offline moves from pending to sent (or to needing review)
+    // while this screen is open.
+    _outboxChanges = OutboxSession.instance.changes.listen((_) {
+      if (mounted) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _outboxChanges?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -128,6 +144,10 @@ class _ChallanTile extends StatelessWidget {
                 : '—';
     return GestureDetector(
       onTap: () {
+        if (challan.outboxState != null) {
+          _showOutboxSheet(context, challan);
+          return;
+        }
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => _ChallanPreviewScreen(
             allChallans: allChallans,
@@ -176,7 +196,22 @@ class _ChallanTile extends StatelessWidget {
                       fontSize: 12, color: SoftErpTheme.textSecondary),
                 ),
                 const SizedBox(height: 5),
-                _StatusPill(status: challan.status.name),
+                if (challan.isPendingSync)
+                  const _SyncPill(
+                    key: ValueKey<String>('challan_pending_sync'),
+                    label: 'Pending sync',
+                    bg: Color(0xFFFFF6E9),
+                    fg: Color(0xFF946200),
+                  )
+                else if (challan.hasSyncConflict)
+                  const _SyncPill(
+                    key: ValueKey<String>('challan_sync_conflict'),
+                    label: 'Needs review',
+                    bg: Color(0xFFFDECEC),
+                    fg: Color(0xFF8A2E2E),
+                  )
+                else
+                  _StatusPill(status: challan.status.name),
               ],
             ),
           ],
@@ -247,6 +282,86 @@ class _ChallanPreviewScreenState extends State<_ChallanPreviewScreen> {
       ),
     );
   }
+}
+
+/// What a challan the server does not have yet is waiting on, and — when the
+/// server refused it — the worker's choice of what to do. Never resolved on its
+/// own: a refusal (stock that ran out meanwhile, a rule broken) is a person's
+/// to settle.
+Future<void> _showOutboxSheet(BuildContext context, DeliveryChallan challan) {
+  final engine = OutboxSession.instance.engine;
+  final id = challan.outboxId;
+  return showModalBottomSheet<void>(
+    context: context,
+    builder: (sheet) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              challan.hasSyncConflict ? 'The server did not accept this challan' : 'Saved on this phone',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              challan.hasSyncConflict
+                  ? (challan.outboxError ?? 'It was refused.')
+                  : 'It will be sent, and given its number, as soon as the connection is back.',
+              style: const TextStyle(fontSize: 15, height: 1.4, color: SoftErpTheme.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            if (challan.hasSyncConflict && engine != null && id != null)
+              Row(
+                children: [
+                  TextButton(
+                    key: const ValueKey<String>('outbox_discard'),
+                    onPressed: () async {
+                      await engine.discard(id);
+                      if (sheet.mounted) Navigator.of(sheet).pop();
+                    },
+                    child: const Text('Discard', style: TextStyle(fontSize: 15, color: Color(0xFF8A2E2E))),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    key: const ValueKey<String>('outbox_retry'),
+                    onPressed: () async {
+                      Navigator.of(sheet).pop();
+                      await engine.retry(id);
+                    },
+                    child: const Text('Send again', style: TextStyle(fontSize: 15)),
+                  ),
+                ],
+              )
+            else
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(sheet).pop(),
+                  child: const Text('OK', style: TextStyle(fontSize: 15)),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _SyncPill extends StatelessWidget {
+  const _SyncPill({super.key, required this.label, required this.bg, required this.fg});
+
+  final String label;
+  final Color bg;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+        child: Text(label, style: TextStyle(color: fg, fontSize: 13, fontWeight: FontWeight.w700)),
+      );
 }
 
 class _StatusPill extends StatelessWidget {

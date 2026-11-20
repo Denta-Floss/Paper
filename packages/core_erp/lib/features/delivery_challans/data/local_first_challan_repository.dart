@@ -1,9 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:core_erp/features/delivery_challans/domain/models/cancel_challan_options.dart';
+import 'dart:convert';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../../app/reports/domain/reconciliation_report.dart';
+import '../../../core/sync/outbox.dart';
 import '../../../core/sync/replica_reader.dart';
 import '../domain/challan_template.dart';
 import '../domain/delivery_challan.dart';
@@ -31,11 +34,20 @@ class LocalFirstChallanRepository implements ChallanRepository {
     required ChallanRepository remote,
     required Future<Database?> Function() replica,
     required bool Function() isHydrated,
+    OutboxSyncEngine? Function()? outbox,
   }) : _remote = remote,
-       _reader = ReplicaReader(replica: replica, isHydrated: isHydrated);
+       _reader = ReplicaReader(replica: replica, isHydrated: isHydrated),
+       _outbox = outbox ?? (() => null);
 
   final ChallanRepository _remote;
   final ReplicaReader _reader;
+
+  /// The user's outbox (core/sync/outbox.dart). With one, creating and issuing
+  /// a challan never fails for want of a connection: the write is kept and sent
+  /// later with its own idempotency key, and the challan shows as pending.
+  /// Without one (demo, tests), both go straight to the server as before.
+  final OutboxSyncEngine? Function() _outbox;
+  String? _outboxWarning;
 
   @override
   Future<List<DeliveryChallan>> getChallans({
@@ -58,6 +70,48 @@ class LocalFirstChallanRepository implements ChallanRepository {
         itemId != null ||
         variationLeafNodeId != null ||
         mineOnly;
+    // Challans the server does not have yet lead the list, so a worker sees
+    // what they made offline. Only where nothing but the type narrows it — and
+    // "mine only", since a challan waiting on this device is its user's own:
+    // the other filters are the server's to answer.
+    final onlyType = status == null && search.trim().isEmpty && dateFrom == null && dateTo == null &&
+        orderId == null && itemId == null && variationLeafNodeId == null;
+    final pending = onlyType ? await _pendingChallans(type) : const <DeliveryChallan>[];
+    if (pending.isNotEmpty) {
+      // Offline, the server's part of the list cannot be read — but what is
+      // waiting on this device can, and hiding it behind the error would make
+      // a challan the worker just saved look lost.
+      List<DeliveryChallan> rest;
+      try {
+        rest = await _listWithoutOutbox(
+          type: type, status: status, search: search, dateFrom: dateFrom, dateTo: dateTo,
+          orderId: orderId, itemId: itemId, variationLeafNodeId: variationLeafNodeId, mineOnly: mineOnly,
+          narrowed: narrowed,
+        );
+      } catch (_) {
+        rest = const <DeliveryChallan>[];
+      }
+      return <DeliveryChallan>[...pending, ...rest];
+    }
+    return _listWithoutOutbox(
+      type: type, status: status, search: search, dateFrom: dateFrom, dateTo: dateTo,
+      orderId: orderId, itemId: itemId, variationLeafNodeId: variationLeafNodeId, mineOnly: mineOnly,
+      narrowed: narrowed,
+    );
+  }
+
+  Future<List<DeliveryChallan>> _listWithoutOutbox({
+    ChallanType? type,
+    DeliveryChallanStatus? status,
+    String search = '',
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? orderId,
+    int? itemId,
+    int? variationLeafNodeId,
+    bool mineOnly = false,
+    required bool narrowed,
+  }) async {
     if (narrowed) {
       return _remote.getChallans(
         type: type,
@@ -83,7 +137,7 @@ class LocalFirstChallanRepository implements ChallanRepository {
   }
 
   @override
-  String? get lastWarningMessage => _remote.lastWarningMessage;
+  String? get lastWarningMessage => _outboxWarning ?? _remote.lastWarningMessage;
 
   @override
   Future<void> init() => _remote.init();
@@ -101,7 +155,18 @@ class LocalFirstChallanRepository implements ChallanRepository {
   Future<DeliveryChallan> getChallan(int id) => _remote.getChallan(id);
 
   @override
-  Future<DeliveryChallan> createChallan(DeliveryChallanDraftInput input) => _wrote(_remote.createChallan(input));
+  Future<DeliveryChallan> createChallan(DeliveryChallanDraftInput input) async {
+    final outbox = _outbox();
+    if (outbox == null) return _wrote(_remote.createChallan(input));
+    final entry = await outbox.submit(
+      operationType: 'create_challan',
+      method: 'POST',
+      endpoint: '/api/challans',
+      body: input.toJson(),
+      preview: _previewOf(input),
+    );
+    return _settled(outbox, entry, issued: false);
+  }
 
   @override
   Future<DeliveryChallan> updateChallan(
@@ -110,7 +175,24 @@ class LocalFirstChallanRepository implements ChallanRepository {
   ) => _wrote(_remote.updateChallan(id, input));
 
   @override
-  Future<DeliveryChallan> issueChallan(int id) => _wrote(_remote.issueChallan(id));
+  Future<DeliveryChallan> issueChallan(int id) async {
+    final outbox = _outbox();
+    if (outbox == null) return _wrote(_remote.issueChallan(id));
+    // A challan still in the outbox has a negative id: its issue waits behind
+    // it and goes to whatever id the server gives it.
+    final queued = id < 0 ? await _entryForPendingId(outbox, id) : null;
+    if (id < 0 && queued == null) {
+      throw const ChallanApiException('That challan is no longer waiting to be sent.');
+    }
+    final entry = await outbox.submit(
+      operationType: 'issue_challan',
+      method: 'POST',
+      endpoint: queued == null ? '/api/challans/$id/issue' : '/api/challans/{ref:${queued.id}}/issue',
+      body: const <String, dynamic>{},
+      preview: queued?.preview ?? await _previewOfExisting(id),
+    );
+    return _settled(outbox, entry, issued: true);
+  }
 
   @override
   Future<DeliveryChallan> reconcileChallan(int id, ChallanReconcileInput input) => _wrote(_remote.reconcileChallan(id, input));
@@ -270,4 +352,130 @@ class LocalFirstChallanRepository implements ChallanRepository {
           _reader.wrote(table);
         }
       });
+
+  // --- the outbox --------------------------------------------------------------
+
+  /// The write as the server took it, or the challan as it stands until then.
+  ///
+  /// A refusal while the worker is still on the form is thrown, as it always
+  /// was, and the entry dropped: they are there to correct it. Refusals of
+  /// writes sent later stay in the outbox as conflicts for a person to settle.
+  Future<DeliveryChallan> _settled(OutboxSyncEngine outbox, OutboxEntry entry, {required bool issued}) async {
+    _reader.wrote('local_delivery_challans');
+    _reader.wrote('local_order_items');
+    _reader.wrote('local_materials');
+    _outboxWarning = null;
+    if (entry.status == OutboxStatus.synced) {
+      final answer = entry.serverResponseJson == null ? null : jsonDecode(entry.serverResponseJson!);
+      if (answer is Map) {
+        final payload = answer.cast<String, dynamic>();
+        final warnings = payload['warnings'];
+        if (warnings is List && warnings.isNotEmpty && warnings.first is String) {
+          _outboxWarning = (warnings.first as String).trim();
+        }
+        final data = payload['data'] ?? payload['challan'];
+        if (data is Map) return DeliveryChallan.fromJson(data.cast<String, dynamic>());
+      }
+      throw const ChallanApiException('The server applied this, but its answer was lost. Reload to see it.');
+    }
+    if (entry.status == OutboxStatus.conflict) {
+      await outbox.discard(entry.id);
+      throw ChallanApiException(entry.lastError ?? 'The server refused this.');
+    }
+    return _pendingChallan(entry, issued: issued);
+  }
+
+  Future<OutboxEntry?> _entryForPendingId(OutboxSyncEngine outbox, int id) async {
+    for (final entry in await outbox.store.unsettled(operationType: 'create_challan')) {
+      if (entry.seq == -id) return entry;
+    }
+    return null;
+  }
+
+  /// The challans the outbox holds, as list rows.
+  Future<List<DeliveryChallan>> _pendingChallans(ChallanType? type) async {
+    final outbox = _outbox();
+    if (outbox == null) return const <DeliveryChallan>[];
+    final entries = await outbox.store.unsettled();
+    final issuedFor = <String>{};
+    for (final entry in entries) {
+      final ref = RegExp(r'\{ref:([^}]+)\}').firstMatch(entry.endpoint);
+      if (entry.operationType == 'issue_challan' && ref != null) issuedFor.add(ref.group(1)!);
+    }
+    return entries
+        .where((entry) => entry.operationType == 'create_challan')
+        .map((entry) => _pendingChallan(entry, issued: issuedFor.contains(entry.id)))
+        .where((challan) => type == null || challan.type == type)
+        .toList(growable: false)
+        .reversed
+        .toList(growable: false);
+  }
+
+  static Map<String, dynamic> _previewOf(DeliveryChallanDraftInput input) => <String, dynamic>{
+        'type': input.type.name,
+        'purpose': input.purpose.name,
+        'challanNo': input.challanNo.trim(),
+        'date': input.date.toIso8601String(),
+        'location': input.location,
+        'customerName': input.customerName,
+        'vendorName': input.vendorName,
+        'notes': input.notes,
+        'orderIds': input.orderIds,
+        'orderId': input.orderId,
+        'itemsCount': input.items.length,
+        'maintainStocks': input.maintainStocks,
+      };
+
+  Future<Map<String, dynamic>?> _previewOfExisting(int id) async {
+    final local = await _reader.readOne<DeliveryChallan>(
+      'local_delivery_challans', keyColumn: 'id', key: id, fromJson: DeliveryChallan.fromJson,
+    );
+    if (local == null) return null;
+    return <String, dynamic>{
+      'type': local.type.name, 'purpose': local.purpose.name, 'challanNo': local.challanNo,
+      'date': local.date.toIso8601String(), 'location': local.location,
+      'customerName': local.customerName, 'vendorName': local.vendorName, 'notes': local.notes,
+      'orderIds': local.orderIds, 'orderId': local.orderId ?? 0, 'itemsCount': local.itemsCount,
+      'maintainStocks': local.maintainStocks, 'serverId': local.id,
+    };
+  }
+
+  /// A challan the server does not have yet: a negative id (the outbox entry's
+  /// place in the queue), no number until the server issues one.
+  static DeliveryChallan _pendingChallan(OutboxEntry entry, {required bool issued}) {
+    final p = entry.preview ?? const <String, dynamic>{};
+    final serverId = p['serverId'];
+    final orderIds = (p['orderIds'] as List? ?? const <dynamic>[]).whereType<num>().map((n) => n.toInt()).toList();
+    final typed = '${p['challanNo'] ?? ''}'.trim();
+    return DeliveryChallan(
+      id: serverId is num ? serverId.toInt() : -entry.seq,
+      type: challanTypeFromName('${p['type'] ?? 'delivery'}'),
+      orderId: (p['orderId'] as num?)?.toInt(),
+      orderIds: orderIds,
+      clientId: null,
+      orderNo: '',
+      orderNos: const <String>[],
+      challanNo: typed.isEmpty ? 'Pending upload' : typed,
+      date: DateTime.tryParse('${p['date'] ?? ''}') ?? entry.createdAt,
+      location: '${p['location'] ?? ''}',
+      customerName: '${p['customerName'] ?? ''}',
+      customerGstin: '',
+      vendorId: null,
+      vendorName: '${p['vendorName'] ?? ''}',
+      vendorGstin: '',
+      sourceReference: '',
+      companyProfileSnapshot: null,
+      notes: '${p['notes'] ?? ''}',
+      maintainStocks: p['maintainStocks'] == true,
+      status: issued ? DeliveryChallanStatus.issued : DeliveryChallanStatus.draft,
+      items: const [],
+      itemsCount: (p['itemsCount'] as num?)?.toInt() ?? 0,
+      assets: const [],
+      createdAt: entry.createdAt,
+      updatedAt: entry.createdAt,
+      outboxId: entry.id,
+      outboxState: entry.status == OutboxStatus.conflict ? 'conflict' : 'pending',
+      outboxError: entry.status == OutboxStatus.conflict ? entry.lastError : null,
+    );
+  }
 }

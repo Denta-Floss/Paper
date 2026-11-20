@@ -749,7 +749,29 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     if (!mounted) return;
     setState(() => _isSaving = false);
 
-    if (issued != null) {
+    if (issued != null && issued.isPendingSync) {
+      // No connection: kept on this phone, created and issued when it is back.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.cloud_upload_outlined, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Saved on this phone. It will be sent and numbered when the connection is back.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.amber.shade800,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } else if (issued != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(

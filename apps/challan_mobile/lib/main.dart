@@ -42,6 +42,7 @@ import 'package:core_erp/features/search/presentation/providers/search_provider.
 
 import 'package:core_erp/core/network/conditional_cache_client.dart';
 import 'package:core_erp/core/database/local_database_helper.dart';
+import 'package:core_erp/core/sync/outbox_session.dart';
 import 'package:core_erp/core/sync/replica_session.dart';
 import 'package:core_erp/features/clients/data/repositories/local_first_client_repository.dart';
 import 'package:core_erp/features/delivery_challans/data/local_first_challan_repository.dart';
@@ -673,6 +674,8 @@ class MyApp extends StatelessWidget {
               remote: remote,
               replica: () async => LocalDatabaseHelper.instance.database,
               isHydrated: () => ReplicaSession.instance.isHydrated,
+              // Challans made without a connection are kept and sent later.
+              outbox: () => OutboxSession.instance.engine,
             );
           },
         ),
@@ -880,6 +883,13 @@ class _AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<_AuthGate> {
   String? _lastRefreshToken;
+  StreamSubscription<void>? _outboxChanges;
+
+  @override
+  void dispose() {
+    _outboxChanges?.cancel();
+    super.dispose();
+  }
 
   void _refreshAfterAuthentication(String token) {
     if (_lastRefreshToken == token) return;
@@ -894,6 +904,18 @@ class _AuthGateState extends State<_AuthGate> {
     // change stream; screens read it, and the network when it is behind or
     // not there yet. Opened before the providers load so a warm copy answers
     // their first read.
+    if (!widget.demoMode) {
+      // Writes made without the server, kept until it is back (its own file,
+      // beside the replica: a resync must never touch unsent work).
+      unawaited(OutboxSession.instance.start(
+        client: AuthenticatedHttpClient(tokenResolver: () => auth.token, inner: widget.cache),
+        baseUrl: widget.apiUrl,
+        namespace: namespace,
+      ));
+      _outboxChanges ??= OutboxSession.instance.changes.listen((_) {
+        if (mounted) context.read<DeliveryChallanProvider>().refresh();
+      });
+    }
     final replica = widget.demoMode
         ? Future<void>.value()
         : ReplicaSession.instance.start(

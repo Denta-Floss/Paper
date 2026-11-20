@@ -386,10 +386,25 @@ class DeliveryChallan {
     required this.assets,
     required this.createdAt,
     required this.updatedAt,
+    this.outboxId,
+    this.outboxState,
+    this.outboxError,
   });
 
   final int id;
   final ChallanType type;
+
+  /// Set on a challan made where the server could not be reached and not yet
+  /// accepted by it (core/sync/outbox.dart): its outbox entry, `pending` or
+  /// `conflict`, and the server's reason when refused. Null on every challan
+  /// the server has. A pending challan's [id] is negative and its number is
+  /// not yet issued.
+  final String? outboxId;
+  final String? outboxState;
+  final String? outboxError;
+
+  bool get isPendingSync => outboxState == 'pending';
+  bool get hasSyncConflict => outboxState == 'conflict';
   final ChallanPurpose purpose;
 
   /// Free-text purpose for internal challans; empty for delivery/reception.

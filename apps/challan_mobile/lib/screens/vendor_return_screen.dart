@@ -162,8 +162,13 @@ class _VendorReturnScreenState extends State<VendorReturnScreen> {
       );
       return;
     }
-    showAppToast(context, 'Sheet returned to $_vendorName (${issued.challanNo}).',
-        kind: AppToastKind.success);
+    showAppToast(
+      context,
+      issued.isPendingSync
+          ? 'Return to $_vendorName saved on this phone; it will be sent when the connection is back.'
+          : 'Sheet returned to $_vendorName (${issued.challanNo}).',
+      kind: AppToastKind.success,
+    );
     Navigator.of(context).pop();
   }
 

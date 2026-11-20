@@ -14,6 +14,7 @@ import 'dart:async';
 
 import 'package:core_erp/core/database/local_database_helper.dart';
 import 'package:core_erp/core/sync/replica_sync_service.dart';
+import 'package:core_erp/core/sync/outbox_session.dart';
 import 'package:core_erp/core/sync/replica_session.dart';
 import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/local_first_client_repository.dart';
@@ -1036,6 +1037,8 @@ class MyApp extends StatelessWidget {
       remote: remote,
       replica: () async => LocalDatabaseHelper.instance.database,
       isHydrated: () => _replicaSync?.isHydrated ?? false,
+      // Challans made without a connection are kept and sent later.
+      outbox: () => OutboxSession.instance.engine,
     );
   }
 
@@ -1129,6 +1132,14 @@ class _AuthGateState extends State<_AuthGate> {
     _httpCache.namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
     // Opened before the providers load, so a warm replica answers their first
     // read instead of the network.
+    if (!widget.isDemoMode) {
+      // Writes made without the server, kept until it is back.
+      unawaited(OutboxSession.instance.start(
+        client: AuthenticatedHttpClient(tokenResolver: () => auth.token, inner: _httpCache),
+        baseUrl: _apiBaseUrl,
+        namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+      ));
+    }
     final replica = widget.isDemoMode
         ? Future<void>.value()
         : startReplicaSync(
