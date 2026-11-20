@@ -25,21 +25,8 @@ function createSchemaProps(deps, api) {
     return (await desk.ask('inventory.materials.firstForGroup', { groupId: normalizedGroupId })).row;
   }
 
-  async function getItemPropertySchema(itemId) {
-    const normalizedItemId = Number(itemId);
-    if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
-      return [];
-    }
-    const rows = await all(
-      `
-      SELECT *
-      FROM item_property_schema
-      WHERE item_id = ?
-      ORDER BY sort_order ASC, id ASC
-      `,
-      [normalizedItemId],
-    );
-    return rows.map((row) => ({
+  function propertySchemaFromRow(row) {
+    return {
       propertyKey: row.property_key || '',
       displayName: row.display_name || '',
       inputType: row.input_type || 'Text',
@@ -54,7 +41,40 @@ function createSchemaProps(deps, api) {
         .map((entry) => Number(entry))
         .filter((entry) => Number.isInteger(entry) && entry > 0),
       sortOrder: Number(row.sort_order || 0),
-    }));
+    };
+  }
+
+  async function getItemPropertySchema(itemId) {
+    const normalizedItemId = Number(itemId);
+    if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
+      return [];
+    }
+    const rows = await all(
+      `
+      SELECT *
+      FROM item_property_schema
+      WHERE item_id = ?
+      ORDER BY sort_order ASC, id ASC
+      `,
+      [normalizedItemId],
+    );
+    return rows.map(propertySchemaFromRow);
+  }
+
+  /// Many items' schemas in one query, keyed by item id, each in the order
+  /// getItemPropertySchema gives it.
+  async function getItemPropertySchemas(itemIds) {
+    const byItem = new Map(itemIds.map((id) => [id, []]));
+    for (let i = 0; i < itemIds.length; i += 500) {
+      const chunk = itemIds.slice(i, i + 500);
+      const rows = await all(
+        `SELECT * FROM item_property_schema WHERE item_id IN (${chunk.map(() => '?').join(',')})
+         ORDER BY item_id ASC, sort_order ASC, id ASC`,
+        chunk,
+      );
+      for (const row of rows) byItem.get(row.item_id)?.push(propertySchemaFromRow(row));
+    }
+    return byItem;
   }
 
   async function persistItemPropertySchema(itemId, propertySchema, now = new Date().toISOString()) {
@@ -220,7 +240,7 @@ function createSchemaProps(deps, api) {
     };
   }
 
-  return { getGroupMaterialRowByGroupId, getItemPropertySchema, persistItemPropertySchema, getEffectiveSchema };
+  return { getGroupMaterialRowByGroupId, getItemPropertySchema, getItemPropertySchemas, persistItemPropertySchema, getEffectiveSchema };
 }
 
 module.exports = { createSchemaProps };

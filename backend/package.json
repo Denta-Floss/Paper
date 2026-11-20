@@ -10,6 +10,7 @@
     "seed:demo": "node ./scripts/reseed-demo-data.js",
     "smoke": "node ./scripts/smoke-check.js",
     "journey": "node ./journey/run.js",
+    "bench:network": "node ./test/benchmarks/network-throttle.js",
     "check:delivery-challans": "node ./scripts/check-delivery-challan-routes.js",
     "backup:sqlite": "node ./scripts/backup-sqlite.js",
     "restore:sqlite": "node ./scripts/restore-sqlite.js",

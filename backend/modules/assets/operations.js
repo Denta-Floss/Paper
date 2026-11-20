@@ -10,6 +10,27 @@ const F = require('../../kernel/fields');
 
 module.exports = function assetOperations({ get, all, run }) {
   return {
+    'assets.forEntities': {
+      internal: true,
+      summary: 'The uploaded files attached to many records of one kind, each record\'s oldest first — a list asks once instead of once a row.',
+      input: { fields: { entityType: F.text, entityIds: F.list(F.int) } },
+      output: { fields: { rows: { type: 'array', required: true } } },
+      run: async (input) => {
+        const ids = [...new Set((input.entityIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+        const rows = [];
+        for (let i = 0; i < ids.length; i += 500) {
+          const chunk = ids.slice(i, i + 500);
+          rows.push(...await all(
+            `SELECT * FROM uploaded_assets
+             WHERE entity_type = ? AND entity_id IN (${chunk.map(() => '?').join(',')}) AND status = 'uploaded'
+             ORDER BY entity_id ASC, created_at ASC`,
+            [input.entityType, ...chunk],
+          ));
+        }
+        return { ok: true, rows };
+      },
+    },
+
     'assets.forEntity': {
       internal: true,
       summary: 'The uploaded files attached to a record, oldest first.',

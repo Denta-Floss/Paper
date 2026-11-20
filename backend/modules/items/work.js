@@ -41,6 +41,7 @@ function createItemsWork({
   saveItem,
   saveGroup,
   rowToItemDto,
+  rowsToItemDtos,
   rowToGroupDto,
   getItemsWithUsage,
   getGroupsWithUsage,
@@ -353,7 +354,7 @@ function createItemsWork({
   async function listItems(req) {
     try {
       const rows = await getItemsWithUsage();
-      const items = (await Promise.all(rows.map(rowToItemDto))).map((item) => {
+      const items = (await rowsToItemDtos(rows)).map((item) => {
         const { attachments, cadFileKey, cadFileName, ...rest } = item;
         return {
           ...rest,

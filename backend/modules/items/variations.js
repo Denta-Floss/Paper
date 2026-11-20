@@ -10,6 +10,13 @@
 
 const { activeTopLevelVariationProperties, activeValueSelectionForLeaf, buildVariationPathLabel, findVariationNodeById, variationPathLabelForNodeIds } = require('./variation-tree');
 
+// SQLite allows 999 bound parameters; lists go in slices well under it.
+function chunked(ids, size = 500) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
 function createVariations(deps, api) {
   const { all, get, normalizeCustomVariationValues, run } = deps;
   const getItemRowById = (...args) => api.getItemRowById(...args);
@@ -27,7 +34,35 @@ function createVariations(deps, api) {
   }
 
   async function getItemVariationTree(itemId) {
-    const rows = await getItemVariationNodeRows(itemId);
+    return buildVariationTree(await getItemVariationNodeRows(itemId));
+  }
+
+  /// The trees of many items in one query, keyed by item id — the list's way
+  /// in. Each item's rows arrive in the order the one-item query gives them, so
+  /// every tree is built exactly as getItemVariationTree builds it.
+  async function getItemVariationTrees(itemIds) {
+    const byItem = new Map();
+    for (const chunk of chunked(itemIds)) {
+      const rows = await all(
+        `
+        SELECT *
+        FROM item_variation_nodes
+        WHERE item_id IN (${chunk.map(() => '?').join(',')}) AND is_archived = 0
+        ORDER BY item_id ASC, parent_node_id ASC, position ASC, LOWER(name) ASC
+        `,
+        chunk,
+      );
+      for (const row of rows) {
+        if (!byItem.has(row.item_id)) byItem.set(row.item_id, []);
+        byItem.get(row.item_id).push(row);
+      }
+    }
+    const trees = new Map();
+    for (const id of itemIds) trees.set(id, buildVariationTree(byItem.get(id) || []));
+    return trees;
+  }
+
+  function buildVariationTree(rows) {
     const rowMap = new Map();
     for (const row of rows) {
       rowMap.set(row.id, {
@@ -338,7 +373,7 @@ function createVariations(deps, api) {
     };
   }
 
-  return { getItemVariationNodeRows, getItemVariationTree, resolveLeafSelectionFromDb, itemHoldsWholeItemStock, assertValidStockVariationLeaf, applyVariationStockDelta, resolveOrderVariationSelection };
+  return { getItemVariationNodeRows, getItemVariationTree, getItemVariationTrees, resolveLeafSelectionFromDb, itemHoldsWholeItemStock, assertValidStockVariationLeaf, applyVariationStockDelta, resolveOrderVariationSelection };
 }
 
 module.exports = { createVariations };

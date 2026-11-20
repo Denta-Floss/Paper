@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c83["⟳ Change 83: a retried write applies once — X-Idempotency-Key, marked inside the write's own transaction"]
+      c84["⟳ Change 84: the wire measured under a modelled 1 Mbps link; the benchmark found the server slow at size, and it was fixed"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -69,10 +69,14 @@ mindmap
       w19["B45: server in SharedPreferences, Change server; OfflineUnlock (secure storage, salted hash, bound to server) only when unreachable"]
         w19a["ConditionalCacheClient serves its stored copy, marked stale, when a GET cannot reach the server; never over an answer"]
         w19b["ReplicaSession catches up whenever SocketService.streamLive comes up; catchUp: false for an offline start"]
+      w20["⟳ benchmark: throttle-proxy (bandwidth, RTT, handshake, slow start, loss) + network-throttle.js, 50 runs, SLOs asserted, report in Docs/benchmarks"]
+        w20a["⟳ 1 Mbps: first launch 1.32 s, relaunch 0.85 s, lists 0.25 s; the August pattern 23.3 s"]
+        w20b["⟳ B46-B48: items list 7 queries per part + 4 missing indexes, challan list 5 per row; batched, 444 to 13 ms and 96 to 3 ms"]
+        w20c["⟳ Server-Timing: db (kernel/db-timing.js) separates time in SQLite from JavaScript; server times move with host load"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
-      k20["⟳ idempotency.js: X-Idempotency-Key per user for a day; replay, 422 reused, 409 in progress / applied / unknown"]
-        k20a["⟳ run() calls beforeCommit() on every COMMIT: the key is marked inside the write's own transaction, all 61 transaction sites, none changed"]
+      k20["idempotency.js: X-Idempotency-Key per user for a day; replay, 422 reused, 409 in progress / applied / unknown"]
+        k20a["run() calls beforeCommit() on every COMMIT: the key is marked inside the write's own transaction, all 61 transaction sites, none changed"]
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
       k2["territory.js: meters routes and tables per module"]
       k3["contracts.js, barcodes.js, event-logger.js"]
@@ -735,3 +739,4 @@ mindmap
 | 81 | Step 7 finished. Backend `realtime/routes.js`: bootstrap `?tables=`. Core: `replica_session.dart` (`ReplicaSession.start`, `lastSyncedAt`), `ReplicaCatchUp.inScope`, `ReplicaSyncService(tables:)`, `ReplicaApi.fetchBootstrap(tables:)`, `SocketService.streamLive`. Desktop `lib/main.dart`: `startReplicaSync` delegates to the session; first load awaits it (3 s). Phone `main.dart`: eight local-first repositories, `kPhoneReplicaTables`, session at sign-in, first load awaits it; `widgets/offline_banner.dart`. Tests: bootstrap subset, scoped catch-up, three banner tests. | Backend, App, Mobile, Tests |
 | 82 | B44, B45. Core: `AuthUser.toJson` (no PIN), `AuthProvider.clearError/signInOffline/isOffline/lastFailureWasUnreachable` and a 10 s PIN-login timeout; `ConditionalCacheClient` stale fallback (`x-paper-cache: stale`, `staleServed`); `ReplicaSession` `catchUp:` and a `streamLive` listener. Phone: `services/offline_unlock.dart`, `NetworkDiscoveryService` remembers/forgets the server, `PasscodeScreen` inline error + Try again + Change server + offline fallback (scrolls on short screens), `_AuthGate` without the error page, `crypto` dependency. Tests: offline_unlock (5), passcode_offline (6), server_memory (4), cache stale (4). | Core, Mobile, Tests |
 | 83 | Stage 2f Track 2, server. `kernel/idempotency.js` (middleware, `beforeCommit`, `recover`, `prune`, schema); `server.js`: `rawRun` + a `run` that calls `idempotency.beforeCommit()` before COMMIT/END, the middleware after the permission checks on `/api`, `recover()` at boot and an hourly prune; `modules/kernel/schema.js` creates `idempotency_log`; registry kernel table. `test/idempotency.test.js` (12). | Kernel, Tests |
+| 84 | Stage 2f Track 1. `backend/test/benchmarks/{throttle-proxy,network-throttle}.js`, `test/throttle-proxy.test.js`, `npm run bench:network`, `Docs/benchmarks/2026-11-constrained-network-results.md`. Fixes it drove: `items/dto.js` (`RELATED` queries shared by one-part and list reads, `preloadRelated`, `rowsToItemDtos`), `variations.js` `getItemVariationTrees`, `schema-props.js` `getItemPropertySchemas`, `challans/service.js` `preloadChallanSummaries`/`rowsToDeliveryChallanSummaries`, `assets.forEntities`; indexes on order_items, delivery_challan_items, order_material_requirements (item_id), item_variation_nodes, item_property_schema. `kernel/db-timing.js` + `run/get/all` instrumented. Tests: `challan-list-batch.test.js`, stronger `wire-weight.test.js`. | Backend, Kernel, Tests, Docs |

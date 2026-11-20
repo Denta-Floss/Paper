@@ -594,8 +594,46 @@ test('an item in the list is the item in full, less what only the detail reads',
   }).then((r) => r.json());
   const id = (made.item || made).id;
 
+  // Every table the list reads per part, so batching those reads (one query per
+  // table for the whole list) is checked against the one-part read for each.
+  // Two machines share a name: the order must not depend on which query ran.
+  const now = new Date().toISOString();
+  const other = await ctx.backend.get('SELECT id FROM units WHERE id != ? AND is_archived = 0 ORDER BY id LIMIT 1', [unit.id]);
+  await ctx.backend.run('INSERT INTO item_unit_conversions (item_id, unit_id, factor_to_primary, created_at, updated_at) VALUES (?, ?, 10, ?, ?)', [id, other.id, now, now]);
+  await ctx.backend.run(
+    "INSERT INTO item_attachments (item_id, label, object_key, file_name, position, created_at, updated_at) VALUES (?, 'Drawing', 'att/1.pdf', 'd.pdf', 0, ?, ?)",
+    [id, now, now],
+  );
+  await ctx.backend.run(
+    `INSERT INTO item_property_schema (item_id, property_key, display_name, input_type, sort_order, created_at, updated_at)
+     VALUES (?, 'coating', 'Coating', 'Text', 5, ?, ?)`,
+    [id, now, now],
+  );
+  for (const assetId of ['WL-M1', 'WL-M2']) {
+    const machine = await fetch(`${ctx.baseUrl}/api/machines`, {
+      method: 'POST', headers: ctx.headers,
+      body: JSON.stringify({ name: 'Same Press', assetId, status: 'operational' }),
+    }).then((r) => r.json());
+    await ctx.backend.run('INSERT INTO item_machines (item_id, machine_id, created_at) VALUES (?, ?, ?)',
+      [id, (machine.machine || machine).id, now]);
+  }
+  const die = await fetch(`${ctx.baseUrl}/api/dies`, {
+    method: 'POST', headers: ctx.headers,
+    body: JSON.stringify({ toolCode: 'WL-D1', status: 'active', ownership: 'owned' }),
+  }).then((r) => r.json());
+  await ctx.backend.run('INSERT INTO item_dies (item_id, die_id, created_at) VALUES (?, ?, ?)', [id, (die.die || die).id, now]);
+  const combo = await ctx.backend.run(
+    "INSERT INTO groups (name, group_type, group_structure, is_archived, created_at, updated_at) VALUES ('Wire Combo', 'item', 'combination', 0, ?, ?)",
+    [now, now],
+  );
+  await ctx.backend.run('INSERT INTO group_item_memberships (group_id, item_id, sort_order, created_at, updated_at) VALUES (?, ?, 0, ?, ?)', [combo.lastID, id, now, now]);
+
   const list = await (await fetch(`${ctx.baseUrl}/api/items`, { headers: ctx.headers })).json();
   const row = list.items.find((entry) => entry.id === id);
+  assert.equal(row.machines.length, 2);
+  assert.equal(row.unitConversions.length, 1);
+  assert.equal(row.combinationGroupIds.length, 1);
+  assert.equal(row.propertySchema.length, 2);
   const detail = await (await fetch(`${ctx.baseUrl}/api/items/${id}`, { headers: ctx.headers })).json();
   const full = detail.item || detail.data;
 
@@ -629,6 +667,15 @@ test('an item in the list is the item in full, less what only the detail reads',
   assert.equal(property.children[0].parentNodeId, property.id, 'leaf-to-root walks read it');
   assert.equal(property.children[0].displayName, 'Zinc plated');
   for (const key of DROPPED) assert.ok(key in full.variationTree[0], `the detail keeps ${key}`);
+
+  // And every other part in the list is its detail row too.
+  for (const listed of list.items) {
+    const one = await (await fetch(`${ctx.baseUrl}/api/items/${listed.id}`, { headers: ctx.headers })).json();
+    const each = one.item || one.data;
+    const { attachments: _a, cadFileKey: k, cadFileName: n, ...eachRest } = each;
+    const expected = { ...eachRest, ...(k ? { cadFileKey: k, cadFileName: n } : {}), variationTree: each.variationTree.map(withoutDropped) };
+    assert.deepEqual(listed, expected, `part ${listed.id} in the list is its detail row`);
+  }
 });
 
 test('a part with a CAD file keeps it on the list, where the detail panel shows it', async (t) => {

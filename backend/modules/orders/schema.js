@@ -164,6 +164,10 @@ async function createSchema({ run, all }) {
   `);
 
   await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_order_id ON order_material_requirements(order_id)');
+  // The item list counts each part's order lines and requirements; without
+  // these every count scanned its table, once per part.
+  await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_item_id ON order_material_requirements(item_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_order_items_item_id ON order_items(item_id)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode)');
 

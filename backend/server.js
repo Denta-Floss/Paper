@@ -125,6 +125,9 @@ try {
 }
 
 const app = express();
+// First, so a request's whole stay is inside it: how long it spent in SQLite,
+// as Server-Timing, when PAPER_DB_TIMING=1 (kernel/db-timing.js).
+app.use(require('./kernel/db-timing').middleware);
 // The kernel desk: every module's operations, asked for by name from a
 // terminal, an HTTP route or another module (kernel/desk.js). A signed-in
 // caller is checked with the same hasPermission the HTTP border uses.
@@ -355,6 +358,7 @@ desk.register('challans', {
   uses: [
     // A challan's photos and documents.
     'assets.forEntity',
+    'assets.forEntities',
     'assets.attachUploaded',
     'assets.sessionEntity',
     'units.ensureKilogram',
@@ -1152,15 +1156,18 @@ app.use((req, res, next) => {
   next();
 });
 
+const dbTiming = require('./kernel/db-timing');
+
 function rawRun(sql, params = []) {
   return new Promise((resolve, reject) => {
-    db.run(sql, params, function onRun(error) {
+    dbTiming.timed((done) => db.run(sql, params, function onRun(error) {
+      done();
       if (error) {
         reject(error);
         return;
       }
       resolve(this);
-    });
+    }));
   });
 }
 
@@ -1190,13 +1197,14 @@ function runOnDelete(sql, params = []) {
 
 function get(sql, params = []) {
   return new Promise((resolve, reject) => {
-    db.get(sql, params, (error, row) => {
+    dbTiming.timed((done) => db.get(sql, params, (error, row) => {
+      done();
       if (error) {
         reject(error);
         return;
       }
       resolve(row);
-    });
+    }));
   });
 }
 
@@ -1207,13 +1215,14 @@ const idempotency = require('./kernel/idempotency').createIdempotency({
 
 function all(sql, params = []) {
   return new Promise((resolve, reject) => {
-    db.all(sql, params, (error, rows) => {
+    dbTiming.timed((done) => db.all(sql, params, (error, rows) => {
+      done();
       if (error) {
         reject(error);
         return;
       }
       resolve(rows);
-    });
+    }));
   });
 }
 
@@ -2932,6 +2941,7 @@ const {
   resolveOrderVariationSelection,
   rowToGroupDto,
   rowToItemDto,
+  rowsToItemDtos,
   getGroupRowById,
   getItemRowById,
   getItemsWithUsage,
@@ -10667,6 +10677,7 @@ desk.register('items', {
       saveItem,
       saveGroup,
       rowToItemDto,
+      rowsToItemDtos,
       rowToGroupDto,
       getItemsWithUsage,
       getGroupsWithUsage,
@@ -11776,6 +11787,8 @@ app.use((error, req, res, _next) => {
 module.exports = {
   desk,
   idempotency,
+  rowToDeliveryChallanDto,
+  rowsToItemDtos,
   resyncChangelogCursor,
   drainChangelog,
   pruneChangelog,

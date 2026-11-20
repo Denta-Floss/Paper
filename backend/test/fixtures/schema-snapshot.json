@@ -104,6 +104,12 @@
     },
     {
       "type": "index",
+      "name": "idx_delivery_challan_items_item_id",
+      "table": "delivery_challan_items",
+      "sql": "CREATE INDEX idx_delivery_challan_items_item_id ON delivery_challan_items(item_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_delivery_challan_items_lot",
       "table": "delivery_challan_items",
       "sql": "CREATE INDEX idx_delivery_challan_items_lot ON delivery_challan_items(lot_code)"
@@ -386,9 +392,21 @@
     },
     {
       "type": "index",
+      "name": "idx_item_property_schema_item_order",
+      "table": "item_property_schema",
+      "sql": "CREATE INDEX idx_item_property_schema_item_order ON item_property_schema(item_id, sort_order, id)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_unit_conversions_item_id",
       "table": "item_unit_conversions",
       "sql": "CREATE INDEX idx_item_unit_conversions_item_id ON item_unit_conversions(item_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_item_variation_nodes_item",
+      "table": "item_variation_nodes",
+      "sql": "CREATE INDEX idx_item_variation_nodes_item ON item_variation_nodes(item_id, is_archived, parent_node_id, position)"
     },
     {
       "type": "index",
@@ -500,9 +518,21 @@
     },
     {
       "type": "index",
+      "name": "idx_order_items_item_id",
+      "table": "order_items",
+      "sql": "CREATE INDEX idx_order_items_item_id ON order_items(item_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_order_material_allocations_order_id",
       "table": "order_material_allocations",
       "sql": "CREATE INDEX idx_order_material_allocations_order_id ON order_material_allocations(order_id, id ASC)"
+    },
+    {
+      "type": "index",
+      "name": "idx_order_material_requirements_item_id",
+      "table": "order_material_requirements",
+      "sql": "CREATE INDEX idx_order_material_requirements_item_id ON order_material_requirements(item_id)"
     },
     {
       "type": "index",
@@ -2350,6 +2380,12 @@
     },
     {
       "type": "index",
+      "name": "idx_delivery_challan_items_item_id",
+      "table": "delivery_challan_items",
+      "sql": "CREATE INDEX idx_delivery_challan_items_item_id ON delivery_challan_items(item_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_delivery_challan_items_order_item_id",
       "table": "delivery_challan_items",
       "sql": "CREATE INDEX idx_delivery_challan_items_order_item_id ON delivery_challan_items(order_item_id)"
@@ -2548,9 +2584,21 @@
     },
     {
       "type": "index",
+      "name": "idx_item_property_schema_item_order",
+      "table": "item_property_schema",
+      "sql": "CREATE INDEX idx_item_property_schema_item_order ON item_property_schema(item_id, sort_order, id)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_unit_conversions_item_id",
       "table": "item_unit_conversions",
       "sql": "CREATE INDEX idx_item_unit_conversions_item_id ON item_unit_conversions(item_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_item_variation_nodes_item",
+      "table": "item_variation_nodes",
+      "sql": "CREATE INDEX idx_item_variation_nodes_item ON item_variation_nodes(item_id, is_archived, parent_node_id, position)"
     },
     {
       "type": "index",
@@ -2593,6 +2641,18 @@
       "name": "idx_order_activity_log_order_id_created_at",
       "table": "order_activity_log",
       "sql": "CREATE INDEX idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)"
+    },
+    {
+      "type": "index",
+      "name": "idx_order_items_item_id",
+      "table": "order_items",
+      "sql": "CREATE INDEX idx_order_items_item_id ON order_items(item_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_order_material_requirements_item_id",
+      "table": "order_material_requirements",
+      "sql": "CREATE INDEX idx_order_material_requirements_item_id ON order_material_requirements(item_id)"
     },
     {
       "type": "index",

@@ -206,6 +206,9 @@ async function createSchema({ run, all, get }) {
   // order_item_id is joined on by the fulfilment rollup and the delivered
   // totals, and was previously unindexed.
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_order_item_id ON delivery_challan_items(order_item_id)');
+  // The item list counts each part's challan lines; without this every count
+  // scanned the table, once per part (Docs/benchmarks/2026-11-constrained-network-results.md).
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_item_id ON delivery_challan_items(item_id)');
 
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
 

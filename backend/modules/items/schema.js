@@ -118,6 +118,12 @@ async function createSchema({ run, all, get }) {
   await run(
     'CREATE INDEX IF NOT EXISTS idx_item_property_schema_item_id ON item_property_schema(item_id)',
   );
+  // In the order every read asks for, so a part's schema — or the whole list's
+  // (Docs/benchmarks/2026-11-constrained-network-results.md) — is read off the
+  // index without a sort.
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_property_schema_item_order ON item_property_schema(item_id, sort_order, id)',
+  );
 
   await run(`
     CREATE TABLE IF NOT EXISTS item_bom_lines (
@@ -196,6 +202,12 @@ async function createSchema({ run, all, get }) {
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
 
   await ensureColumnExists('item_variation_nodes', 'name_join', "TEXT NOT NULL DEFAULT ''");
+  // Every read of a part's tree is by item_id, and there was no index on it:
+  // opening one part scanned every node of every part, and the item list
+  // scanned and sorted them all.
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_variation_nodes_item ON item_variation_nodes(item_id, is_archived, parent_node_id, position)',
+  );
 
   await ensureColumnExists('item_variation_nodes', 'input_type', "TEXT NOT NULL DEFAULT 'Text'");
 

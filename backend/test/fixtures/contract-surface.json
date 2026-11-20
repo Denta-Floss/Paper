@@ -365,6 +365,35 @@
       ]
     },
     {
+      "name": "assets.forEntities",
+      "module": "assets",
+      "permission": null,
+      "internal": true,
+      "mode": "enforce",
+      "joinsCallerTransaction": false,
+      "summary": "The uploaded files attached to many records of one kind, each record's oldest first — a list asks once instead of once a row.",
+      "input": {
+        "entityType": {
+          "type": "string"
+        },
+        "entityIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": {
+        "rows": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "usedBy": [
+        "challans"
+      ]
+    },
+    {
       "name": "assets.forEntity",
       "module": "assets",
       "permission": null,
@@ -12087,6 +12116,7 @@
     ],
     "challans": [
       "assets.attachUploaded",
+      "assets.forEntities",
       "assets.forEntity",
       "assets.sessionEntity",
       "clients.rows.get",

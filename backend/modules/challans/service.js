@@ -157,8 +157,8 @@ function createChallanService({
       .filter(Boolean);
   }
 
-  async function effectiveReportGroupCodesForChallan(row, orderIds = null) {
-    const explicitCodes = await getDeliveryChallanReportGroupCodes(row.id);
+  async function effectiveReportGroupCodesForChallan(row, orderIds = null, explicit = null) {
+    const explicitCodes = explicit || await getDeliveryChallanReportGroupCodes(row.id);
     if (normalizeChallanType(row.type) !== 'delivery') {
       return explicitCodes;
     }
@@ -246,7 +246,66 @@ function createChallanService({
     };
   }
 
-  async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
+  /// What a page of challan summaries reads from other tables, once for the
+  /// whole page rather than five times a row (71 ms for 150 challans;
+  /// Docs/benchmarks/2026-11-constrained-network-results.md). Each piece in the
+  /// order the one-challan reads give it.
+  async function preloadChallanSummaries(rows) {
+    const ids = rows.map((row) => row.id);
+    const slices = [];
+    for (let i = 0; i < ids.length; i += 500) slices.push(ids.slice(i, i + 500));
+    const marks = (chunk) => chunk.map(() => '?').join(',');
+    const agg = new Map();
+    const orderIds = new Map(ids.map((id) => [id, []]));
+    const codes = new Map(ids.map((id) => [id, []]));
+    for (const chunk of slices) {
+      for (const entry of await all(
+        `SELECT challan_id, COUNT(*) AS lineCount,
+                COALESCE(SUM(quantity_pcs), 0) AS totalQty,
+                COALESCE(SUM(weight), 0) AS totalWeight
+         FROM delivery_challan_items WHERE challan_id IN (${marks(chunk)}) GROUP BY challan_id`,
+        chunk,
+      )) agg.set(entry.challan_id, entry);
+      for (const entry of await all(
+        `SELECT challan_id, order_id FROM delivery_challan_order_items
+         WHERE challan_id IN (${marks(chunk)}) ORDER BY challan_id ASC, order_id ASC`,
+        chunk,
+      )) {
+        const id = Number(entry.order_id || 0);
+        if (Number.isInteger(id) && id > 0) orderIds.get(entry.challan_id).push(id);
+      }
+      for (const entry of await all(
+        `SELECT challan_id, report_group_code FROM delivery_challan_report_groups
+         WHERE challan_id IN (${marks(chunk)}) ORDER BY challan_id ASC, report_group_code ASC`,
+        chunk,
+      )) {
+        const code = normalizeReportGroupCode(entry.report_group_code);
+        if (code) codes.get(entry.challan_id).push(code);
+      }
+    }
+    // The fallback a challan with no links takes: its own order_id.
+    for (const row of rows) {
+      if (!orderIds.get(row.id).length && Number(row.order_id || 0) > 0) orderIds.set(row.id, [Number(row.order_id)]);
+    }
+    // Every order once; a challan's are picked out of the answer in its order
+    // (orders answer `created_at DESC, id DESC`, a total order, so a subset
+    // keeps the order a per-challan ask would give).
+    const orders = await getOrderRowsByIds([...new Set([...orderIds.values()].flat())]);
+    const { rows: assetRows } = await desk.ask('assets.forEntities', { entityType: 'delivery_challan', entityIds: ids });
+    const assets = new Map(ids.map((id) => [id, []]));
+    for (const asset of assetRows) assets.get(Number(asset.entity_id))?.push(asset);
+    return { agg, orderIds, codes, orders, assets };
+  }
+
+  /// A page of challans as list rows, each exactly what
+  /// rowToDeliveryChallanDto(row, { includeItems: false }) gives.
+  async function rowsToDeliveryChallanSummaries(rows) {
+    if (!rows.length) return [];
+    const preloaded = await preloadChallanSummaries(rows);
+    return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row, { includeItems: false, preloaded })));
+  }
+
+  async function rowToDeliveryChallanDto(row, { includeItems = true, preloaded = null } = {}) {
     const items = includeItems ? await getDeliveryChallanItems(row.id) : [];
   
     // Aggregates, so a list row can say something useful without carrying every
@@ -270,23 +329,27 @@ function createChallanService({
       );
       totalWeight = items.reduce((sum, item) => sum + Number(item.weight || 0), 0);
     } else {
-      const agg = await get(
-        `SELECT COUNT(*) AS lineCount,
-                COALESCE(SUM(quantity_pcs), 0) AS totalQty,
-                COALESCE(SUM(weight), 0) AS totalWeight
-         FROM delivery_challan_items WHERE challan_id = ?`,
-        [row.id],
-      );
+      const agg = preloaded
+        ? preloaded.agg.get(row.id)
+        : await get(
+          `SELECT COUNT(*) AS lineCount,
+                  COALESCE(SUM(quantity_pcs), 0) AS totalQty,
+                  COALESCE(SUM(weight), 0) AS totalWeight
+           FROM delivery_challan_items WHERE challan_id = ?`,
+          [row.id],
+        );
       lineCount = Number(agg?.lineCount || 0);
       totalQty = Number(agg?.totalQty || 0);
       totalWeight = Number(agg?.totalWeight || 0);
     }
 
-    let orderIds = await getDeliveryChallanOrderIds(row.id);
+    let orderIds = preloaded ? preloaded.orderIds.get(row.id) || [] : await getDeliveryChallanOrderIds(row.id);
     if (orderIds.length === 0 && Number(row.order_id || 0) > 0) {
       orderIds = [Number(row.order_id || 0)];
     }
-    const orderRows = await getOrderRowsByIds(orderIds);
+    const orderRows = preloaded
+      ? preloaded.orders.filter((order) => orderIds.includes(Number(order.id)))
+      : await getOrderRowsByIds(orderIds);
     const orderNos = [
       ...new Set(
         orderRows
@@ -298,9 +361,12 @@ function createChallanService({
     const reportGroupCodes = await effectiveReportGroupCodesForChallan(
       row,
       orderIds,
+      preloaded ? preloaded.codes.get(row.id) || [] : null,
     );
-  
-    const { rows: assetRows } = await desk.ask('assets.forEntity', { entityType: 'delivery_challan', entityId: row.id });
+
+    const { rows: assetRows } = preloaded
+      ? { rows: preloaded.assets.get(row.id) || [] }
+      : await desk.ask('assets.forEntity', { entityType: 'delivery_challan', entityId: row.id });
     const assets = await Promise.all(assetRows.map(rowToUploadedAssetDto));
 
     const dto = {
@@ -668,7 +734,7 @@ function createChallanService({
       `,
       params,
     );
-    return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row, { includeItems: false })));
+    return rowsToDeliveryChallanSummaries(rows);
   }
 
   /// Order lines with their client's GST number on each, as the challan prints

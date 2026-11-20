@@ -14,6 +14,8 @@ function createDto(deps, api) {
   const developedForDto = (...args) => api.developedForDto(...args);
   const getItemPropertySchema = (...args) => api.getItemPropertySchema(...args);
   const getItemVariationTree = (...args) => api.getItemVariationTree(...args);
+  const getItemVariationTrees = (...args) => api.getItemVariationTrees(...args);
+  const getItemPropertySchemas = (...args) => api.getItemPropertySchemas(...args);
 
   function rowToGroupDto(row) {
     if (!row) {
@@ -44,74 +46,117 @@ function createDto(deps, api) {
     };
   }
 
-  async function rowToItemDto(row) {
+  // What an item's DTO reads from other tables, one query each. Written once
+  // and run two ways: for one item (`item_id = ?`), and for a whole list
+  // (`item_id IN (...)`, grouped by item) — so the two cannot drift. The
+  // tie-breaks make the order total, so a list row and its detail row agree
+  // even where two names are equal.
+  const RELATED = {
+    unitConversions: {
+      sql: (where) => `
+        SELECT item_unit_conversions.item_id,
+               item_unit_conversions.unit_id,
+               item_unit_conversions.factor_to_primary,
+               units.name AS unit_name,
+               units.symbol AS unit_symbol
+        FROM item_unit_conversions
+        INNER JOIN units ON units.id = item_unit_conversions.unit_id
+        WHERE item_unit_conversions.item_id ${where}
+        ORDER BY item_unit_conversions.item_id ASC, LOWER(units.name) ASC, LOWER(units.symbol) ASC,
+                 item_unit_conversions.unit_id ASC`,
+    },
+    // Enhancement 2.3 — combination groups this item additionally belongs to
+    // (distinct from its primary hierarchical group_id). Empty for most items.
+    combinationGroups: {
+      sql: (where) => `
+        SELECT group_item_memberships.item_id, group_item_memberships.group_id
+        FROM group_item_memberships
+        INNER JOIN groups ON groups.id = group_item_memberships.group_id
+        WHERE group_item_memberships.item_id ${where}
+          AND groups.group_structure = 'combination'
+          AND groups.is_archived = 0
+        ORDER BY group_item_memberships.item_id ASC, group_item_memberships.sort_order ASC,
+                 group_item_memberships.group_id ASC`,
+    },
+    attachments: {
+      sql: (where) => `
+        SELECT item_id, id, label, object_key, file_name FROM item_attachments
+        WHERE item_id ${where} ORDER BY item_id ASC, position ASC, id ASC`,
+    },
+    machines: {
+      sql: (where) => `
+        SELECT item_machines.item_id,
+               machines.id, machines.name, machines.asset_id, machines.primary_photo_url,
+               machines.machine_make, machines.manufactured_year, machines.feeder_make,
+               machines.running_hours, machines.strokes_per_minute,
+               machines.capacity_kind, machines.capacity_kgf, machines.die_feed_type,
+               machines.group_id, machine_groups.name AS machine_group_name
+        FROM item_machines
+        INNER JOIN machines ON machines.id = item_machines.machine_id
+        LEFT JOIN groups machine_groups ON machine_groups.id = machines.group_id
+        WHERE item_machines.item_id ${where}
+        ORDER BY item_machines.item_id ASC, LOWER(machines.name) ASC, machines.id ASC`,
+    },
+    dies: {
+      sql: (where) => `
+        SELECT item_dies.item_id,
+               dies.id, dies.tool_code, dies.photo_urls,
+               dies.die_type, dies.die_type_label, dies.made_by, dies.die_maker_id,
+               dies.po_at, dies.date_in_at,
+               dies.liner_size_nm, dies.liner_size_unit, dies.no_of_set,
+               dies.number_of_cavities,
+               dies.store_area, dies.rack_no
+        FROM item_dies
+        INNER JOIN dies ON dies.id = item_dies.die_id
+        WHERE item_dies.item_id ${where}
+        ORDER BY item_dies.item_id ASC, LOWER(dies.tool_code) ASC, dies.id ASC`,
+    },
+  };
+
+  /// Everything the DTOs of [rows] read from other tables, in a fixed number
+  /// of queries however long the list: the list used to issue seven per item
+  /// (444 ms for 300 parts; Docs/benchmarks/2026-11-constrained-network-results.md).
+  async function preloadRelated(rows) {
+    const ids = rows.map((row) => row.id);
+    const related = {};
+    for (const [name, spec] of Object.entries(RELATED)) {
+      const byItem = new Map(ids.map((id) => [id, []]));
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        const found = await all(spec.sql(`IN (${chunk.map(() => '?').join(',')})`), chunk);
+        for (const entry of found) byItem.get(entry.item_id)?.push(entry);
+      }
+      related[name] = byItem;
+    }
+    related.propertySchema = await getItemPropertySchemas(ids);
+    related.variationTree = await getItemVariationTrees(ids);
+    return related;
+  }
+
+  /// A list of items as DTOs, each exactly what rowToItemDto gives for it.
+  async function rowsToItemDtos(rows) {
+    const present = rows.filter(Boolean);
+    if (!present.length) return [];
+    const related = await preloadRelated(present);
+    return Promise.all(present.map((row) => rowToItemDto(row, related)));
+  }
+
+  async function rowToItemDto(row, related = null) {
     if (!row) {
       return null;
     }
+    const one = async (name) => (related
+      ? related[name].get(row.id) || []
+      : all(RELATED[name].sql('= ?'), [row.id]));
 
-    const unitConversionRows = await all(
-      `
-      SELECT
-        item_unit_conversions.unit_id,
-        item_unit_conversions.factor_to_primary,
-        units.name AS unit_name,
-        units.symbol AS unit_symbol
-      FROM item_unit_conversions
-      INNER JOIN units ON units.id = item_unit_conversions.unit_id
-      WHERE item_unit_conversions.item_id = ?
-      ORDER BY LOWER(units.name) ASC, LOWER(units.symbol) ASC
-      `,
-      [row.id],
-    );
-    const propertySchema = await getItemPropertySchema(row.id);
-    // Enhancement 2.3 — combination groups this item additionally belongs to
-    // (distinct from its primary hierarchical group_id). Empty for most items.
-    const combinationGroupRows = await all(
-      `
-      SELECT group_item_memberships.group_id
-      FROM group_item_memberships
-      INNER JOIN groups ON groups.id = group_item_memberships.group_id
-      WHERE group_item_memberships.item_id = ?
-        AND groups.group_structure = 'combination'
-        AND groups.is_archived = 0
-      ORDER BY group_item_memberships.sort_order ASC
-      `,
-      [row.id],
-    );
-    const attachmentRows = await all(
-      'SELECT id, label, object_key, file_name FROM item_attachments WHERE item_id = ? ORDER BY position ASC, id ASC',
-      [row.id],
-    );
-    const machineLinkRows = await all(
-      `
-      SELECT machines.id, machines.name, machines.asset_id, machines.primary_photo_url,
-             machines.machine_make, machines.manufactured_year, machines.feeder_make,
-             machines.running_hours, machines.strokes_per_minute,
-             machines.capacity_kind, machines.capacity_kgf, machines.die_feed_type,
-             machines.group_id, machine_groups.name AS machine_group_name
-      FROM item_machines
-      INNER JOIN machines ON machines.id = item_machines.machine_id
-      LEFT JOIN groups machine_groups ON machine_groups.id = machines.group_id
-      WHERE item_machines.item_id = ?
-      ORDER BY LOWER(machines.name) ASC
-      `,
-      [row.id],
-    );
-    const dieLinkRows = await all(
-      `
-      SELECT dies.id, dies.tool_code, dies.photo_urls,
-             dies.die_type, dies.die_type_label, dies.made_by, dies.die_maker_id,
-             dies.po_at, dies.date_in_at,
-             dies.liner_size_nm, dies.liner_size_unit, dies.no_of_set,
-             dies.number_of_cavities,
-             dies.store_area, dies.rack_no
-      FROM item_dies
-      INNER JOIN dies ON dies.id = item_dies.die_id
-      WHERE item_dies.item_id = ?
-      ORDER BY LOWER(dies.tool_code) ASC
-      `,
-      [row.id],
-    );
+    const unitConversionRows = await one('unitConversions');
+    const propertySchema = related
+      ? related.propertySchema.get(row.id) || []
+      : await getItemPropertySchema(row.id);
+    const combinationGroupRows = await one('combinationGroups');
+    const attachmentRows = await one('attachments');
+    const machineLinkRows = await one('machines');
+    const dieLinkRows = await one('dies');
 
     return {
       id: row.id,
@@ -143,7 +188,9 @@ function createDto(deps, api) {
       usageCount: row.usage_count || 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      variationTree: await getItemVariationTree(row.id),
+      variationTree: related
+        ? related.variationTree.get(row.id) || []
+        : await getItemVariationTree(row.id),
       propertySchema,
       baseItemId: row.base_item_id || null,
       combinationGroupIds: combinationGroupRows.map((entry) => entry.group_id),
@@ -230,7 +277,7 @@ function createDto(deps, api) {
     };
   }
 
-  return { rowToGroupDto, rowToItemDto };
+  return { rowToGroupDto, rowToItemDto, rowsToItemDtos };
 }
 
 module.exports = { createDto };
