@@ -230,8 +230,12 @@ class UnitsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _repository.init();
-      final units = await _repository.getUnits();
-      final gaugePoints = await _repository.getGaugePoints();
+      // Two independent reads, started together rather than one after the
+      // other: on a slow link the second round trip was pure waiting.
+      final unitsFuture = _repository.getUnits();
+      final gaugePointsFuture = _repository.getGaugePoints();
+      final units = await unitsFuture;
+      final gaugePoints = await gaugePointsFuture;
 
       final pointsByUnitId = <int, List<ConversionPoint>>{};
       for (final p in gaugePoints) {

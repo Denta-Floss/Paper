@@ -6791,15 +6791,24 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
     final error = await write();
     if (!mounted) return;
+    // The guard stays up until the card has re-read what the part belongs to.
+    // Lowered before that, a second tap landed on the row as it was drawn
+    // before the write and wrote again from it — it only took the reads
+    // behind the write getting faster to open that window.
+    try {
+      await _loadMembership();
+    } finally {
+      // A failed re-read must not leave every set button disabled.
+      if (mounted) setState(() => _setWriteInFlight = false);
+    }
+    if (!mounted) return;
     setState(() {
-      _setWriteInFlight = false;
       // Kept on the card, not in the form's banner: _localError is cleared by
       // the next save attempt, and the inventory provider's message is global
       // enough to show a stale error from another screen.
       _setsError = error;
       if (error == null) _membershipWritten = true;
     });
-    await _loadMembership();
   }
 
   Future<void> _removeFromSet(ItemSetMembership row) async {

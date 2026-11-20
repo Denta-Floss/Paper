@@ -74,17 +74,11 @@ class InventoryStockScreen extends StatefulWidget {
 }
 
 class _InventoryStockScreenState extends State<InventoryStockScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<InventoryProvider>().refresh();
-        context.read<UnitsProvider>().refresh();
-        context.read<ItemsProvider>().refresh();
-      }
-    });
-  }
+  // Nothing is loaded on mount. The shell mounts this tab at start-up, right
+  // after _AuthGate has refreshed inventory, units and items for the whole
+  // app, so a refresh here fetched all three lists a second time. Selecting
+  // the tab refreshes inventory (home_screen.dart), and the screen's own
+  // pull-to-refresh and retry button remain.
 
   @override
   Widget build(BuildContext context) {

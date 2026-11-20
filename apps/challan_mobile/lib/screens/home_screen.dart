@@ -43,15 +43,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late final List<GlobalKey<NavigatorState>> _navKeys =
       List.generate(_roots.length, (_) => GlobalKey<NavigatorState>());
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<InventoryProvider>().refresh();
-      }
-    });
-  }
+  // No refresh on mount: the shell opens right after sign-in, and _AuthGate
+  // has just refreshed every provider, inventory included. Re-entering the
+  // inventory tab still refreshes it (below).
 
   void _onDestinationSelected(int index) {
     if (index == _currentIndex) {

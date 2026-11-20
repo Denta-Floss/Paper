@@ -5,7 +5,6 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:challan_mobile/main.dart';
@@ -15,7 +14,7 @@ void main() {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp(apiUrl: 'http://localhost:18080'));
 
-    // Verify that the app starts up and displays the authentication loading state.
-    expect(find.text('Authenticating...'), findsOneWidget);
+    // Signed out, the app opens on the passcode screen.
+    expect(find.text('Enter Passcode'), findsOneWidget);
   });
 }

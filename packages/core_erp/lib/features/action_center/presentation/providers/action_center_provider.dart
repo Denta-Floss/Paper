@@ -42,13 +42,17 @@ class ActionCenterProvider extends ChangeNotifier {
     notifyListeners();
 
     final errors = <String>[];
+    // Both started before either is awaited, so the two round trips overlap;
+    // each still fails on its own.
+    final issuesFuture = _repository.getIssues();
+    final trashFuture = _repository.listTrash();
     try {
-      _issues = await _repository.getIssues();
+      _issues = await issuesFuture;
     } catch (error) {
       errors.add(error.toString());
     }
     try {
-      _trash = await _repository.listTrash();
+      _trash = await trashFuture;
     } catch (error) {
       errors.add(error.toString());
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -452,12 +453,25 @@ class _ConnectionOptionCard extends StatelessWidget {
 
 class MyApp extends StatelessWidget {
   final String apiUrl;
-  const MyApp({super.key, required this.apiUrl});
 
-  static const _isDemoMode = bool.fromEnvironment('PAPER_DEMO_MODE', defaultValue: false);
+  /// The connection every repository goes through. A test hands in a fake
+  /// to count what the app asks for.
+  final http.Client? httpClient;
+
+  /// Signed in without a server, for tests and the demo build.
+  final bool demoMode;
+
+  const MyApp({
+    super.key,
+    required this.apiUrl,
+    this.httpClient,
+    this.demoMode = _isDemoModeBuild,
+  });
+
+  static const _isDemoModeBuild = bool.fromEnvironment('PAPER_DEMO_MODE', defaultValue: false);
 
   AuthenticatedHttpClient _authClient(AuthProvider auth) {
-    return AuthenticatedHttpClient(tokenResolver: () => auth.token);
+    return AuthenticatedHttpClient(tokenResolver: () => auth.token, inner: httpClient);
   }
 
   @override
@@ -468,10 +482,10 @@ class MyApp extends StatelessWidget {
           create: (_) {
             final provider = AuthProvider(
               baseUrl: apiUrl,
-              demoMode: _isDemoMode,
+              demoMode: demoMode,
             )..initialize();
             
-            // if (!_isDemoMode) {
+            // if (!demoMode) {
             //   // Auto-login for mobile dev if not in demo mode
             //   provider.login(
             //     email: 'super@paper.local',
@@ -600,51 +614,37 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider2<AuthProvider, OrderRepository, OrdersProvider>(
           create: (context) => OrdersProvider(repository: context.read<OrderRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? OrdersProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          // No refresh here, nor in the providers below: `update` runs on every
+          // auth or repository change, and _AuthGate already refreshes every
+          // provider once per sign-in. With both, each list was fetched twice
+          // at start-up.
+          update: (context, auth, repository, previous) =>
+              previous ?? OrdersProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, InventoryRepository, InventoryProvider>(
           create: (context) => InventoryProvider(repository: context.read<InventoryRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? InventoryProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? InventoryProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, UnitRepository, UnitsProvider>(
           create: (context) => UnitsProvider(repository: context.read<UnitRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? UnitsProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? UnitsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, GroupRepository, GroupsProvider>(
           create: (context) => GroupsProvider(repository: context.read<GroupRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? GroupsProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? GroupsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, ClientRepository, ClientsProvider>(
           create: (context) => ClientsProvider(repository: context.read<ClientRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? ClientsProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? ClientsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, VendorRepository, VendorsProvider>(
           create: (context) => VendorsProvider(repository: context.read<VendorRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? VendorsProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? VendorsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, VendorHistoryRepository, VendorHistoryProvider>(
           create: (context) => VendorHistoryProvider(repository: context.read<VendorHistoryRepository>()),
@@ -652,27 +652,18 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider2<AuthProvider, ItemRepository, ItemsProvider>(
           create: (context) => ItemsProvider(repository: context.read<ItemRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? ItemsProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? ItemsProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, FavoritesRepository, FavoritesProvider>(
           create: (context) => FavoritesProvider(repository: context.read<FavoritesRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? FavoritesProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? FavoritesProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, ChallanRepository, DeliveryChallanProvider>(
           create: (context) => DeliveryChallanProvider(repository: context.read<ChallanRepository>()),
-          update: (context, auth, repository, previous) {
-            final p = previous ?? DeliveryChallanProvider(repository: repository);
-            if (auth.isAuthenticated) p.refresh();
-            return p;
-          },
+          update: (context, auth, repository, previous) =>
+              previous ?? DeliveryChallanProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, SearchRepository, SearchProvider>(
           create: (context) => SearchProvider(repository: context.read<SearchRepository>()),
@@ -753,6 +744,8 @@ class _AuthGateState extends State<_AuthGate> {
         context.read<ClientsProvider>().refresh(),
         context.read<VendorsProvider>().refresh(),
         context.read<ItemsProvider>().refresh(),
+        context.read<FavoritesProvider>().refresh(),
+        context.read<DeliveryChallanProvider>().refresh(),
       ]);
     });
   }
@@ -761,9 +754,17 @@ class _AuthGateState extends State<_AuthGate> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final authenticated = auth.isAuthenticated;
+    // Keyed on the token, or on the user when there is none (the demo build
+    // signs in without one). Before this the demo build never reached the
+    // start-up refresh and relied on each provider's `update` to load.
     final token = auth.token;
-    if (authenticated && token != null && token.isNotEmpty) {
-      _refreshAfterAuthentication(token);
+    final sessionKey = (token != null && token.isNotEmpty)
+        ? token
+        : auth.user != null
+            ? 'user:${auth.user!.id}'
+            : null;
+    if (authenticated && sessionKey != null) {
+      _refreshAfterAuthentication(sessionKey);
     }
     
     if (auth.errorMessage != null && !authenticated) {

@@ -112,10 +112,7 @@ class InventoryProvider extends ChangeNotifier {
     try {
       await _repository.init();
       await _repository.seedIfEmpty();
-      await _reloadMaterials();
-      await _reloadVariationStock();
-      await _reloadSets();
-      await loadInventoryHealth(silent: true);
+      await _loadEverything();
       if (_materials.isNotEmpty) {
         _selectedMaterial = _materials.first;
       }
@@ -130,17 +127,53 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refresh() async {
+  /// The four reads behind the screen, started together. They were awaited
+  /// one after another, which on a slow link cost four round trips in a row
+  /// for answers that do not depend on each other. The health summary falls
+  /// back to a local estimate from the materials on failure, so it is awaited
+  /// after the three lists rather than beside them.
+  Future<void> _loadEverything() async {
+    await Future.wait<void>([
+      _reloadMaterials(),
+      _reloadVariationStock(),
+      _reloadSets(),
+    ]);
+    await loadInventoryHealth(silent: true);
+  }
+
+  Future<void>? _refreshInFlight;
+  Future<void>? _refreshQueued;
+
+  /// Reloads everything. Calls that arrive while one is running share a
+  /// single follow-up run: a burst of socket events (a challan generated is
+  /// `challan_updated`, `inventory_updated` and `challan_generated_ok` in
+  /// quick succession) used to cost a full reload each.
+  Future<void> refresh() {
+    final running = _refreshInFlight;
+    if (running != null) {
+      return _refreshQueued ??= running.whenComplete(() {
+        _refreshQueued = null;
+        return refresh();
+      });
+    }
+    late final Future<void> wrapped;
+    wrapped = _runRefresh().whenComplete(() {
+      if (identical(_refreshInFlight, wrapped)) {
+        _refreshInFlight = null;
+      }
+    });
+    _refreshInFlight = wrapped;
+    return wrapped;
+  }
+
+  Future<void> _runRefresh() async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       await _repository.init();
-      await _reloadMaterials();
-      await _reloadVariationStock();
-      await _reloadSets();
-      await loadInventoryHealth(silent: true);
+      await _loadEverything();
       if (_selectedMaterial != null) {
         _selectedMaterial = _materials
             .where((item) => item.barcode == _selectedMaterial!.barcode)
