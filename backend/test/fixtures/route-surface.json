@@ -153,6 +153,7 @@
   "GET /api/reconciliation/report",
   "GET /api/reconciliation/waste-audit",
   "GET /api/record-options/:entityType",
+  "GET /api/replica/bootstrap",
   "GET /api/scan/:code",
   "GET /api/search",
   "GET /api/search/history",

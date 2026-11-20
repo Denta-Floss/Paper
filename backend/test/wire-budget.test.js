@@ -30,7 +30,7 @@ const BUDGETS = {
   orders_list_page: { requests: 1, bytes: 40 * KB }, // 1 request, 7.8 KB
   items_list_page: { requests: 1, bytes: 60 * KB }, // 1 request, 26.7 KB; 21.8 KB after step 4
   inventory_overview: { requests: 1, bytes: 40 * KB }, // 4 requests, 8.9 KB; 1 request after step 3
-  replica_hydration: { requests: 3, bytes: 160 * KB }, // 14 requests today (step 5 makes it three)
+  replica_hydration: { requests: 3, bytes: 160 * KB }, // 14 requests, 60.6 KB; 1 request after step 5
 };
 
 // What the desktop does after a sign-in, cold (the replica not hydrated), in
@@ -55,13 +55,10 @@ const SIGN_IN = [
   '/api/app/latest',
 ];
 
-// ReplicaApi.listPaths, then the first delta poll.
-const REPLICA_HYDRATION = [
-  '/api/items', '/api/challans', '/api/orders', '/api/materials', '/api/clients',
-  '/api/vendors', '/api/machines', '/api/dies', '/api/units', '/api/groups',
-  '/api/departments', '/api/production/pipeline-templates', '/runs',
-  '/api/changes?since=0',
-];
+// A cold replica (ReplicaCatchUp): one bootstrap carrying all thirteen lists
+// and the head. It used to be the thirteen lists of ReplicaApi.listPaths one
+// after another, then a delta poll from 0.
+const REPLICA_HYDRATION = ['/api/replica/bootstrap'];
 
 const SEQUENCES = {
   sign_in: SIGN_IN,
@@ -73,9 +70,7 @@ const SEQUENCES = {
 
 // Pending until the step that lands them; asserted from then on. A budget
 // here is still printed, so the figure is visible before the step.
-const PENDING = {
-  replica_hydration: 'step 5 — a bootstrap endpoint and a delta-first hydration',
-};
+const PENDING = {};
 
 // A plain request, as in wire-weight.test.js: `fetch` would decompress the
 // body before it could be measured, and the compressed size is the one that

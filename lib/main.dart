@@ -151,6 +151,8 @@ Future<void> startReplicaSync({
       fetchRecord: api.fetchRecord,
       fetchList: api.fetchList,
       fetchChangesSince: api.fetchChangesSince,
+      fetchChangesPage: api.fetchChangesPage,
+      fetchBootstrap: api.fetchBootstrap,
     );
     await service.start(namespace);
     SocketService.instance.off('table-change', _onReplicaTableChange);
@@ -165,11 +167,13 @@ void _onReplicaTableChange(dynamic data) {
   if (data is! Map) return;
   final table = '${data['table'] ?? ''}';
   if (table.isEmpty) return;
+  final changelogId = data['changelogId'];
   _replicaSync?.onTableChange(
     TableChange(
       table: table,
       recordId: data['id'] ?? 0,
       action: '${data['action'] ?? 'UPDATE'}',
+      changelogId: changelogId is num ? changelogId.toInt() : 0,
     ),
   );
 }

@@ -6,6 +6,7 @@ import '../database/local_database_helper.dart';
 import '../database/sync_metadata_store.dart';
 import 'delta_sync_engine.dart';
 import 'replica_bindings.dart';
+import 'replica_catch_up.dart';
 
 /// Keeps the local replica current.
 ///
@@ -21,13 +22,31 @@ class ReplicaSyncService {
     required RecordFetcher fetchRecord,
     required ListFetcher fetchList,
     required Future<List<TableChange>> Function(int since) fetchChangesSince,
+    ChangesPageFetcher? fetchChangesPage,
+    BootstrapFetcher? fetchBootstrap,
     LocalDatabaseHelper? helper,
     Duration batchWindow = const Duration(milliseconds: 250),
   }) : _fetchRecord = fetchRecord,
        _fetchList = fetchList,
        _fetchChangesSince = fetchChangesSince,
+       _fetchChangesPage = fetchChangesPage,
+       _fetchBootstrap = fetchBootstrap,
        _helper = helper ?? LocalDatabaseHelper.instance,
        _batchWindow = batchWindow;
+
+  /// The changelog with what the server says about it (more to come, the
+  /// oldest it holds, its head). Without it, the plain list above is used and
+  /// a pruned cursor or a long gap cannot be noticed.
+  final ChangesPageFetcher? _fetchChangesPage;
+
+  /// A cold replica's lists in one request. Without it, one request per list.
+  final BootstrapFetcher? _fetchBootstrap;
+
+  /// True while a catch-up runs. Live changes are applied meanwhile but do not
+  /// move the cursor: a live id far ahead of the replay would otherwise mark
+  /// everything between as done, and a quit before the replay reached it
+  /// would skip it for good.
+  bool _catchingUp = false;
 
   final RecordFetcher _fetchRecord;
   final ListFetcher _fetchList;
@@ -84,62 +103,53 @@ class ReplicaSyncService {
 
   /// Catches up everything that happened while the app was closed.
   ///
-  /// Returns the number of changes applied. On a first run the cursor is 0 and
-  /// the server has nothing to replay from, so this pulls the lists instead —
-  /// the one time the replica costs a full download, and the reason every
-  /// launch afterwards costs almost nothing.
+  /// Returns the number of changes replayed. A replica with no position — or
+  /// one whose position the server has pruned past — takes a fresh copy
+  /// instead: one bootstrap request when the server has it, the lists four at
+  /// a time when it does not. Either way the head it is a copy as of is
+  /// recorded, so the next launch replays from there rather than downloading
+  /// everything again.
   Future<int> catchUp() async {
     final engine = _engine;
     final cursor = _cursor;
     if (engine == null || cursor == null) return 0;
 
-    final since = await cursor.lastChangelogId();
-    if (since <= 0) {
-      await _hydrateFromLists();
-      return 0;
-    }
-
-    List<TableChange> changes;
+    _catchingUp = true;
     try {
-      changes = await _fetchChangesSince(since);
+      final result = await ReplicaCatchUp(
+        engine: engine,
+        cursor: cursor,
+        fetchChangesPage: _fetchChangesPage ??
+            (since) async => ChangesPage(changes: await _fetchChangesSince(since)),
+        fetchBootstrap: _fetchBootstrap,
+        listTables: _listTables,
+      ).run();
+      if (result.hydrated) {
+        _hydrated = true;
+        _announce(<TableChange>[
+          for (final table in _listTables)
+            TableChange(table: table, recordId: 0, action: 'INSERT'),
+        ]);
+      }
+      if (result.replayed.isNotEmpty) _announce(result.replayed);
+      return result.replayed.length;
     } catch (_) {
       // Offline. The replica is stale but usable, which is the entire point of
       // having it — far better than a screen that cannot paint.
       return 0;
+    } finally {
+      _catchingUp = false;
     }
-    if (changes.isEmpty) return 0;
-
-    await engine.apply(changes, cursor: cursor);
-    _announce(changes);
-    return changes.length;
   }
 
-  /// Pulls every replicable list once, for a replica with no position to
-  /// replay from.
-  Future<void> _hydrateFromLists() async {
-    final engine = _engine;
-    if (engine == null) return;
-
-    // Only the tables a list can fill. `viaParent` and `ignore` bindings have
-    // no list of their own; their rows arrive with their parents.
-    final tables = <String>{
-      for (final entry in kReplicaBindings.entries)
-        if (entry.value.localTable != null &&
-            entry.value.strategy != DeltaStrategy.viaParent)
-          entry.key,
-    };
-
-    final synthetic = <TableChange>[
-      for (final table in tables)
-        TableChange(table: table, recordId: 0, action: 'INSERT'),
-    ];
-    // Routed through the engine rather than written directly, so hydration and
-    // steady-state use one code path — two would drift, and the second would be
-    // the one nobody tests.
-    await engine.hydrateLists(tables);
-    _announce(synthetic);
-    _hydrated = true;
-  }
+  /// The tables a list can fill. `viaParent` and `ignore` bindings have no list
+  /// of their own; their rows arrive with their parents.
+  static final List<String> _listTables = <String>[
+    for (final entry in kReplicaBindings.entries)
+      if (entry.value.localTable != null &&
+          entry.value.strategy != DeltaStrategy.viaParent)
+        entry.key,
+  ];
 
   /// Feeds a live change in. Batched, because a single user action announces
   /// several rows and applying each separately would fetch the same record more
@@ -156,7 +166,7 @@ class ReplicaSyncService {
     if (engine == null || _pending.isEmpty) return;
     final batch = List<TableChange>.from(_pending);
     _pending.clear();
-    await engine.apply(batch, cursor: _cursor);
+    await engine.apply(batch, cursor: _catchingUp ? null : _cursor);
     _announce(batch);
   }
 
@@ -188,7 +198,7 @@ class ReplicaSyncService {
       fetchRecord: _fetchRecord,
       fetchList: _fetchList,
     );
-    await _hydrateFromLists();
+    await catchUp();
   }
 
   Future<void> stop() async {

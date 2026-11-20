@@ -5,6 +5,7 @@
 // replica catches up from, and the event stream it stays connected to.
 //
 //   GET    /api/changes
+//   GET    /api/replica/bootstrap
 //   GET    /api/events
 //
 // URLs, guards and the order routes are matched in are exactly as they were in
@@ -13,6 +14,38 @@
 // of the server (the database helpers, the permission checks, shared services)
 // is handed in by name.
 // ---------------------------------------------------------------------------
+// What a replica holds and where each list lives: the same table, the same
+// path, as ReplicaApi.listPaths on the client
+// (packages/core_erp/lib/core/sync/replica_api.dart). A table added there
+// belongs here too, or a cold replica comes up without it.
+const REPLICA_LISTS = Object.freeze({
+  items: '/api/items',
+  delivery_challans: '/api/challans',
+  order_items: '/api/orders',
+  materials: '/api/materials',
+  clients: '/api/clients',
+  vendors: '/api/vendors',
+  machines: '/api/machines',
+  dies: '/api/dies',
+  units: '/api/units',
+  groups: '/api/groups',
+  departments: '/api/departments',
+  pipeline_templates: '/api/production/pipeline-templates',
+  pipeline_runs: '/runs',
+});
+
+// The list out of a list endpoint's envelope. They are not consistent —
+// {items}, {data}, {orders}, {challans}, a bare array — so this takes the first
+// array in the body, which is what the client's ReplicaApi.unwrapList does.
+function firstList(body) {
+  if (Array.isArray(body)) return body;
+  if (!body || typeof body !== 'object') return [];
+  for (const value of Object.values(body)) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
 // These are registered ahead of the login gate: they answer without a session.
 function registerRealtimeRoutesBeforeLogin(app, {
   all,
@@ -62,6 +95,56 @@ function registerRealtimeRoutesBeforeLogin(app, {
       });
     } catch (error) {
       res.status(500).json({ success: false, changes: [], error: error.message });
+    }
+  });
+
+  /// Everything a cold replica needs, in one compressed answer.
+  ///
+  /// A first launch used to fetch thirteen lists one after another — fourteen
+  /// round trips with the first delta poll, on a link where a round trip is the
+  /// expensive part. This answers them together, with the changelog head the
+  /// replica should start from.
+  ///
+  /// The head is read BEFORE the lists. A write that lands while they are being
+  /// read is then replayed from the changelog afterwards (a replay is an
+  /// idempotent refetch), rather than being covered by a head read after it and
+  /// lost.
+  ///
+  /// Each list is the server's own list endpoint, asked over loopback with the
+  /// caller's credentials, so it keeps its own permission check and its exact
+  /// shape — a second copy of thirteen list queries would drift from the first.
+  /// A list the caller may not read is left out and named in `refused`; one
+  /// that failed to load is named in `missing`, for the client to fetch alone.
+  app.get('/api/replica/bootstrap', requireAuth, async (req, res) => {
+    try {
+      const head = Number((await get('SELECT MAX(id) AS head FROM changelog'))?.head || 0);
+      const address = String(req.socket.localAddress || '127.0.0.1').replace(/^::ffff:/, '');
+      const host = address.includes(':') ? `[${address}]` : address;
+      const base = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${req.socket.localPort}`;
+      const headers = { authorization: req.headers.authorization || '', 'accept-encoding': 'identity' };
+      const entries = await Promise.all(Object.entries(REPLICA_LISTS).map(async ([table, listPath]) => {
+        try {
+          const response = await fetch(`${base}${listPath}`, { headers });
+          if (response.status === 401 || response.status === 403) return [table, 'refused'];
+          if (!response.ok) return [table, null];
+          return [table, firstList(await response.json())];
+        } catch (_) {
+          return [table, null];
+        }
+      }));
+      // `refused`: this caller may not read it, and asking again will not help.
+      // `missing`: it failed to load; the client asks for it on its own.
+      const lists = {};
+      const missing = [];
+      const refused = [];
+      for (const [table, rows] of entries) {
+        if (rows === 'refused') refused.push(table);
+        else if (rows) lists[table] = rows;
+        else missing.push(table);
+      }
+      res.json({ success: true, head, lists, missing, refused, error: null });
+    } catch (error) {
+      res.status(500).json({ success: false, head: 0, lists: {}, missing: [], refused: [], error: error.message });
     }
   });
 
@@ -166,4 +249,5 @@ function registerRealtimeRoutesBeforeLogin(app, {
 
 module.exports = {
   registerRealtimeRoutesBeforeLogin,
+  REPLICA_LISTS,
 };

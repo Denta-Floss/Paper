@@ -319,15 +319,45 @@ class DeltaSyncEngine {
 
   /// Fills the named tables from their list endpoints.
   ///
-  /// The first-run path, when there is no cursor to replay from. Uses the same
-  /// writer as a steady-state refetch so hydration and delta application cannot
-  /// drift — two paths would, and the second would be the one nobody tests.
-  Future<int> hydrateLists(Iterable<String> serverTables) async {
+  /// The first-run path when the server has no bootstrap to offer. Fetched four
+  /// at a time rather than one after another — on a slow link the round trips
+  /// were the cost, not the bytes — and written one table at a time, since the
+  /// writes share one database.
+  Future<int> hydrateLists(Iterable<String> serverTables, {int concurrency = 4}) async {
+    final tables = <String>[
+      for (final table in serverTables)
+        if (_bindings[table]?.localTable != null) table,
+    ];
     var filled = 0;
-    for (final table in serverTables) {
-      final binding = _bindings[table];
-      if (binding?.localTable == null) continue;
-      if (await _applyList(table)) filled += 1;
+    for (var start = 0; start < tables.length; start += concurrency) {
+      final chunk = tables.skip(start).take(concurrency).toList(growable: false);
+      final fetched = await Future.wait(chunk.map((table) async {
+        try {
+          return await _fetchList(table);
+        } catch (_) {
+          return null;
+        }
+      }));
+      for (var i = 0; i < chunk.length; i += 1) {
+        final rows = fetched[i];
+        if (rows == null) continue;
+        await _replaceTable(chunk[i], rows);
+        filled += 1;
+      }
+    }
+    return filled;
+  }
+
+  /// Fills tables from lists already in hand — a bootstrap answer.
+  ///
+  /// Through the same writer as [hydrateLists], so a replica filled either way
+  /// holds the same thing.
+  Future<int> applyListRows(Map<String, List<Map<String, dynamic>>> lists) async {
+    var filled = 0;
+    for (final entry in lists.entries) {
+      if (_bindings[entry.key]?.localTable == null) continue;
+      await _replaceTable(entry.key, entry.value);
+      filled += 1;
     }
     return filled;
   }
@@ -341,11 +371,17 @@ class DeltaSyncEngine {
     } catch (_) {
       return false;
     }
+    await _replaceTable(serverTable, rows);
+    return true;
+  }
+
+  Future<void> _replaceTable(String serverTable, List<Map<String, dynamic>> rows) async {
+    final binding = _bindings[serverTable]!;
     await _db.transaction((txn) async {
       // Replace wholesale: a list refetch is the authority on what exists, and
       // upserting alone would leave rows deleted on the server sitting locally
       // forever.
-      await txn.delete(binding!.localTable!);
+      await txn.delete(binding.localTable!);
       for (final row in rows) {
         await _upsertRow(
           txn,
@@ -353,10 +389,15 @@ class DeltaSyncEngine {
           binding.keyColumn,
           _columnsFor(binding, row),
         );
+        // The same as a single-record write does. A list fill used to skip it,
+        // so after a first hydration no variation-node change could be traced
+        // back to its item (B40).
+        if (binding.localTable == 'local_items') {
+          await _mirrorVariationNodes(txn, row);
+        }
       }
     });
     applied += rows.length;
-    return true;
   }
 
   Future<void> _upsert(ReplicaBinding binding, Map<String, dynamic> payload) async {

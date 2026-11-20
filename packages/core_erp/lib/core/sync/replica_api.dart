@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'delta_sync_engine.dart';
+import 'replica_catch_up.dart';
 
 /// The network side of the replica: where each table lives, and how to get one
 /// record, a whole list, or the changes since a position.
@@ -79,6 +80,57 @@ class ReplicaApi {
     return unwrapList(response.body);
   }
 
+  /// One page of the changelog after [since], with what the server says about
+  /// it: whether more follows, the oldest change it still holds, and its head.
+  Future<ChangesPage> fetchChangesPage(int since) async {
+    final uri = Uri.parse('$_baseUrl/api/changes?since=$since');
+    final response = await _client.get(uri);
+    if (response.statusCode != 200) {
+      throw http.ClientException('${response.statusCode} for $uri', uri);
+    }
+    final decoded = jsonDecode(response.body);
+    final map = decoded is Map ? decoded.cast<String, dynamic>() : const <String, dynamic>{};
+    int number(Object? value) => value is num ? value.toInt() : int.tryParse('${value ?? ''}') ?? 0;
+    return ChangesPage(
+      changes: parseChanges(decoded),
+      hasMore: map['hasMore'] == true,
+      oldestAvailable: number(map['oldestAvailable']),
+      head: number(map['head']),
+    );
+  }
+
+  /// A cold replica's lists in one answer, or null from a server that has no
+  /// bootstrap (it predates it), in which case the lists are fetched one by one.
+  Future<ReplicaBootstrap?> fetchBootstrap() async {
+    final uri = Uri.parse('$_baseUrl/api/replica/bootstrap');
+    final response = await _client.get(uri);
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw http.ClientException('${response.statusCode} for $uri', uri);
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map || decoded['success'] != true) {
+      throw http.ClientException('bootstrap refused for $uri', uri);
+    }
+    final rawLists = decoded['lists'];
+    final lists = <String, List<Map<String, dynamic>>>{};
+    if (rawLists is Map) {
+      for (final entry in rawLists.entries) {
+        final rows = entry.value;
+        if (rows is! List) continue;
+        lists['${entry.key}'] = rows.whereType<Map>().map(_cast).toList(growable: false);
+      }
+    }
+    final head = decoded['head'];
+    Set<String> names(Object? raw) =>
+        raw is List ? raw.map((value) => '$value').toSet() : const <String>{};
+    return ReplicaBootstrap(
+      head: head is num ? head.toInt() : 0,
+      lists: lists,
+      missing: names(decoded['missing']),
+    );
+  }
+
   /// Everything the changelog recorded after [since].
   Future<List<TableChange>> fetchChangesSince(int since) async {
     final uri = Uri.parse('$_baseUrl/api/changes?since=$since');
@@ -86,7 +138,10 @@ class ReplicaApi {
     if (response.statusCode != 200) {
       throw http.ClientException('${response.statusCode} for $uri', uri);
     }
-    final decoded = jsonDecode(response.body);
+    return parseChanges(jsonDecode(response.body));
+  }
+
+  static List<TableChange> parseChanges(Object? decoded) {
     final rows = decoded is Map ? decoded['changes'] : decoded;
     if (rows is! List) return const <TableChange>[];
     return rows.whereType<Map>().map((row) {

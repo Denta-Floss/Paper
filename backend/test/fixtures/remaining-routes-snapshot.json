@@ -242,6 +242,15 @@
   },
   "error": "Authentication required."
  },
+ "anonymous GET /api/replica/bootstrap": {
+  "status": 401,
+  "type": "application/json",
+  "shape": {
+   "error": "string",
+   "success": "boolean"
+  },
+  "error": "Authentication required."
+ },
  "anonymous GET /api/scan/:code": {
   "status": 401,
   "type": "application/json",
@@ -1133,6 +1142,48 @@
   "shape": {
    "error": "null",
    "options": [],
+   "success": "boolean"
+  }
+ },
+ "owner GET /api/replica/bootstrap": {
+  "status": 200,
+  "type": "application/json",
+  "shape": {
+   "error": "null",
+   "head": "number",
+   "lists": {
+    "clients": [
+     "{…}"
+    ],
+    "delivery_challans": [],
+    "departments": [],
+    "dies": [],
+    "groups": [
+     "{…}"
+    ],
+    "items": [
+     "{…}"
+    ],
+    "machines": [],
+    "materials": [
+     "{…}"
+    ],
+    "order_items": [
+     "{…}"
+    ],
+    "pipeline_runs": [
+     "{…}"
+    ],
+    "pipeline_templates": [
+     "{…}"
+    ],
+    "units": [
+     "{…}"
+    ],
+    "vendors": []
+   },
+   "missing": [],
+   "refused": [],
    "success": "boolean"
   }
  },

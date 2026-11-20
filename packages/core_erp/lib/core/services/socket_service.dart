@@ -168,11 +168,15 @@ class SocketService {
   void _processEvent(String eventBlock) {
     String eventType = '';
     String data = '';
+    // This block's own changelog id, not the last one seen: a block without an
+    // id line must not inherit the previous event's position.
+    int? blockId;
 
     for (var line in eventBlock.split('\n')) {
       if (line.startsWith('id:')) {
         final idStr = line.substring(3).trim();
-        _lastEventId = int.tryParse(idStr) ?? _lastEventId;
+        blockId = int.tryParse(idStr);
+        _lastEventId = blockId ?? _lastEventId;
         _rememberCursor(_lastEventId);
       } else if (line.startsWith('event:')) {
         eventType = line.substring(6).trim();
@@ -205,6 +209,10 @@ class SocketService {
           'table': tableName,
           'id': recordId,
           'action': action,
+          // Where this change sits in the changelog. The replica advances its
+          // cursor by it; without it every live change was applied but the
+          // cursor never moved, so each launch re-downloaded every list (B41).
+          if (blockId != null) 'changelogId': blockId,
         });
 
         String emitEvent = '';
