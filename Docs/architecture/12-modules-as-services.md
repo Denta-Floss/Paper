@@ -486,10 +486,52 @@ commit each, the suite green before every commit:
 - [x] 5. A cold replica is one request: `GET /api/replica/bootstrap` (realtime module) reads the changelog head first, then asks the server's own thirteen list endpoints over loopback with the caller's credentials — each keeps its permission check and its exact shape (`replica-bootstrap.test.js` compares every list with its endpoint) — and answers `{head, lists, missing, refused}`. Client: `ReplicaCatchUp` decides — no cursor: bootstrap (or, from an older server, the head first and then the lists four at a time); a cursor: replay `/api/changes` page by page while `hasMore`; a cursor below `oldestAvailable`: reset and take a fresh copy. The head is recorded only when every readable list landed. Live SSE changes now carry their changelog id (B41) and advance the cursor, except while a catch-up runs. B40 fixed in the shared table writer. Measured: cold replica 14 requests / 60.6 KB → 1 request / 49.9 KB; and, from B41, every later launch is one `/api/changes` request instead of the full copy again.
 - [~] 6. The desktop's clients, vendors, units, groups (without covers), machines, dies and departments lists read from the replica they were already written to, through local-first decorators shaped like the items one (machines and dies order by the payload's `createdAt` via `json_extract`, since their providers do not re-sort). One rule guards every replica read, old and new: **the replica answers for a table only when it is not known to be behind on it** (`ReplicaFreshness`). A table falls behind when the replica hears of a change it has not applied — a live event (SocketService tells the replica before it tells the provider) or a write through any local-first repository (all eleven now mark what they touch; a challan write marks challans, order lines and materials) — and catches up when a drain that started after the mark has applied it. Not done, and why: `inventory_stock_positions` changes — the inventory screen reads `/api/inventory/overview`, ETag'd since step 3, and refreshes on the same events, so a replica copy would add a second source for no saving; the offline badge — a visible UI addition that needs a design pass and a look at the real app, left for its own change. Known staleness: a master's `usageCount` (clients from orders, vendors from challans, units and groups from items) moves when another module writes, which does not change the master's row; the replica shows the count as of the master's last change. The server still refuses a delete of anything in use.
 - [~] 7. The phone: its inventory moved to the overview in step 3, and it now has the ETag response cache the desktop has had (`ConditionalCacheClient`, one per connection, namespaced per user at sign-in), so a refresh or a relaunch revalidates and an unchanged list costs a 304 (`startup_requests_test.dart`). Not done: the scoped replica and the offline state. The replica would run — `LocalDatabaseHelper` uses the sqflite plugin off the desktop, and the phone already runs core's `SocketService` — but it puts a SQLite file, a sync loop and live-event wiring on phones, and this machine has no Xcode and no working emulator to run it on one. It waits for a device.
-- [ ] 8. Two projections off the changelog, idempotent, with `processed_changelog_id`: `order_items.delivered_qty` + `run_status`, and `items.usage_count`. The last declared cross-module list reads go with them. The four unlogged tables join `TRIGGER_LOGGED_TABLES`.
-- [ ] 9. The extraction triggers written down (§ "When to extract a service").
+- [ ] 8. **Held for a decision (2026-11-20).** Two projections off the changelog (`order_items.delivered_qty` + `run_status`; `items.usage_count`). Found while designing: migration 041's triggers already write an `order_items` changelog row whenever a challan line, a pipeline run or a run assignment changes, so clients already hear when those values move (only a challan *header* change, e.g. a cancel, is not re-announced); and the list computes them in SQL inside the server's 1–16 ms. A projection would remove the orders list's declared reads of challans and production and make it a one-table query — a cleaner border, no measured speed or wire gain — at the cost of a second copy of delivered quantity and run status that must never drift. If built: state-based (recompute the affected rows through the owners' batch asks, write only differences), caught up before any read of the columns and shortly after changes, cursor in a kernel `projections` table.
+- [x] 9. The extraction triggers written down: § "When to extract a service", below.
 
 Not now, and why: GraphQL (field selection is a list shape per endpoint, seven of them), gRPC (one process, no inter-service wire), Kafka/NATS (the changelog is the outbox and there is one durable store), database per service (nothing measured asks for it), Varnish/Redis (the replica on the user's disk is the better cache), full event sourcing (the changelog feeds two projections; the tables stay the truth).
+
+### When to extract a service
+
+Paper stays one process with one database file. A module leaves it only when
+**one of these** has been observed, not forecast:
+
+1. **Independent scaling, measured.** The module needs hardware the core does
+   not (a GPU for CAD or OCR parsing, a memory-heavy search index), or its load
+   is measured to starve the rest. Today the whole server answers in 1–16 ms
+   and the wire is the cost; a split adds wire.
+2. **A different release cadence, demanded.** The module has to ship
+   experimental changes on a schedule that must not risk orders, challans and
+   stock, and feature flags inside the process are not enough.
+3. **Fault isolation for a named failure.** A specific, recorded failure of the
+   module (a crash, a runaway query) took the core down, and containing it in
+   process was tried.
+4. **Separate ownership.** Another team owns it, with its own repository,
+   deploys and on-call.
+
+**And a precondition, always:** the module joins no other module's
+transaction. 27 operations join their caller's transaction today (counted from
+`contract-surface.json` on 2026-11-20): inventory 7, items 7, links 3,
+challans 2, production 2, and one each in accounts, action centre, assets,
+jobs, orders and units. A module with any of them cannot leave without first
+turning each into something that does not need the caller's commit — a saga,
+an outbox, or a merge back into one owner — and that work is the real cost of
+extraction, not the transport.
+
+When a trigger fires, the order is: the module's transactional operations to
+zero; its declared reads of other modules to zero (`kernel/registry.js`
+`reads`); then the stage 3 checklist below for that module alone.
+
+**Off the table until a trigger fires, and why:**
+
+| Not now | Because |
+|---|---|
+| GraphQL | Field selection is a list shape per endpoint; there are seven lists and the measured over-fetch is in one of them (step 4, B42) |
+| gRPC between services | One process; there is no inter-service wire to shrink |
+| Kafka, NATS, a broker | The changelog is already the outbox, in the same file as the data; a broker is a second durable store to keep consistent with it |
+| A database per service | Ownership is enforced by test (`module-borders.test.js`); a physical split breaks the 27 transactional operations |
+| Varnish or Redis at the edge | The replica on the user's own disk is the better cache: it answers offline |
+| Full event sourcing | The tables stay the truth; the changelog feeds replicas and, if built, two projections |
 
 ### Stage 3 — walls (not started, not yet approved)
 
@@ -718,3 +760,4 @@ items are verified before anything is done about them.
 | 2026-11-20 | B43: the replica is not hydrated while a catch-up runs. (Mind map change 74.) |
 | 2026-11-20 | Stage 2e step 6. Seven desktop masters read from the replica (decorators beside their API repositories; departments as a subclass); `ReplicaFreshness` makes every replica read — the four older decorators' too — go to the network while the replica is known to be behind on that table. Tests: `replica_freshness_test.dart` (5), `local_first_masters_test.dart` (3). core_erp 1224, root CI 161. The real-app UI journey (`scripts/e2e-ui.sh`) could not run: this machine has the Command Line Tools and no Xcode, so `xcodebuild` is missing; it needs running where Xcode is. (Mind map change 75.) |
 | 2026-11-20 | Stage 2e step 7, the part that can be run here: the phone's ETag response cache. The scoped replica and offline state wait for a device. Mobile 7. (Mind map change 76.) |
+| 2026-11-20 | Stage 2e step 9: "When to extract a service" — four triggers, the transactional precondition (27 operations, by module), the order of work when one fires, and what stays off the table. Step 8 held for a decision (see its checklist line). (Mind map change 77.) |
