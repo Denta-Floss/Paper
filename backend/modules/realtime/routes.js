@@ -122,7 +122,11 @@ function registerRealtimeRoutesBeforeLogin(app, {
       const host = address.includes(':') ? `[${address}]` : address;
       const base = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${req.socket.localPort}`;
       const headers = { authorization: req.headers.authorization || '', 'accept-encoding': 'identity' };
-      const entries = await Promise.all(Object.entries(REPLICA_LISTS).map(async ([table, listPath]) => {
+      // `?tables=items,units` for a replica that holds only some of them (the
+      // phone's); absent, every list. A name it does not know is ignored.
+      const wanted = String(req.query.tables || '').split(',').map((name) => name.trim()).filter(Boolean);
+      const lists = Object.entries(REPLICA_LISTS).filter(([table]) => !wanted.length || wanted.includes(table));
+      const entries = await Promise.all(lists.map(async ([table, listPath]) => {
         try {
           const response = await fetch(`${base}${listPath}`, { headers });
           if (response.status === 401 || response.status === 403) return [table, 'refused'];
@@ -134,15 +138,15 @@ function registerRealtimeRoutesBeforeLogin(app, {
       }));
       // `refused`: this caller may not read it, and asking again will not help.
       // `missing`: it failed to load; the client asks for it on its own.
-      const lists = {};
+      const answered = {};
       const missing = [];
       const refused = [];
       for (const [table, rows] of entries) {
         if (rows === 'refused') refused.push(table);
-        else if (rows) lists[table] = rows;
+        else if (rows) answered[table] = rows;
         else missing.push(table);
       }
-      res.json({ success: true, head, lists, missing, refused, error: null });
+      res.json({ success: true, head, lists: answered, missing, refused, error: null });
     } catch (error) {
       res.status(500).json({ success: false, head: 0, lists: {}, missing: [], refused: [], error: error.message });
     }

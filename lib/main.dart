@@ -13,9 +13,8 @@ import 'package:core_erp/core/network/conditional_cache_client.dart';
 import 'dart:async';
 
 import 'package:core_erp/core/database/local_database_helper.dart';
-import 'package:core_erp/core/sync/delta_sync_engine.dart';
-import 'package:core_erp/core/sync/replica_api.dart';
 import 'package:core_erp/core/sync/replica_sync_service.dart';
+import 'package:core_erp/core/sync/replica_session.dart';
 import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/local_first_client_repository.dart';
 import 'package:core_erp/features/departments/data/repositories/local_first_departments_repository.dart';
@@ -141,9 +140,10 @@ const _autoLoginPassword = String.fromEnvironment(
 /// Top-level beside the response cache, and for the same reason: a replica
 /// belongs to a person, not to a launch, and the repository factory and the
 /// sign-in hook live in different widgets.
-ReplicaSyncService? _replicaSync;
+ReplicaSyncService? get _replicaSync => ReplicaSession.instance.service;
 
-/// Opens this user's replica and starts following the changelog.
+/// Opens this user's replica and starts following the changelog — the shared
+/// [ReplicaSession], which the phone runs too.
 ///
 /// Failure is survivable on purpose. The local-first repository asks whether
 /// the replica is hydrated before trusting it, so a replica that never opened
@@ -151,39 +151,12 @@ ReplicaSyncService? _replicaSync;
 Future<void> startReplicaSync({
   required http.Client client,
   required String namespace,
-}) async {
-  try {
-    final api = ReplicaApi(client: client, baseUrl: _apiBaseUrl);
-    final service = _replicaSync ??= ReplicaSyncService(
-      fetchRecord: api.fetchRecord,
-      fetchList: api.fetchList,
-      fetchChangesSince: api.fetchChangesSince,
-      fetchChangesPage: api.fetchChangesPage,
-      fetchBootstrap: api.fetchBootstrap,
+}) =>
+    ReplicaSession.instance.start(
+      client: client,
+      baseUrl: _apiBaseUrl,
+      namespace: namespace,
     );
-    await service.start(namespace);
-    SocketService.instance.off('table-change', _onReplicaTableChange);
-    SocketService.instance.on('table-change', _onReplicaTableChange);
-    await service.catchUp();
-  } catch (error) {
-    debugPrint('Replica unavailable, staying on the network: $error');
-  }
-}
-
-void _onReplicaTableChange(dynamic data) {
-  if (data is! Map) return;
-  final table = '${data['table'] ?? ''}';
-  if (table.isEmpty) return;
-  final changelogId = data['changelogId'];
-  _replicaSync?.onTableChange(
-    TableChange(
-      table: table,
-      recordId: data['id'] ?? 0,
-      action: '${data['action'] ?? 'UPDATE'}',
-      changelogId: changelogId is num ? changelogId.toInt() : 0,
-    ),
-  );
-}
 
 final ConditionalCacheClient _httpCache = ConditionalCacheClient(
   inner: http.Client(),
@@ -1156,25 +1129,30 @@ class _AuthGateState extends State<_AuthGate> {
     _httpCache.namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
     // Opened before the providers load, so a warm replica answers their first
     // read instead of the network.
-    if (!widget.isDemoMode) {
-      unawaited(startReplicaSync(
-        client: AuthenticatedHttpClient(
-          tokenResolver: () => auth.token,
-          inner: _httpCache,
-        ),
-        namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
-      ));
-    }
+    final replica = widget.isDemoMode
+        ? Future<void>.value()
+        : startReplicaSync(
+            client: AuthenticatedHttpClient(
+              tokenResolver: () => auth.token,
+              inner: _httpCache,
+            ),
+            namespace: '${identity?.id ?? identity?.email ?? 'anonymous'}',
+          );
     // The update feed is behind the login, so it is asked now (Windows only).
     unawaited(AutoUpdaterService.instance.checkWithServer(
       _apiBaseUrl,
       AuthenticatedHttpClient(tokenResolver: () => auth.token),
     ));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // The first load waits for the replica to catch up — a few seconds at
+      // most — so it reads a current copy rather than the network (the copy
+      // does not count as current mid-replay), and an offline launch reads the
+      // copy instead of failing with it right there.
+      await replica.timeout(const Duration(seconds: 3), onTimeout: () {});
       if (!mounted) {
         return;
       }
-      Future.wait<void>([
+      await Future.wait<void>([
         context.read<OrdersProvider>().initialize(),
         context.read<InventoryProvider>().initialize(),
         context.read<UnitsProvider>().initialize(),

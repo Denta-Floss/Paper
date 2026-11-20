@@ -79,3 +79,11 @@ test('a bootstrap needs a session', async (t) => {
   const anonymous = await fetch(`${ctx.baseUrl}/api/replica/bootstrap`);
   assert.equal(anonymous.status, 401);
 });
+
+test('a replica that holds only some tables is sent only those', async (t) => {
+  const ctx = await boot();
+  t.after(() => new Promise((resolve) => ctx.server.close(resolve)));
+  const answer = (await ctx.getJson('/api/replica/bootstrap?tables=items,units,nonsense')).body;
+  assert.deepEqual(Object.keys(answer.lists).sort(), ['items', 'units']);
+  assert.deepEqual(answer.missing, []);
+});

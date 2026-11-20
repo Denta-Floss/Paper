@@ -101,8 +101,11 @@ class ReplicaApi {
 
   /// A cold replica's lists in one answer, or null from a server that has no
   /// bootstrap (it predates it), in which case the lists are fetched one by one.
-  Future<ReplicaBootstrap?> fetchBootstrap() async {
-    final uri = Uri.parse('$_baseUrl/api/replica/bootstrap');
+  ///
+  /// [tables] narrows it to the lists a replica of some tables holds.
+  Future<ReplicaBootstrap?> fetchBootstrap({Iterable<String>? tables}) async {
+    final scope = tables == null ? '' : '?tables=${tables.join(',')}';
+    final uri = Uri.parse('$_baseUrl/api/replica/bootstrap$scope');
     final response = await _client.get(uri);
     if (response.statusCode == 404) return null;
     if (response.statusCode != 200) {

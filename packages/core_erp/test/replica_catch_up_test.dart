@@ -196,6 +196,32 @@ void main() {
     expect(await cursor.lastChangelogId(), 900);
   });
 
+  test('a replica of some tables skips the rest, and still moves past them', () async {
+    await catchUp().run();
+    server.records['vendors/7'] = <String, dynamic>{'id': 7, 'name': 'Steel Co'};
+    server.log.addAll(const <TableChange>[
+      TableChange(table: 'machines', recordId: 3, action: 'UPDATE', changelogId: 60),
+      TableChange(table: 'vendors', recordId: 7, action: 'UPDATE', changelogId: 61),
+      TableChange(table: 'dies', recordId: 4, action: 'UPDATE', changelogId: 62),
+    ]);
+    server.calls.clear();
+
+    final scoped = ReplicaCatchUp(
+      engine: engine,
+      cursor: cursor,
+      fetchChangesPage: server.fetchChangesPage,
+      fetchBootstrap: server.fetchBootstrap,
+      listTables: const <String>['items', 'vendors'],
+      inScope: (change) => const <String>{'items', 'vendors'}.contains(change.table),
+    );
+    final result = await scoped.run();
+
+    expect(result.replayed.map((c) => c.table), <String>['vendors']);
+    expect(server.calls.where((c) => c.startsWith('record ')), <String>['record vendors/7'],
+        reason: 'no request for a machine or a die it does not keep');
+    expect(await cursor.lastChangelogId(), 62, reason: 'past the skipped die at the end of the page');
+  });
+
   test("a live change carries its changelog id to whoever listens (B41)", () async {
     final seen = <Map<dynamic, dynamic>>[];
     void listener(dynamic data) => seen.add(data as Map);

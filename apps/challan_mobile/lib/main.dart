@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -40,6 +41,17 @@ import 'package:core_erp/features/search/data/repositories/search_repository.dar
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
 import 'package:core_erp/core/network/conditional_cache_client.dart';
+import 'package:core_erp/core/database/local_database_helper.dart';
+import 'package:core_erp/core/sync/replica_session.dart';
+import 'package:core_erp/features/clients/data/repositories/local_first_client_repository.dart';
+import 'package:core_erp/features/delivery_challans/data/local_first_challan_repository.dart';
+import 'package:core_erp/features/groups/data/repositories/local_first_group_repository.dart';
+import 'package:core_erp/features/inventory/data/repositories/local_first_inventory_repository.dart';
+import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
+import 'package:core_erp/features/orders/data/repositories/local_first_order_repository.dart';
+import 'package:core_erp/features/units/data/repositories/local_first_unit_repository.dart';
+import 'package:core_erp/features/vendors/data/repositories/local_first_vendor_repository.dart';
+
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/services/socket_service.dart' as core_socket;
 import 'package:core_erp/core/services/generic_asset_service.dart';
@@ -47,6 +59,7 @@ import 'package:core_erp/core/services/entity_photos.dart';
 import 'package:core_erp/core/services/photo_requests.dart';
 
 import 'photos/photo_queue_gate.dart';
+import 'widgets/offline_banner.dart';
 import 'screens/home_screen.dart';
 import 'package:challan_mobile/screens/passcode_screen.dart';
 import 'services/network_discovery_service.dart';
@@ -518,39 +531,80 @@ class MyApp extends StatelessWidget {
           },
         ),
         Provider<InventoryRepository>(
-          create: (context) => ApiInventoryRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiInventoryRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstInventoryRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<UnitRepository>(
-          create: (context) => ApiUnitRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiUnitRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstUnitRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<GroupRepository>(
-          create: (context) => ApiGroupRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiGroupRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstGroupRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<ClientRepository>(
-          create: (context) => ApiClientRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiClientRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstClientRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<VendorRepository>(
-          create: (context) => ApiVendorRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiVendorRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstVendorRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+              fromJson: remote.vendorFromJson,
+            );
+          },
         ),
         Provider<VendorHistoryRepository>(
           create: (context) => VendorHistoryRepository(
@@ -559,11 +613,19 @@ class MyApp extends StatelessWidget {
           ),
         ),
         Provider<ItemRepository>(
-          create: (context) => ApiItemRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiItemRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstItemRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<FavoritesRepository>(
           create: (context) => FavoritesRepository(
@@ -572,18 +634,34 @@ class MyApp extends StatelessWidget {
           ),
         ),
         Provider<OrderRepository>(
-          create: (context) => ApiOrderRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiOrderRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstOrderRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<ChallanRepository>(
-          create: (context) => ApiChallanRepository(
-            client: _authClient(context.read<AuthProvider>()),
-            baseUrl: apiUrl,
-            useMockResponses: false,
-          ),
+          create: (context) {
+            final remote = ApiChallanRepository(
+              client: _authClient(context.read<AuthProvider>()),
+              baseUrl: apiUrl,
+              useMockResponses: false,
+            );
+            if (demoMode) return remote;
+            return LocalFirstChallanRepository(
+              remote: remote,
+              replica: () async => LocalDatabaseHelper.instance.database,
+              isHydrated: () => ReplicaSession.instance.isHydrated,
+            );
+          },
         ),
         Provider<SearchRepository>(
           create: (context) => ApiSearchRepository(
@@ -737,17 +815,37 @@ class MyApp extends StatelessWidget {
           ),
           useMaterial3: true,
         ),
-        home: _AuthGate(cache: cacheFor(httpClient, directory: cacheDirectory)),
+        home: _AuthGate(
+          cache: cacheFor(httpClient, directory: cacheDirectory),
+          apiUrl: apiUrl,
+          demoMode: demoMode,
+        ),
       ),
     );
   }
 }
 
+/// The server tables the phone keeps a copy of: what its screens read. The
+/// desktop's machines, dies, departments and pipelines are not here, and a
+/// change to one of them is not fetched.
+const Set<String> kPhoneReplicaTables = <String>{
+  'items',
+  'order_items',
+  'delivery_challans',
+  'materials',
+  'clients',
+  'vendors',
+  'units',
+  'groups',
+};
+
 class _AuthGate extends StatefulWidget {
-  const _AuthGate({required this.cache});
+  const _AuthGate({required this.cache, required this.apiUrl, required this.demoMode});
 
   /// Pointed at the signed-in user's own copies before anything is fetched.
   final ConditionalCacheClient cache;
+  final String apiUrl;
+  final bool demoMode;
 
   @override
   State<_AuthGate> createState() => _AuthGateState();
@@ -761,11 +859,32 @@ class _AuthGateState extends State<_AuthGate> {
     _lastRefreshToken = token;
     // Namespaced, not cleared: a launch begins with a sign-in, and clearing
     // here would empty the cache at the one moment it is worth having.
-    final identity = context.read<AuthProvider>().user;
-    widget.cache.namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    final auth = context.read<AuthProvider>();
+    final identity = auth.user;
+    final namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
+    widget.cache.namespace = namespace;
+    // The phone's own copy of what its screens read, kept current from the
+    // change stream; screens read it, and the network when it is behind or
+    // not there yet. Opened before the providers load so a warm copy answers
+    // their first read.
+    final replica = widget.demoMode
+        ? Future<void>.value()
+        : ReplicaSession.instance.start(
+            client: AuthenticatedHttpClient(tokenResolver: () => auth.token, inner: widget.cache),
+            baseUrl: widget.apiUrl,
+            namespace: namespace,
+            tables: kPhoneReplicaTables,
+          );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // The first load waits for the copy to catch up — a few seconds at most.
+      // Started together, the screens read the network while the catch-up
+      // ran (the copy does not count as current mid-replay), and offline those
+      // reads failed with the copy right there and nothing re-reading it.
+      // Waited for, an online launch reads the fresh copy and an offline one
+      // reads the copy as it was, after a catch-up that failed at once.
+      await replica.timeout(const Duration(seconds: 3), onTimeout: () {});
       if (!mounted) return;
-      Future.wait<void>([
+      await Future.wait<void>([
         context.read<OrdersProvider>().refresh(),
         context.read<InventoryProvider>().refresh(),
         context.read<UnitsProvider>().refresh(),
@@ -809,7 +928,7 @@ class _AuthGateState extends State<_AuthGate> {
     
     // Signed in, the camera opens by itself for a photo the desktop sends.
     return authenticated
-        ? const PhotoQueueGate(child: HomeScreen())
+        ? const OfflineBanner(child: PhotoQueueGate(child: HomeScreen()))
         : const PasscodeScreen();
   }
 }

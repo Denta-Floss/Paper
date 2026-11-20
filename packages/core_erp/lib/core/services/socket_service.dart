@@ -12,6 +12,10 @@ class SocketService {
 
   http.Client? _client;
   bool _isConnected = false;
+
+  /// Whether the change stream is actually open right now — not whether one is
+  /// wanted (that is `_isConnected`). An offline banner listens to this.
+  final ValueNotifier<bool> streamLive = ValueNotifier<bool>(false);
   int _lastEventId = 0;
 
   /// Where to read and write the replay position.
@@ -70,6 +74,7 @@ class SocketService {
 
   /// Disconnects SSE stream and cancels any active reconnect attempts.
   void disconnect() {
+    streamLive.value = false;
     _isConnected = false;
     _currentToken = null;
     _reconnectTimer?.cancel();
@@ -107,6 +112,7 @@ class SocketService {
 
       if (response.statusCode == 200) {
         print('SocketService: Connected to backend (SSE)');
+        streamLive.value = true;
         // On a *re*connect (e.g. after the app backgrounded and the stream
         // dropped) we may have missed change events during the gap. Tell
         // listeners to resync so nothing is left stale — this does NOT depend on
@@ -307,6 +313,7 @@ class SocketService {
   }
 
   void _scheduleReconnect(String baseUrl) {
+    streamLive.value = false;
     _client?.close();
     if (!_isConnected || _currentToken == null || _currentToken!.isEmpty)
       return;

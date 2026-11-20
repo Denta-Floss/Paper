@@ -27,13 +27,28 @@ class ReplicaSyncService {
     BootstrapFetcher? fetchBootstrap,
     LocalDatabaseHelper? helper,
     Duration batchWindow = const Duration(milliseconds: 250),
-  }) : _fetchRecord = fetchRecord,
+    Set<String>? tables,
+  }) : _scope = tables,
+       _fetchRecord = fetchRecord,
        _fetchList = fetchList,
        _fetchChangesSince = fetchChangesSince,
        _fetchChangesPage = fetchChangesPage,
        _fetchBootstrap = fetchBootstrap,
        _helper = helper ?? LocalDatabaseHelper.instance,
        _batchWindow = batchWindow;
+
+  /// The server tables this replica holds, or null for all of them. The phone
+  /// keeps only what its screens read; a change to anything else is not
+  /// fetched.
+  final Set<String>? _scope;
+
+  bool _holds(String serverTable) {
+    final scope = _scope;
+    if (scope == null) return true;
+    if (scope.contains(serverTable)) return true;
+    final parent = kReplicaBindings[serverTable]?.parentTable;
+    return parent != null && scope.contains(parent);
+  }
 
   /// The changelog with what the server says about it (more to come, the
   /// oldest it holds, its head). Without it, the plain list above is used and
@@ -131,6 +146,7 @@ class ReplicaSyncService {
             (since) async => ChangesPage(changes: await _fetchChangesSince(since)),
         fetchBootstrap: _fetchBootstrap,
         listTables: _listTables,
+        inScope: _scope == null ? null : (change) => _holds(change.table),
       ).run();
       if (result.hydrated) {
         _hydrated = true;
@@ -152,10 +168,11 @@ class ReplicaSyncService {
 
   /// The tables a list can fill. `viaParent` and `ignore` bindings have no list
   /// of their own; their rows arrive with their parents.
-  static final List<String> _listTables = <String>[
+  List<String> get _listTables => <String>[
     for (final entry in kReplicaBindings.entries)
       if (entry.value.localTable != null &&
-          entry.value.strategy != DeltaStrategy.viaParent)
+          entry.value.strategy != DeltaStrategy.viaParent &&
+          _holds(entry.key))
         entry.key,
   ];
 
@@ -163,7 +180,7 @@ class ReplicaSyncService {
   /// several rows and applying each separately would fetch the same record more
   /// than once.
   void onTableChange(TableChange change) {
-    if (!_started) return;
+    if (!_started || !_holds(change.table)) return;
     // Behind from now until a drain applies it, so a provider refreshing on
     // this same event reads the network rather than the row as it was.
     final local = _localTableFor(change.table);

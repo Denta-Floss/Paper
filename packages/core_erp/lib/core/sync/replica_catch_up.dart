@@ -54,17 +54,24 @@ class ReplicaCatchUp {
     required ChangesPageFetcher fetchChangesPage,
     required Iterable<String> listTables,
     BootstrapFetcher? fetchBootstrap,
+    bool Function(TableChange change)? inScope,
   }) : _engine = engine,
        _cursor = cursor,
        _fetchChangesPage = fetchChangesPage,
        _listTables = listTables.toList(growable: false),
-       _fetchBootstrap = fetchBootstrap;
+       _fetchBootstrap = fetchBootstrap,
+       _inScope = inScope;
 
   final DeltaSyncEngine _engine;
   final SyncMetadataStore _cursor;
   final ChangesPageFetcher _fetchChangesPage;
   final List<String> _listTables;
   final BootstrapFetcher? _fetchBootstrap;
+
+  /// Which changes this replica holds. A replica of some tables only (the
+  /// phone's) skips the rest — fetching a record it does not keep would cost
+  /// a request for nothing — and still moves its cursor past them.
+  final bool Function(TableChange change)? _inScope;
 
   /// The largest changelog id there could be. Asking for changes after it
   /// returns none, and the head — the cheapest way to learn where the log is.
@@ -94,8 +101,22 @@ class ReplicaCatchUp {
         return (replayed: replayed, hydrated: true);
       }
       if (page.changes.isEmpty) break;
-      await _engine.apply(page.changes, cursor: _cursor);
-      replayed.addAll(page.changes);
+      final inScope = _inScope;
+      final mine = inScope == null
+          ? page.changes
+          : page.changes.where(inScope).toList(growable: false);
+      if (mine.isNotEmpty) {
+        await _engine.apply(mine, cursor: _cursor);
+        replayed.addAll(mine);
+      }
+      // Past the changes this replica skips, but only once every one it keeps
+      // has landed: the engine holds the cursor before a change it could not
+      // apply, and that must not be jumped.
+      final lastMine = mine.isEmpty ? 0 : mine.map((c) => c.changelogId).reduce((a, b) => a > b ? a : b);
+      if (await _cursor.lastChangelogId() >= lastMine) {
+        final pageEnd = page.changes.map((c) => c.changelogId).reduce((a, b) => a > b ? a : b);
+        await _cursor.setLastChangelogId(pageEnd);
+      }
       final reached = await _cursor.lastChangelogId();
       // A change that could not be applied holds the cursor where it is; asking
       // again would only fail on it again. The next sync retries.
