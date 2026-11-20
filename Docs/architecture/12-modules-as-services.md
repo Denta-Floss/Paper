@@ -491,6 +491,12 @@ commit each, the suite green before every commit:
 
 Not now, and why: GraphQL (field selection is a list shape per endpoint, seven of them), gRPC (one process, no inter-service wire), Kafka/NATS (the changelog is the outbox and there is one durable store), database per service (nothing measured asks for it), Varnish/Redis (the replica on the user's disk is the better cache), full event sourcing (the changelog feeds two projections; the tables stay the truth).
 
+### Stage 2f — writes that survive a retry, and the wire measured (2026-11-20)
+
+- [x] Track 2, server side: `X-Idempotency-Key` (kernel/idempotency.js, table `idempotency_log` in the kernel schema). Per user, kept a day. First send runs and keeps its answer; a retry replays it (`Idempotent-Replayed: true`); one key for a different request is 422 `idempotency_key_reused`; a retry while the first runs is 409 `idempotency_in_progress`; applied but the answer lost is 409 `idempotency_already_applied`; cut off by a stop is 409 `idempotency_outcome_unknown` after `recover()` at boot. **The mark is written inside the write's own transaction**: the server's `run` calls `beforeCommit()` on every COMMIT, so for all 61 places that open a transaction the write and the mark land together or not at all, without any of them changing. Upserts, because one SQLite connection is shared and another request's rollback can take an in-flight row. Residue, stated: a write with no transaction of its own is marked just after it. Tests: `idempotency.test.js` (12) — an order, a challan and a stock movement sent twice land once; five at once land once; refusals replay; the order endpoint's own COMMIT goes through the hook; the in-transaction property on its own.
+- [ ] Track 2, client side: the outbox (record the mutation with its UUID, show it pending, flush on reconnect with the UUID as the key, clear on 2xx/replay or on `idempotency_already_applied`).
+- [ ] Track 1: the throttled benchmark and its report.
+
 ### When to extract a service
 
 Paper stays one process with one database file. A module leaves it only when
@@ -768,3 +774,4 @@ items are verified before anything is done about them.
 | 2026-11-20 | Stage 2e step 4 finished after B42: the items list also drops attachments and empty CAD fields (20.9 KB). Unit conversions kept — ten readers convert quantities off list rows. (Mind map change 80.) |
 | 2026-11-20 | Stage 2e step 7 finished: the phone's scoped replica (bootstrap `?tables=`, scoped catch-up, shared `ReplicaSession`), first load waits for catch-up (both apps), offline banner. Driven on the Android emulator. B44, B45 logged. Backend 469, core_erp 1233, root CI 161, mobile 10. (Mind map change 81.) |
 | 2026-11-20 | B44 and B45 fixed and driven on emulator-5554: passcode errors inline with Try again; server remembered; offline start for the last signed-in user; stale-on-unreachable in the response cache; the replica catches up whenever the change stream comes up. Backend 469, core_erp 1237, root CI 161, mobile 25. (Mind map change 82.) |
+| 2026-11-20 | Stage 2f Track 2 (server): `X-Idempotency-Key` with the mark inside the write's transaction via the COMMIT hook in `run`; `idempotency_log` (kernel); schema snapshot +1 table +1 index, intended. Backend 481. (Mind map change 83.) |

@@ -293,6 +293,8 @@ const MODULES = {
 // construction (links, variation trees, the activity log, the custody ledger),
 // which no single business module can own.
 const KERNEL_TABLES = [
+  // Retried writes apply once (kernel/idempotency.js).
+  'idempotency_log',
   'users', 'auth_sessions', 'auth_events',
   'role_permissions', 'user_permission_overrides', 'user_permission_templates',
   'permission_templates', 'permission_template_permissions', 'user_record_permissions',

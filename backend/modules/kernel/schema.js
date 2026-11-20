@@ -29,6 +29,8 @@
 
 const { ensureColumnExists: ensureColumn } = require('../../kernel/schema-kit');
 
+const { SCHEMA: IDEMPOTENCY_SCHEMA } = require('../../kernel/idempotency');
+
 async function createSchema({ run, all, get }) {
   const ensureColumnExists = (table, column, definition) => ensureColumn({ run, all }, table, column, definition);
   await run(`
@@ -384,6 +386,10 @@ async function createSchema({ run, all, get }) {
   await run(
     'CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary)',
   );
+
+  // Retried writes apply once (kernel/idempotency.js).
+  await run(IDEMPOTENCY_SCHEMA);
+  await run('CREATE INDEX IF NOT EXISTS idx_idempotency_log_created ON idempotency_log(created_at)');
 }
 
 module.exports = { createSchema };

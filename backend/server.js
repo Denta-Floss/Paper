@@ -1152,7 +1152,7 @@ app.use((req, res, next) => {
   next();
 });
 
-function run(sql, params = []) {
+function rawRun(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function onRun(error) {
       if (error) {
@@ -1162,6 +1162,17 @@ function run(sql, params = []) {
       resolve(this);
     });
   });
+}
+
+// Every COMMIT first asks the idempotency kernel whether the request
+// committing carries an X-Idempotency-Key; if so its row is marked inside this
+// same transaction, so the write and the mark land together
+// (kernel/idempotency.js). No handler has to know.
+function run(sql, params = []) {
+  if (typeof sql === 'string' && /^\s*(COMMIT|END)\b/i.test(sql)) {
+    return idempotency.beforeCommit().then(() => rawRun(sql, params));
+  }
+  return rawRun(sql, params);
 }
 
 // Runs a statement on the dedicated FK-off delete connection.
@@ -1188,6 +1199,11 @@ function get(sql, params = []) {
     });
   });
 }
+
+const idempotency = require('./kernel/idempotency').createIdempotency({
+  run: (sql, params) => rawRun(sql, params),
+  get: (sql, params) => get(sql, params),
+});
 
 function all(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -8714,6 +8730,9 @@ app.use('/api', (req, res, next) => {
 app.use('/api', requireAuth);
 app.use('/api', requireApiModulePermission);
 app.use('/api', requireApiWritePermission);
+// After the permission checks: a write refused for permission is not an
+// operation, and must not take its idempotency key.
+app.use('/api', idempotency.middleware);
 
 app.use('/api', (req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
@@ -11390,6 +11409,9 @@ function startServer() {
         await runMigrations();
         console.log('Initializing database schema...');
         await initDb();
+        // Operations cut off by the last stop cannot be known to have landed.
+        await idempotency.recover();
+        setInterval(() => idempotency.prune().catch(() => {}), 60 * 60 * 1000).unref();
         // Portal passwords stored as plain text by older versions are hashed
         // before the server takes a request.
         const rehashed = await clientPortalService.hashStoredPlainPasswords();
@@ -11753,6 +11775,7 @@ app.use((error, req, res, _next) => {
 
 module.exports = {
   desk,
+  idempotency,
   resyncChangelogCursor,
   drainChangelog,
   pruneChangelog,
