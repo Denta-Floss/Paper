@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c77["⟳ Change 77: when a module may leave the process is written down"]
+      c78["⟳ Change 78: step 8 dropped, no read-model projections"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -58,8 +58,8 @@ mindmap
         w11c["not done: stock positions in the replica (overview is ETag'd), the offline badge (needs a UI pass); usageCount can lag"]
       w12["phone: one ConditionalCacheClient per connection, namespaced per user in _AuthGate; MyApp takes cacheDirectory for tests"]
         w12a["not done: the phone replica and offline state, no device to run them on here"]
-      w13["⟳ extraction triggers: measured scaling, demanded cadence, a named failure, separate ownership; precondition: no transactional operations (27 today)"]
-      w14["⟳ step 8 held: 041 triggers already announce order lines; a projection is border cleanliness, not speed, and a second copy of delivered qty"]
+      w13["extraction triggers: measured scaling, demanded cadence, a named failure, separate ownership; precondition: no transactional operations (27 today)"]
+      w14["⟳ step 8 dropped: 041 triggers announce order lines live and the SQL takes ms; a projection would only be a drift risk"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
@@ -718,3 +718,4 @@ mindmap
 | 75 | Step 6 of the wire plan. New `core/sync/replica_freshness.dart`; `ReplicaReader` consults it and offers `wrote(table)`; `ReplicaSyncService.onTableChange` marks, `_drain` snapshots then clears, `start` resets. New decorators: `local_first_{client,vendor,unit,group}_repository.dart`, `local_first_departments_repository.dart` (core_erp), `lib/features/{machines,dies}/data/local_first_*_repository.dart`; vendors, machines and dies expose their parsers as `vendorFromJson` / `machineFromJson` / `dieFromJson`. `lib/main.dart` wires all seven (demo mode stays on the API repositories). The items, orders, challans and inventory decorators route their writes through `_wrote`. | App, Tests |
 | 76 | Step 7 of the wire plan, the cache. `apps/challan_mobile/lib/main.dart`: `MyApp.cacheFor` keeps one `ConditionalCacheClient` per inner client (an `Expando`), every repository's `AuthenticatedHttpClient` wraps it, `_AuthGate` takes it and sets `namespace` to the user on sign-in; `MyApp.cacheDirectory` so a widget test avoids real file I/O. Test: a second `/api/units` carries `If-None-Match` and the 304 replays the list. | Mobile, Tests |
 | 77 | Step 9 of the wire plan: `Docs/architecture/12-modules-as-services.md` § "When to extract a service" (triggers, precondition with the 27 transactional operations by module, order of work, the off-the-table list). Step 8 held for a decision with the facts in its checklist line. | Docs |
+| 78 | Step 8 of the wire plan dropped by decision; the checklist line records why. | Docs |
