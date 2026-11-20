@@ -565,7 +565,7 @@ test('asking for ids that match nothing returns nothing, not everything', async 
   assert.deepEqual((await ask(`?ids=${real},nonsense`)).map((o) => o.id), [real]);
 });
 
-test('an item in the list is the item in full, less five tree-node fields nobody reads', async (t) => {
+test('an item in the list is the item in full, less what only the detail reads', async (t) => {
   // The app saves a part by sending back the whole object it holds, and that
   // object comes from the list (or the replica the list filled). So the list
   // may drop only what no client reads AND no save sends back — anything else
@@ -606,11 +606,19 @@ test('an item in the list is the item in full, less five tree-node fields nobody
     out.children = (node.children || []).map(withoutDropped);
     return out;
   };
+  // Since B42 saves and the editor read the detail, so the list also drops the
+  // attachments, and the CAD fields of a part with no CAD file.
+  const { attachments, cadFileKey, cadFileName, ...fullRest } = full;
+  assert.ok(!('attachments' in row), 'the list carries no attachments');
+  assert.ok(!('cadFileKey' in row) && !('cadFileName' in row), 'nor empty CAD fields');
+  assert.equal(cadFileKey, '', 'this part has no CAD file');
+  assert.ok(Array.isArray(attachments), 'the detail still carries them');
   assert.deepEqual(
     { ...row, variationTree: null },
-    { ...full, variationTree: null },
-    'every item-level field is in the list exactly as in the detail',
+    { ...fullRest, variationTree: null },
+    'every other item-level field is in the list exactly as in the detail',
   );
+  assert.ok(Array.isArray(row.unitConversions), 'unit conversions stay: quantity conversion reads them off list rows');
   assert.deepEqual(row.variationTree, full.variationTree.map(withoutDropped));
 
   // And what a save sends back is all still there.
@@ -621,4 +629,25 @@ test('an item in the list is the item in full, less five tree-node fields nobody
   assert.equal(property.children[0].parentNodeId, property.id, 'leaf-to-root walks read it');
   assert.equal(property.children[0].displayName, 'Zinc plated');
   for (const key of DROPPED) assert.ok(key in full.variationTree[0], `the detail keeps ${key}`);
+});
+
+test('a part with a CAD file keeps it on the list, where the detail panel shows it', async (t) => {
+  const ctx = await boot('paper-wire-items-cad-', 'wire-items-cad@paper.test');
+  t.after(async () => {
+    await closeServer(ctx.server);
+  });
+  const group = await ctx.backend.get('SELECT id FROM groups WHERE is_archived = 0 ORDER BY id LIMIT 1');
+  const unit = await ctx.backend.get('SELECT id FROM units WHERE is_archived = 0 ORDER BY id LIMIT 1');
+  const made = await fetch(`${ctx.baseUrl}/api/items`, {
+    method: 'POST',
+    headers: ctx.headers,
+    body: JSON.stringify({ name: 'Wire CAD Part', groupId: group.id, unitId: unit.id, variationTree: [] }),
+  }).then((r) => r.json());
+  const id = (made.item || made).id;
+  await ctx.backend.run("UPDATE items SET cad_file_key = 'cad/part.dxf', cad_file_name = 'part.dxf' WHERE id = ?", [id]);
+
+  const list = await (await fetch(`${ctx.baseUrl}/api/items`, { headers: ctx.headers })).json();
+  const row = list.items.find((entry) => entry.id === id);
+  assert.equal(row.cadFileKey, 'cad/part.dxf');
+  assert.equal(row.cadFileName, 'part.dxf');
 });

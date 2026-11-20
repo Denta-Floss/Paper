@@ -333,10 +333,13 @@ function createItemsWork({
   // item it sits in says that), its position (the array order says that), and
   // isArchived (only live nodes are listed). 18% of the list, compressed.
   //
-  // Nothing else may leave a list row. The app saves a part by sending back the
-  // whole object it holds, and the object it holds comes from this list (or the
-  // replica filled from it), so a field missing here is a field the next save
-  // erases. `GET /api/items/:id` keeps the full node.
+  // Beyond the tree: since B42 every whole-item save and the editor start from
+  // `GET /api/items/:id`, so the list may drop what only they read —
+  // `attachments` always, and the CAD file's key and name when the part has
+  // none (the detail panel shows a CAD file off the list, so a real one stays).
+  // `unitConversions` stays: challans, orders, reconciliation and the phone
+  // convert quantities with it straight off list rows. `GET /api/items/:id`
+  // keeps everything.
   const LIST_NODE_FIELDS_DROPPED = ['createdAt', 'updatedAt', 'itemId', 'position', 'isArchived'];
   function listNode(node) {
     const out = {};
@@ -350,10 +353,14 @@ function createItemsWork({
   async function listItems(req) {
     try {
       const rows = await getItemsWithUsage();
-      const items = (await Promise.all(rows.map(rowToItemDto))).map((item) => ({
-        ...item,
-        variationTree: (item.variationTree || []).map(listNode),
-      }));
+      const items = (await Promise.all(rows.map(rowToItemDto))).map((item) => {
+        const { attachments, cadFileKey, cadFileName, ...rest } = item;
+        return {
+          ...rest,
+          ...(cadFileKey ? { cadFileKey, cadFileName } : {}),
+          variationTree: (item.variationTree || []).map(listNode),
+        };
+      });
       return answer(200, { success: true, items, error: null });
     } catch (error) {
       return answer(500, { success: false, items: [], error: error.message });

@@ -28,7 +28,7 @@ const KB = 1024;
 const BUDGETS = {
   sign_in: { requests: 20, bytes: 120 * KB }, // 21 requests, 57.3 KB; 18 requests after step 3
   orders_list_page: { requests: 1, bytes: 40 * KB }, // 1 request, 7.8 KB
-  items_list_page: { requests: 1, bytes: 60 * KB }, // 1 request, 26.7 KB; 21.8 KB after step 4
+  items_list_page: { requests: 1, bytes: 60 * KB }, // 1 request, 26.7 KB; 20.9 KB after step 4
   inventory_overview: { requests: 1, bytes: 40 * KB }, // 4 requests, 8.9 KB; 1 request after step 3
   replica_hydration: { requests: 3, bytes: 160 * KB }, // 14 requests, 60.6 KB; 1 request after step 5
 };
