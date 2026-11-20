@@ -75,21 +75,21 @@ class LocalFirstItemRepository implements ItemRepository {
   Future<ItemDefinition?> getItemFresh(int id) => _remote.getItemFresh(id);
 
   @override
-  Future<void> archiveItem(int id) => _remote.archiveItem(id);
+  Future<void> archiveItem(int id) => _wrote(_remote.archiveItem(id));
 
   @override
-  Future<ItemDefinition> createItem(CreateItemInput input) => _remote.createItem(input);
+  Future<ItemDefinition> createItem(CreateItemInput input) => _wrote(_remote.createItem(input));
 
   @override
-  Future<ItemDefinition> updateItem(UpdateItemInput input) => _remote.updateItem(input);
+  Future<ItemDefinition> updateItem(UpdateItemInput input) => _wrote(_remote.updateItem(input));
 
   @override
   Future<ItemDefinition> saveSectionTree(int itemId, Map<String, String> tree) =>
-      _remote.saveSectionTree(itemId, tree);
+      _wrote(_remote.saveSectionTree(itemId, tree));
 
   @override
   Future<ItemDefinition> updateShortCode(int id, String shortCode) =>
-      _remote.updateShortCode(id, shortCode);
+      _wrote(_remote.updateShortCode(id, shortCode));
 
   // The replica holds no set tables at all, so this is remote like the sets
   // list itself.
@@ -115,11 +115,11 @@ class LocalFirstItemRepository implements ItemRepository {
   );
 
   @override
-  Future<void> deleteItem(int id) => _remote.deleteItem(id);
+  Future<void> deleteItem(int id) => _wrote(_remote.deleteItem(id));
 
   @override
   Future<ItemDefinition> reassignItemGroup(int id, int groupId) =>
-      _remote.reassignItemGroup(id, groupId);
+      _wrote(_remote.reassignItemGroup(id, groupId));
 
   @override
   Future<Uri> createCadFileReadUrl(int itemId) => _remote.createCadFileReadUrl(itemId);
@@ -138,13 +138,13 @@ class LocalFirstItemRepository implements ItemRepository {
 
   @override
   Future<ItemAsset> completeAssetUpload(CompleteItemAssetUploadInput input) =>
-      _remote.completeAssetUpload(input);
+      _wrote(_remote.completeAssetUpload(input));
 
   @override
-  Future<ItemAsset> setPrimaryAsset(int assetId) => _remote.setPrimaryAsset(assetId);
+  Future<ItemAsset> setPrimaryAsset(int assetId) => _wrote(_remote.setPrimaryAsset(assetId));
 
   @override
-  Future<void> deleteAsset(int assetId) => _remote.deleteAsset(assetId);
+  Future<void> deleteAsset(int assetId) => _wrote(_remote.deleteAsset(assetId));
 
   @override
   Future<List<ItemUsageRecord>> getItemUsage(int itemId) => _remote.getItemUsage(itemId);
@@ -191,4 +191,14 @@ class LocalFirstItemRepository implements ItemRepository {
   @override
   Future<PipelineMasterDataRoster> getPipelineMasterData(String pipelineId) =>
       _remote.getPipelineMasterData(pipelineId);
+
+  /// A write just went to the server: until the replica has applied it, reads
+  /// of what it touched go to the network, or the refresh that follows a save
+  /// shows the row as it was before.
+  Future<T> _wrote<T>(Future<T> write) =>
+      write.whenComplete(() {
+        for (final table in const <String>['local_items']) {
+          _reader.wrote(table);
+        }
+      });
 }

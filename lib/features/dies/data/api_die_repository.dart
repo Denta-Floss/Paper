@@ -381,6 +381,10 @@ class ApiDieRepository implements DieRepository {
     return DateTime.tryParse(raw);
   }
 
+  /// One row of the list (or the record endpoint) as the app holds it. Public
+  /// so the local-first decorator parses a replica row exactly as this does.
+  Die dieFromJson(Map<String, dynamic> json) => _dieFromJson(json);
+
   Die _dieFromJson(Map<String, dynamic> json) {
     return Die(
       id: json['id'] as String? ?? '',

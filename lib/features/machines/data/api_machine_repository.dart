@@ -383,6 +383,10 @@ class ApiMachineRepository implements MachineRepository {
     return null;
   }
 
+  /// One row of the list (or the record endpoint) as the app holds it. Public
+  /// so the local-first decorator parses a replica row exactly as this does.
+  Machine machineFromJson(Map<String, dynamic> json) => _machineFromJson(json);
+
   Machine _machineFromJson(Map<String, dynamic> json) {
     return Machine(
       id: json['id'] as String? ?? '',

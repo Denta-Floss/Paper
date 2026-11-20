@@ -101,28 +101,28 @@ class LocalFirstChallanRepository implements ChallanRepository {
   Future<DeliveryChallan> getChallan(int id) => _remote.getChallan(id);
 
   @override
-  Future<DeliveryChallan> createChallan(DeliveryChallanDraftInput input) => _remote.createChallan(input);
+  Future<DeliveryChallan> createChallan(DeliveryChallanDraftInput input) => _wrote(_remote.createChallan(input));
 
   @override
   Future<DeliveryChallan> updateChallan(
     int id,
     DeliveryChallanDraftInput input,
-  ) => _remote.updateChallan(id, input);
+  ) => _wrote(_remote.updateChallan(id, input));
 
   @override
-  Future<DeliveryChallan> issueChallan(int id) => _remote.issueChallan(id);
+  Future<DeliveryChallan> issueChallan(int id) => _wrote(_remote.issueChallan(id));
 
   @override
-  Future<DeliveryChallan> reconcileChallan(int id, ChallanReconcileInput input) => _remote.reconcileChallan(id, input);
+  Future<DeliveryChallan> reconcileChallan(int id, ChallanReconcileInput input) => _wrote(_remote.reconcileChallan(id, input));
 
   @override
-  Future<DeliveryChallan> cancelChallan(int id, {String? actionType}) => _remote.cancelChallan(id, actionType: actionType);
+  Future<DeliveryChallan> cancelChallan(int id, {String? actionType}) => _wrote(_remote.cancelChallan(id, actionType: actionType));
 
   @override
   Future<CancelChallanOptions> getCancelOptions(int id) => _remote.getCancelOptions(id);
 
   @override
-  Future<void> deleteChallan(int id) => _remote.deleteChallan(id);
+  Future<void> deleteChallan(int id) => _wrote(_remote.deleteChallan(id));
 
   @override
   Future<void> recordPrint(int id) => _remote.recordPrint(id);
@@ -131,7 +131,7 @@ class LocalFirstChallanRepository implements ChallanRepository {
   Future<DeliveryChallan> savePieceBarcodes(
     int challanId,
     List<Map<String, dynamic>> barcodes,
-  ) => _remote.savePieceBarcodes(challanId, barcodes);
+  ) => _wrote(_remote.savePieceBarcodes(challanId, barcodes));
 
   @override
   Future<Map<String, dynamic>?> lookupSheetBarcode(String code) => _remote.lookupSheetBarcode(code);
@@ -140,7 +140,7 @@ class LocalFirstChallanRepository implements ChallanRepository {
   Future<DeliveryChallan> updateChallanReportGroups(
     int id,
     List<String> reportGroupCodes,
-  ) => _remote.updateChallanReportGroups(id, reportGroupCodes);
+  ) => _wrote(_remote.updateChallanReportGroups(id, reportGroupCodes));
 
   @override
   Future<ReconciliationReportSnapshot> getReconciliationReport() => _remote.getReconciliationReport();
@@ -260,4 +260,14 @@ class LocalFirstChallanRepository implements ChallanRepository {
     int? itemCount,
     List<ChallanTemplateMapping>? mappings,
   }) => _remote.fetchTemplateTestPrintPdf(templateId: templateId, mode: mode, itemCount: itemCount, mappings: mappings);
+
+  /// A write just went to the server: until the replica has applied it, reads
+  /// of what it touched go to the network, or the refresh that follows a save
+  /// shows the row as it was before.
+  Future<T> _wrote<T>(Future<T> write) =>
+      write.whenComplete(() {
+        for (final table in const <String>['local_delivery_challans', 'local_order_items', 'local_materials']) {
+          _reader.wrote(table);
+        }
+      });
 }

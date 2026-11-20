@@ -17,6 +17,13 @@ import 'package:core_erp/core/sync/delta_sync_engine.dart';
 import 'package:core_erp/core/sync/replica_api.dart';
 import 'package:core_erp/core/sync/replica_sync_service.dart';
 import 'package:core_erp/features/items/data/repositories/local_first_item_repository.dart';
+import 'package:core_erp/features/clients/data/repositories/local_first_client_repository.dart';
+import 'package:core_erp/features/departments/data/repositories/local_first_departments_repository.dart';
+import 'package:core_erp/features/groups/data/repositories/local_first_group_repository.dart';
+import 'package:core_erp/features/units/data/repositories/local_first_unit_repository.dart';
+import 'package:core_erp/features/vendors/data/repositories/local_first_vendor_repository.dart';
+import 'features/dies/data/local_first_die_repository.dart';
+import 'features/machines/data/local_first_machine_repository.dart';
 import 'package:core_erp/features/delivery_challans/data/local_first_challan_repository.dart';
 import 'package:core_erp/features/inventory/data/repositories/local_first_inventory_repository.dart';
 import 'package:core_erp/features/orders/data/repositories/local_first_order_repository.dart';
@@ -934,26 +941,47 @@ class MyApp extends StatelessWidget {
   }
 
   UnitRepository _buildUnitRepository(AuthProvider auth) {
-    return ApiUnitRepository(
+    final remote = ApiUnitRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // Replicated already; now read from the replica too (stage 2e step 6).
+    return LocalFirstUnitRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
     );
   }
 
   GroupRepository _buildGroupRepository(AuthProvider auth) {
-    return ApiGroupRepository(
+    final remote = ApiGroupRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
     );
+    if (_effectiveDemoMode) return remote;
+    // Replicated already; now read from the replica too (stage 2e step 6).
+    return LocalFirstGroupRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
+    );
   }
 
   ClientRepository _buildClientRepository(AuthProvider auth) {
-    return ApiClientRepository(
+    final remote = ApiClientRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // Replicated already; now read from the replica too (stage 2e step 6).
+    return LocalFirstClientRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
     );
   }
 
@@ -968,10 +996,18 @@ class MyApp extends StatelessWidget {
   }
 
   VendorRepository _buildVendorRepository(AuthProvider auth) {
-    return ApiVendorRepository(
+    final remote = ApiVendorRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // Replicated already; now read from the replica too (stage 2e step 6).
+    return LocalFirstVendorRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
+      fromJson: remote.vendorFromJson,
     );
   }
 
@@ -1041,26 +1077,52 @@ class MyApp extends StatelessWidget {
   }
 
   MachineRepository _buildMachineRepository(AuthProvider auth) {
-    return ApiMachineRepository(
+    final remote = ApiMachineRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+    if (_effectiveDemoMode) return remote;
+    // Replicated already; now read from the replica too (stage 2e step 6).
+    return LocalFirstMachineRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
+      fromJson: remote.machineFromJson,
     );
   }
 
   DieRepository _buildDieRepository(AuthProvider auth) {
-    return ApiDieRepository(
+    final remote = ApiDieRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
     );
+    if (_effectiveDemoMode) return remote;
+    // Replicated already; now read from the replica too (stage 2e step 6).
+    return LocalFirstDieRepository(
+      remote: remote,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
+      fromJson: remote.dieFromJson,
+    );
   }
 
   DepartmentsRepository _buildDepartmentsRepository(AuthProvider auth) {
-    return DepartmentsRepository(
+    if (_effectiveDemoMode) {
+      return DepartmentsRepository(
+        client: _authClient(auth),
+        baseUrl: _apiBaseUrl,
+        useMockResponses: true,
+      );
+    }
+    // The departments list off the replica; employees are not replicated and
+    // still come from the server.
+    return LocalFirstDepartmentsRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _effectiveDemoMode,
+      replica: () async => LocalDatabaseHelper.instance.database,
+      isHydrated: () => _replicaSync?.isHydrated ?? false,
     );
   }
 

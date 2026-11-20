@@ -103,43 +103,43 @@ class LocalFirstInventoryRepository implements InventoryRepository, InventoryOve
 
   @override
   Future<SaveParentResult> saveParentWithChildren(CreateParentMaterialInput input) =>
-      _remote.saveParentWithChildren(input);
+      _wrote(_remote.saveParentWithChildren(input));
 
   @override
   Future<MaterialRecord?> incrementScanCount(String barcode) =>
-      _remote.incrementScanCount(barcode);
+      _wrote(_remote.incrementScanCount(barcode));
 
   @override
-  Future<MaterialRecord?> resetScanTrace(String barcode) => _remote.resetScanTrace(barcode);
+  Future<MaterialRecord?> resetScanTrace(String barcode) => _wrote(_remote.resetScanTrace(barcode));
 
   @override
   Future<MaterialRecord> createChildMaterial(CreateChildMaterialInput input) =>
-      _remote.createChildMaterial(input);
+      _wrote(_remote.createChildMaterial(input));
 
   @override
   Future<MaterialRecord> updateMaterial(UpdateMaterialInput input) =>
-      _remote.updateMaterial(input);
+      _wrote(_remote.updateMaterial(input));
 
   @override
-  Future<void> deleteMaterial(String barcode) => _remote.deleteMaterial(barcode);
+  Future<void> deleteMaterial(String barcode) => _wrote(_remote.deleteMaterial(barcode));
 
   @override
   Future<MaterialRecord> linkMaterialToGroup(String barcode, int groupId) =>
-      _remote.linkMaterialToGroup(barcode, groupId);
+      _wrote(_remote.linkMaterialToGroup(barcode, groupId));
 
   @override
   Future<MaterialRecord> linkMaterialToItem(
     String barcode,
     int itemId, {
     int? variationLeafNodeId,
-  }) => _remote.linkMaterialToItem(
+  }) => _wrote(_remote.linkMaterialToItem(
     barcode,
     itemId,
     variationLeafNodeId: variationLeafNodeId,
-  );
+  ));
 
   @override
-  Future<MaterialRecord> unlinkMaterial(String barcode) => _remote.unlinkMaterial(barcode);
+  Future<MaterialRecord> unlinkMaterial(String barcode) => _wrote(_remote.unlinkMaterial(barcode));
 
   @override
   Future<List<MaterialActivityEvent>> getMaterialActivity(String barcode) =>
@@ -155,7 +155,7 @@ class LocalFirstInventoryRepository implements InventoryRepository, InventoryOve
   @override
   Future<MaterialControlTowerDetail> createInventoryMovement(
     CreateInventoryMovementInput input,
-  ) => _remote.createInventoryMovement(input);
+  ) => _wrote(_remote.createInventoryMovement(input));
 
   @override
   Future<MaterialGroupConfiguration> getGroupConfiguration(String barcode) =>
@@ -174,7 +174,7 @@ class LocalFirstInventoryRepository implements InventoryRepository, InventoryOve
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
     required List<String> discardedPropertyKeys,
-  }) => _remote.updateGroupConfiguration(
+  }) => _wrote(_remote.updateGroupConfiguration(
     barcode,
     inheritanceEnabled: inheritanceEnabled,
     selectedItemIds: selectedItemIds,
@@ -182,7 +182,7 @@ class LocalFirstInventoryRepository implements InventoryRepository, InventoryOve
     unitGovernance: unitGovernance,
     uiPreferences: uiPreferences,
     discardedPropertyKeys: discardedPropertyKeys,
-  );
+  ));
 
   @override
   Future<List<InventorySetDefinition>> getSets() => _remote.getSets();
@@ -193,4 +193,14 @@ class LocalFirstInventoryRepository implements InventoryRepository, InventoryOve
 
   @override
   Future<void> deleteSet(int setId) => _remote.deleteSet(setId);
+
+  /// A write just went to the server: until the replica has applied it, reads
+  /// of what it touched go to the network, or the refresh that follows a save
+  /// shows the row as it was before.
+  Future<T> _wrote<T>(Future<T> write) =>
+      write.whenComplete(() {
+        for (final table in const <String>['local_materials']) {
+          _reader.wrote(table);
+        }
+      });
 }

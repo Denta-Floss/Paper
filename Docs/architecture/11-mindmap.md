@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c74["⟳ Change 74: B43, the replica does not serve while a launch replay is running"]
+      c75["⟳ Change 75: seven desktop masters read from the replica, which answers only when it is not behind"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -51,7 +51,11 @@ mindmap
         w9a["ReplicaCatchUp: no cursor = bootstrap (or head then lists 4 at a time); cursor = paged /api/changes; below oldestAvailable = fresh copy"]
         w9b["B41: the cursor never left 0, every launch re-downloaded 13 lists; now head recorded, live SSE ids carried, held during catch-up"]
         w9c["B40: the list fill now mirrors item variation nodes"]
-      w10["⟳ B43: isHydrated is false while catchUp runs, so a launch reads the network until the replay is in"]
+      w10["B43: isHydrated is false while catchUp runs, so a launch reads the network until the replay is in"]
+      w11["⟳ local-first decorators: clients, vendors, units, groups (no covers), machines, dies, departments (subclass); server order kept, json_extract for createdAt"]
+        w11a["⟳ ReplicaFreshness: a table is behind from a live event or a local write until a drain that started after it applies it; behind = read the network"]
+        w11b["⟳ all eleven decorators mark what their writes touch; a challan write marks challans, order lines, materials"]
+        w11c["⟳ not done: stock positions in the replica (overview is ETag'd), the offline badge (needs a UI pass); usageCount can lag"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
@@ -707,3 +711,4 @@ mindmap
 | 72 | Step 4 of the wire plan, the safe part. `modules/items/work.js` `listItems` maps each tree through `listNode`, which drops `createdAt`, `updatedAt`, `itemId`, `position`, `isArchived` from every node; `GET /api/items/:id` is unchanged. Traced: no Dart reader of those on a node, none in `ItemVariationNodeRequest`, the replica mirror reads only `item_id`. `wire-weight.test.js`: a list row deep-equals its detail row less those five, and `code`, `nameJoin`, `materialTypeId`, `parentNodeId`, `displayName` survive. B40, B41, B42 logged. | Backend, Tests |
 | 73 | Step 5 of the wire plan. Backend `modules/realtime/routes.js`: `REPLICA_LISTS`, `firstList`, `GET /api/replica/bootstrap` (head before lists; loopback fetches with the caller's authorization; `missing` and `refused`). Client: `replica_catch_up.dart` (`ChangesPage`, `ReplicaBootstrap`, `ReplicaCatchUp.run`); `ReplicaApi.fetchChangesPage` / `fetchBootstrap` / `parseChanges`; `DeltaSyncEngine` gets `_replaceTable` (with the node mirror), `applyListRows`, a chunked `hydrateLists`; `ReplicaSyncService.catchUp` and `resync` go through `ReplicaCatchUp`, and `_drain` withholds the cursor while `_catchingUp`; `SocketService` emits `changelogId` per block; `lib/main.dart` passes it and wires the two new fetchers. Tests: `replica-bootstrap.test.js`, `replica_catch_up_test.dart` (9). | Backend, App, Tests |
 | 74 | B43. `ReplicaSyncService.isHydrated` returns `_hydrated && !_catchingUp`. Found designing step 6: once B41 kept the cursor, every local-first read at sign-in would have come from the replica before the launch replay applied. | App |
+| 75 | Step 6 of the wire plan. New `core/sync/replica_freshness.dart`; `ReplicaReader` consults it and offers `wrote(table)`; `ReplicaSyncService.onTableChange` marks, `_drain` snapshots then clears, `start` resets. New decorators: `local_first_{client,vendor,unit,group}_repository.dart`, `local_first_departments_repository.dart` (core_erp), `lib/features/{machines,dies}/data/local_first_*_repository.dart`; vendors, machines and dies expose their parsers as `vendorFromJson` / `machineFromJson` / `dieFromJson`. `lib/main.dart` wires all seven (demo mode stays on the API repositories). The items, orders, challans and inventory decorators route their writes through `_wrote`. | App, Tests |

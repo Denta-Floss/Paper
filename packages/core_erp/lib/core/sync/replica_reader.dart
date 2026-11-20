@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'replica_freshness.dart';
+
 /// Reads domain objects out of the replica.
 ///
 /// The part every local-first repository shares: query a local table in the
@@ -21,20 +23,28 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// no rows means "nothing synced yet", and answering with an empty list would
 /// show a workspace with nothing in it.
 class ReplicaReader {
-  const ReplicaReader({
+  ReplicaReader({
     required Future<Database?> Function() replica,
     required bool Function() isHydrated,
+    ReplicaFreshness? freshness,
   }) : _replica = replica,
-       _isHydrated = isHydrated;
+       _isHydrated = isHydrated,
+       _freshness = freshness ?? ReplicaFreshness.instance;
 
   final Future<Database?> Function() _replica;
   final bool Function() _isHydrated;
+  final ReplicaFreshness _freshness;
 
   /// The replica, or null when it should not be trusted yet.
   Future<Database?> available() async {
     if (!_isHydrated()) return null;
     return _replica();
   }
+
+  /// A write to [table] just went to the server. Until the replica has applied
+  /// it, reads of [table] go to the network — a refresh straight after a save
+  /// would otherwise show the row as it was before.
+  void wrote(String table) => _freshness.markBehind(table);
 
   /// Every row of [table], in [orderBy], rehydrated by [fromJson].
   ///
@@ -47,6 +57,7 @@ class ReplicaReader {
     String? where,
     List<Object?>? whereArgs,
   }) async {
+    if (_freshness.isBehind(table)) return null;
     final db = await available();
     if (db == null) return null;
     final rows = await db.query(
@@ -73,6 +84,7 @@ class ReplicaReader {
     required Object key,
     required T? Function(Map<String, dynamic>) fromJson,
   }) async {
+    if (_freshness.isBehind(table)) return null;
     final db = await available();
     if (db == null) return null;
     final rows = await db.query(

@@ -7,6 +7,7 @@ import '../database/sync_metadata_store.dart';
 import 'delta_sync_engine.dart';
 import 'replica_bindings.dart';
 import 'replica_catch_up.dart';
+import 'replica_freshness.dart';
 
 /// Keeps the local replica current.
 ///
@@ -85,6 +86,7 @@ class ReplicaSyncService {
 
   Future<void> start(String userNamespace) async {
     await stop();
+    ReplicaFreshness.instance.reset();
     await _helper.useNamespace(userNamespace);
     final db = await _helper.database;
     _cursor = SyncMetadataStore(db);
@@ -162,6 +164,10 @@ class ReplicaSyncService {
   /// than once.
   void onTableChange(TableChange change) {
     if (!_started) return;
+    // Behind from now until a drain applies it, so a provider refreshing on
+    // this same event reads the network rather than the row as it was.
+    final local = _localTableFor(change.table);
+    if (local != null) ReplicaFreshness.instance.markBehind(local);
     _pending.add(change);
     _batchTimer?.cancel();
     _batchTimer = Timer(_batchWindow, _drain);
@@ -172,8 +178,19 @@ class ReplicaSyncService {
     if (engine == null || _pending.isEmpty) return;
     final batch = List<TableChange>.from(_pending);
     _pending.clear();
+    final marks = ReplicaFreshness.instance.snapshot(
+      batch.map((change) => _localTableFor(change.table)).whereType<String>(),
+    );
     await engine.apply(batch, cursor: _catchingUp ? null : _cursor);
+    ReplicaFreshness.instance.caughtUp(marks);
     _announce(batch);
+  }
+
+  /// The local table a server table's changes land in: its own, or its
+  /// parent's for a table that arrives inside its parent's payload.
+  static String? _localTableFor(String serverTable) {
+    final binding = kReplicaBindings[serverTable];
+    return binding?.localTable ?? kReplicaBindings[binding?.parentTable]?.localTable;
   }
 
   void _announce(Iterable<TableChange> changes) {

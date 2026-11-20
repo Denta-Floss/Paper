@@ -185,6 +185,10 @@ class ApiVendorRepository implements VendorRepository {
     return payload;
   }
 
+  /// One row of the list (or the record endpoint) as the app holds it. Public
+  /// so the local-first decorator parses a replica row exactly as this does.
+  VendorDefinition vendorFromJson(Map<String, dynamic> json) => _vendorFromJson(json);
+
   VendorDefinition _vendorFromJson(Map<String, dynamic> json) {
     return VendorDefinition(
       id: json['id'] as int? ?? 0,

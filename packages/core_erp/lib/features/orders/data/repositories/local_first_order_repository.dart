@@ -79,22 +79,22 @@ class LocalFirstOrderRepository implements OrderRepository {
   // --- everything below only the server can answer --------------------------
 
   @override
-  Future<OrderEntry> createOrder(CreateOrderInput input) => _remote.createOrder(input);
+  Future<OrderEntry> createOrder(CreateOrderInput input) => _wrote(_remote.createOrder(input));
 
   @override
   Future<OrderEntry> updateOrder(int orderId, CreateOrderInput input) =>
-      _remote.updateOrder(orderId, input);
+      _wrote(_remote.updateOrder(orderId, input));
 
   @override
   Future<List<OrderDeletionSummary>> deleteOrder(
     int orderId, {
     String? wipBarcode,
     double? wipQty,
-  }) => _remote.deleteOrder(orderId, wipBarcode: wipBarcode, wipQty: wipQty);
+  }) => _wrote(_remote.deleteOrder(orderId, wipBarcode: wipBarcode, wipQty: wipQty));
 
   @override
   Future<OrderEntry> updateOrderLifecycle(UpdateOrderLifecycleInput input) =>
-      _remote.updateOrderLifecycle(input);
+      _wrote(_remote.updateOrderLifecycle(input));
 
   @override
   Future<PoUploadIntent> createPoUploadIntent(PoUploadIntentInput input) =>
@@ -118,7 +118,7 @@ class LocalFirstOrderRepository implements OrderRepository {
 
   @override
   Future<void> linkPoDocuments(int orderId, List<int> documentIds) =>
-      _remote.linkPoDocuments(orderId, documentIds);
+      _wrote(_remote.linkPoDocuments(orderId, documentIds));
 
   @override
   Future<Uri> createPoDocumentReadUrl(int documentId) =>
@@ -134,11 +134,21 @@ class LocalFirstOrderRepository implements OrderRepository {
 
   @override
   Future<OrderReturn> createOrderReturn(CreateOrderReturnInput input) =>
-      _remote.createOrderReturn(input);
+      _wrote(_remote.createOrderReturn(input));
 
   @override
   Future<OrderTrace> getOrderTrace(String orderNo) => _remote.getOrderTrace(orderNo);
 
   @override
   Future<List<OrderFulfilment>> getFulfilment() => _remote.getFulfilment();
+
+  /// A write just went to the server: until the replica has applied it, reads
+  /// of what it touched go to the network, or the refresh that follows a save
+  /// shows the row as it was before.
+  Future<T> _wrote<T>(Future<T> write) =>
+      write.whenComplete(() {
+        for (final table in const <String>['local_order_items']) {
+          _reader.wrote(table);
+        }
+      });
 }
