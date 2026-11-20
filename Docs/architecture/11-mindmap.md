@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c75["⟳ Change 75: seven desktop masters read from the replica, which answers only when it is not behind"]
+      c76["⟳ Change 76: the phone revalidates its lists instead of downloading them again"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -52,10 +52,12 @@ mindmap
         w9b["B41: the cursor never left 0, every launch re-downloaded 13 lists; now head recorded, live SSE ids carried, held during catch-up"]
         w9c["B40: the list fill now mirrors item variation nodes"]
       w10["B43: isHydrated is false while catchUp runs, so a launch reads the network until the replay is in"]
-      w11["⟳ local-first decorators: clients, vendors, units, groups (no covers), machines, dies, departments (subclass); server order kept, json_extract for createdAt"]
-        w11a["⟳ ReplicaFreshness: a table is behind from a live event or a local write until a drain that started after it applies it; behind = read the network"]
-        w11b["⟳ all eleven decorators mark what their writes touch; a challan write marks challans, order lines, materials"]
-        w11c["⟳ not done: stock positions in the replica (overview is ETag'd), the offline badge (needs a UI pass); usageCount can lag"]
+      w11["local-first decorators: clients, vendors, units, groups (no covers), machines, dies, departments (subclass); server order kept, json_extract for createdAt"]
+        w11a["ReplicaFreshness: a table is behind from a live event or a local write until a drain that started after it applies it; behind = read the network"]
+        w11b["all eleven decorators mark what their writes touch; a challan write marks challans, order lines, materials"]
+        w11c["not done: stock positions in the replica (overview is ETag'd), the offline badge (needs a UI pass); usageCount can lag"]
+      w12["⟳ phone: one ConditionalCacheClient per connection, namespaced per user in _AuthGate; MyApp takes cacheDirectory for tests"]
+        w12a["⟳ not done: the phone replica and offline state, no device to run them on here"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k1["registry.js: 15 modules, permissions, Track labels, and TABLE_OWNERS: one owner for every table"]
@@ -712,3 +714,4 @@ mindmap
 | 73 | Step 5 of the wire plan. Backend `modules/realtime/routes.js`: `REPLICA_LISTS`, `firstList`, `GET /api/replica/bootstrap` (head before lists; loopback fetches with the caller's authorization; `missing` and `refused`). Client: `replica_catch_up.dart` (`ChangesPage`, `ReplicaBootstrap`, `ReplicaCatchUp.run`); `ReplicaApi.fetchChangesPage` / `fetchBootstrap` / `parseChanges`; `DeltaSyncEngine` gets `_replaceTable` (with the node mirror), `applyListRows`, a chunked `hydrateLists`; `ReplicaSyncService.catchUp` and `resync` go through `ReplicaCatchUp`, and `_drain` withholds the cursor while `_catchingUp`; `SocketService` emits `changelogId` per block; `lib/main.dart` passes it and wires the two new fetchers. Tests: `replica-bootstrap.test.js`, `replica_catch_up_test.dart` (9). | Backend, App, Tests |
 | 74 | B43. `ReplicaSyncService.isHydrated` returns `_hydrated && !_catchingUp`. Found designing step 6: once B41 kept the cursor, every local-first read at sign-in would have come from the replica before the launch replay applied. | App |
 | 75 | Step 6 of the wire plan. New `core/sync/replica_freshness.dart`; `ReplicaReader` consults it and offers `wrote(table)`; `ReplicaSyncService.onTableChange` marks, `_drain` snapshots then clears, `start` resets. New decorators: `local_first_{client,vendor,unit,group}_repository.dart`, `local_first_departments_repository.dart` (core_erp), `lib/features/{machines,dies}/data/local_first_*_repository.dart`; vendors, machines and dies expose their parsers as `vendorFromJson` / `machineFromJson` / `dieFromJson`. `lib/main.dart` wires all seven (demo mode stays on the API repositories). The items, orders, challans and inventory decorators route their writes through `_wrote`. | App, Tests |
+| 76 | Step 7 of the wire plan, the cache. `apps/challan_mobile/lib/main.dart`: `MyApp.cacheFor` keeps one `ConditionalCacheClient` per inner client (an `Expando`), every repository's `AuthenticatedHttpClient` wraps it, `_AuthGate` takes it and sets `namespace` to the user on sign-in; `MyApp.cacheDirectory` so a widget test avoids real file I/O. Test: a second `/api/units` carries `If-None-Match` and the 304 replays the list. | Mobile, Tests |

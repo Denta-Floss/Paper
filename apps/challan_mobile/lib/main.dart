@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
@@ -38,6 +39,7 @@ import 'package:core_erp/features/search/data/repositories/api_search_repository
 import 'package:core_erp/features/search/data/repositories/search_repository.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
+import 'package:core_erp/core/network/conditional_cache_client.dart';
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/services/socket_service.dart' as core_socket;
 import 'package:core_erp/core/services/generic_asset_service.dart';
@@ -461,17 +463,37 @@ class MyApp extends StatelessWidget {
   /// Signed in without a server, for tests and the demo build.
   final bool demoMode;
 
+  /// Where the response cache keeps its copies. Null is the app-support
+  /// directory; a test names a fresh one.
+  final Directory? cacheDirectory;
+
   const MyApp({
     super.key,
     required this.apiUrl,
     this.httpClient,
     this.demoMode = _isDemoModeBuild,
+    this.cacheDirectory,
   });
 
   static const _isDemoModeBuild = bool.fromEnvironment('PAPER_DEMO_MODE', defaultValue: false);
 
+  /// One response cache per connection, shared by every repository, so a
+  /// validator learned by one screen is reused by the next and a relaunch
+  /// replays unchanged lists from disk after a 304. The desktop has had this
+  /// since the wire work began; the phone, on the worse link, had none.
+  static final Expando<ConditionalCacheClient> _caches = Expando<ConditionalCacheClient>();
+  static final http.Client _network = http.Client();
+
+  static ConditionalCacheClient cacheFor(http.Client? inner, {Directory? directory}) {
+    final key = inner ?? _network;
+    return _caches[key] ??= ConditionalCacheClient(inner: key, storageDirectory: directory);
+  }
+
   AuthenticatedHttpClient _authClient(AuthProvider auth) {
-    return AuthenticatedHttpClient(tokenResolver: () => auth.token, inner: httpClient);
+    return AuthenticatedHttpClient(
+      tokenResolver: () => auth.token,
+      inner: cacheFor(httpClient, directory: cacheDirectory),
+    );
   }
 
   @override
@@ -715,14 +737,17 @@ class MyApp extends StatelessWidget {
           ),
           useMaterial3: true,
         ),
-        home: const _AuthGate(),
+        home: _AuthGate(cache: cacheFor(httpClient, directory: cacheDirectory)),
       ),
     );
   }
 }
 
 class _AuthGate extends StatefulWidget {
-  const _AuthGate();
+  const _AuthGate({required this.cache});
+
+  /// Pointed at the signed-in user's own copies before anything is fetched.
+  final ConditionalCacheClient cache;
 
   @override
   State<_AuthGate> createState() => _AuthGateState();
@@ -734,6 +759,10 @@ class _AuthGateState extends State<_AuthGate> {
   void _refreshAfterAuthentication(String token) {
     if (_lastRefreshToken == token) return;
     _lastRefreshToken = token;
+    // Namespaced, not cleared: a launch begins with a sign-in, and clearing
+    // here would empty the cache at the one moment it is worth having.
+    final identity = context.read<AuthProvider>().user;
+    widget.cache.namespace = '${identity?.id ?? identity?.email ?? 'anonymous'}';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Future.wait<void>([
