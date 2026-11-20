@@ -1,8 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:core_erp/features/delivery_challans/domain/models/cancel_challan_options.dart';
-import 'dart:convert';
-
+import 'package:http/http.dart' as http;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../../app/reports/domain/reconciliation_report.dart';
@@ -35,9 +37,11 @@ class LocalFirstChallanRepository implements ChallanRepository {
     required Future<Database?> Function() replica,
     required bool Function() isHydrated,
     OutboxSyncEngine? Function()? outbox,
+    int? Function()? currentUserId,
   }) : _remote = remote,
        _reader = ReplicaReader(replica: replica, isHydrated: isHydrated),
-       _outbox = outbox ?? (() => null);
+       _outbox = outbox ?? (() => null),
+       _currentUserId = currentUserId ?? (() => null);
 
   final ChallanRepository _remote;
   final ReplicaReader _reader;
@@ -48,6 +52,10 @@ class LocalFirstChallanRepository implements ChallanRepository {
   /// Without one (demo, tests), both go straight to the server as before.
   final OutboxSyncEngine? Function() _outbox;
   String? _outboxWarning;
+
+  /// The signed-in user, so "mine only" can be answered from the replica when
+  /// the server cannot be reached (B53). Null: that fallback is not offered.
+  final int? Function() _currentUserId;
 
   @override
   Future<List<DeliveryChallan>> getChallans({
@@ -77,27 +85,67 @@ class LocalFirstChallanRepository implements ChallanRepository {
     final onlyType = status == null && search.trim().isEmpty && dateFrom == null && dateTo == null &&
         orderId == null && itemId == null && variationLeafNodeId == null;
     final pending = onlyType ? await _pendingChallans(type) : const <DeliveryChallan>[];
-    if (pending.isNotEmpty) {
-      // Offline, the server's part of the list cannot be read — but what is
-      // waiting on this device can, and hiding it behind the error would make
-      // a challan the worker just saved look lost.
-      List<DeliveryChallan> rest;
-      try {
-        rest = await _listWithoutOutbox(
-          type: type, status: status, search: search, dateFrom: dateFrom, dateTo: dateTo,
-          orderId: orderId, itemId: itemId, variationLeafNodeId: variationLeafNodeId, mineOnly: mineOnly,
-          narrowed: narrowed,
-        );
-      } catch (_) {
+    List<DeliveryChallan> rest;
+    try {
+      rest = await _listWithoutOutbox(
+        type: type, status: status, search: search, dateFrom: dateFrom, dateTo: dateTo,
+        orderId: orderId, itemId: itemId, variationLeafNodeId: variationLeafNodeId, mineOnly: mineOnly,
+        narrowed: narrowed,
+      );
+    } catch (error) {
+      // Offline. The phone's copy answers what it can — every challan, or this
+      // user's (B53) — however far behind it is: the offline banner already
+      // says how old it is, and an old list beats an error. What is waiting in
+      // the outbox is shown either way; hiding it behind the error would make
+      // a challan the worker just saved look lost (B49).
+      final copy = onlyType && _isUnreachable(error) ? await _fromCopy(type: type, mineOnly: mineOnly) : null;
+      if (copy != null) {
+        rest = copy;
+      } else if (pending.isNotEmpty) {
         rest = const <DeliveryChallan>[];
+      } else {
+        rethrow;
       }
-      return <DeliveryChallan>[...pending, ...rest];
     }
-    return _listWithoutOutbox(
-      type: type, status: status, search: search, dateFrom: dateFrom, dateTo: dateTo,
-      orderId: orderId, itemId: itemId, variationLeafNodeId: variationLeafNodeId, mineOnly: mineOnly,
-      narrowed: narrowed,
+    return pending.isEmpty ? rest : <DeliveryChallan>[...pending, ...rest];
+  }
+
+  static bool _isUnreachable(Object error) =>
+      error is SocketException ||
+      error is http.ClientException ||
+      error is TimeoutException ||
+      error is HandshakeException;
+
+  /// The replica's challans, filtered here by type and creator as the server
+  /// would (`dc.created_by = req.user.id`), in the server's order. Null when
+  /// there is no copy to read, or "mine" was asked with no user to match.
+  Future<List<DeliveryChallan>?> _fromCopy({ChallanType? type, required bool mineOnly}) async {
+    final me = _currentUserId();
+    if (mineOnly && me == null) return null;
+    final db = await _reader.available();
+    if (db == null) return null;
+    final rows = await db.query(
+      'local_delivery_challans',
+      columns: const <String>['raw_payload_json'],
+      orderBy: 'date(challan_date) DESC, id DESC',
     );
+    final out = <DeliveryChallan>[];
+    for (final row in rows) {
+      try {
+        final raw = jsonDecode('${row['raw_payload_json']}');
+        if (raw is! Map<String, dynamic>) continue;
+        if (mineOnly) {
+          final by = raw['created_by'] ?? raw['createdBy'];
+          if ((by is num ? by.toInt() : int.tryParse('$by')) != me) continue;
+        }
+        final challan = DeliveryChallan.fromJson(raw);
+        if (type != null && challan.type != type) continue;
+        out.add(challan);
+      } catch (_) {
+        continue; // One unreadable row does not hide the rest.
+      }
+    }
+    return out;
   }
 
   Future<List<DeliveryChallan>> _listWithoutOutbox({

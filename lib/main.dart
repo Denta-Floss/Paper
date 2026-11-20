@@ -1039,6 +1039,8 @@ class MyApp extends StatelessWidget {
       isHydrated: () => _replicaSync?.isHydrated ?? false,
       // Challans made without a connection are kept and sent later.
       outbox: () => OutboxSession.instance.engine,
+      // Offline, "mine only" is answered from the copy (B53).
+      currentUserId: () => auth.user?.id,
     );
   }
 

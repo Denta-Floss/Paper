@@ -33,7 +33,7 @@ is what a person reads first, the registry is what the server reads.
 mindmap
   root((Paper backend))
     Latest change
-      c85["⟳ Change 85: the client outbox: a challan made with no signal is kept, shown pending, and made once when the server is back"]
+      c86["Change 86: the phone follows item changes, says kg for weights, and shows its own past challans offline"]
     Wire ⟳
       w1["wire-budget.test.js: named request sequences against a budget of requests and compressed bytes; UPDATE_WIRE_BUDGETS=1 prints the figures"]
         w1a["sign_in 21 calls 57 KB, orders list 7.8 KB, items list 26.7 KB, inventory 4 calls, replica hydration 14 calls 60 KB (2026-11-19)"]
@@ -69,15 +69,18 @@ mindmap
       w19["B45: server in SharedPreferences, Change server; OfflineUnlock (secure storage, salted hash, bound to server) only when unreachable"]
         w19a["ConditionalCacheClient serves its stored copy, marked stale, when a GET cannot reach the server; never over an answer"]
         w19b["ReplicaSession catches up whenever SocketService.streamLive comes up; catchUp: false for an offline start"]
-      w20["⟳ benchmark: throttle-proxy (bandwidth, RTT, handshake, slow start, loss) + network-throttle.js, 50 runs, SLOs asserted, report in Docs/benchmarks"]
-        w20a["⟳ 1 Mbps: first launch 1.32 s, relaunch 0.85 s, lists 0.25 s; the August pattern 23.3 s"]
-        w20b["⟳ B46-B48: items list 7 queries per part + 4 missing indexes, challan list 5 per row; batched, 444 to 13 ms and 96 to 3 ms"]
-        w20c["⟳ Server-Timing: db (kernel/db-timing.js) separates time in SQLite from JavaScript; server times move with host load"]
-      w21["⟳ client outbox (core/sync/outbox.dart): client_outbox in its own file per user, so a replica resync never deletes unsent work"]
-        w21a["⟳ OutboxSyncEngine: strict FIFO, 1/2/4…30 s backoff holds the head, the entry id is X-Idempotency-Key, drained on write, timer and streamLive"]
-        w21b["⟳ any refusal = conflict for a person (Needs review: Send again / Discard), never resolved alone; a dependent {ref:} entry follows its parent"]
-        w21c["⟳ challans: negative id + 'Pending upload' until synced; online submits go through it too and a refusal is still shown on the form"]
-        w21d["⟳ emulator: offline Purchase → kept across a restart → server back → one POST + one issue, one row, RC-00001; B49 found and fixed"]
+      w20["benchmark: throttle-proxy (bandwidth, RTT, handshake, slow start, loss) + network-throttle.js, 50 runs, SLOs asserted, report in Docs/benchmarks"]
+        w20a["1 Mbps: first launch 1.32 s, relaunch 0.85 s, lists 0.25 s; the August pattern 23.3 s"]
+        w20b["B46-B48: items list 7 queries per part + 4 missing indexes, challan list 5 per row; batched, 444 to 13 ms and 96 to 3 ms"]
+        w20c["Server-Timing: db (kernel/db-timing.js) separates time in SQLite from JavaScript; server times move with host load"]
+      w21["client outbox (core/sync/outbox.dart): client_outbox in its own file per user, so a replica resync never deletes unsent work"]
+        w21a["OutboxSyncEngine: strict FIFO, 1/2/4…30 s backoff holds the head, the entry id is X-Idempotency-Key, drained on write, timer and streamLive"]
+        w21b["any refusal = conflict for a person (Needs review: Send again / Discard), never resolved alone; a dependent {ref:} entry follows its parent"]
+        w21c["challans: negative id + 'Pending upload' until synced; online submits go through it too and a refusal is still shown on the form"]
+        w21d["emulator: offline Purchase → kept across a restart → server back → one POST + one issue, one row, RC-00001; B49 found and fixed"]
+      w22["⟳ B50: ReplicaSession.changedTables → ItemsProvider(replicaChanges:) re-reads when local_items changed, after the copy holds it"]
+      w23["⟳ B53: offline, type/mine lists answered from the copy filtered by created_by; outbox first; a refusal is not offline"]
+      w24["⟳ B51: DeliveryChallanItem.weightUnitSymbol = kg; the item's unit says how it is counted, not what the weight means"]
       w3["what exists: gzip on everything, ETag must-revalidate on eight masters, a challan list without lines, orders paged on request, the client replica over SSE"]
     Kernel
       k20["idempotency.js: X-Idempotency-Key per user for a day; replay, 422 reused, 409 in progress / applied / unknown"]
@@ -746,3 +749,4 @@ mindmap
 | 83 | Stage 2f Track 2, server. `kernel/idempotency.js` (middleware, `beforeCommit`, `recover`, `prune`, schema); `server.js`: `rawRun` + a `run` that calls `idempotency.beforeCommit()` before COMMIT/END, the middleware after the permission checks on `/api`, `recover()` at boot and an hourly prune; `modules/kernel/schema.js` creates `idempotency_log`; registry kernel table. `test/idempotency.test.js` (12). | Kernel, Tests |
 | 84 | Stage 2f Track 1. `backend/test/benchmarks/{throttle-proxy,network-throttle}.js`, `test/throttle-proxy.test.js`, `npm run bench:network`, `Docs/benchmarks/2026-11-constrained-network-results.md`. Fixes it drove: `items/dto.js` (`RELATED` queries shared by one-part and list reads, `preloadRelated`, `rowsToItemDtos`), `variations.js` `getItemVariationTrees`, `schema-props.js` `getItemPropertySchemas`, `challans/service.js` `preloadChallanSummaries`/`rowsToDeliveryChallanSummaries`, `assets.forEntities`; indexes on order_items, delivery_challan_items, order_material_requirements (item_id), item_variation_nodes, item_property_schema. `kernel/db-timing.js` + `run/get/all` instrumented. Tests: `challan-list-batch.test.js`, stronger `wire-weight.test.js`. | Backend, Kernel, Tests, Docs |
 | 85 | Stage 2f Track 2, client. `packages/core_erp/lib/core/sync/outbox.dart` (`OutboxStore`: table `client_outbox` in its own SQLite file per user, `recover` puts cut-off sends back, `prune`; `OutboxSyncEngine`: `submit`, single-flight `drain`, strict FIFO, backoff 1 s doubling to 30 s, entry id as `X-Idempotency-Key`, `{ref:<id>}` endpoints resolved to the parent's server id, 2xx and `idempotency_already_applied` settle it, `in_progress`/401/5xx/network back off, any other refusal is a conflict, `retry`/`discard`); `outbox_session.dart` (one per user, drains when `SocketService.streamLive` comes up). `LocalFirstChallanRepository`: `createChallan`/`issueChallan` through the outbox, pending challans (negative id, "Pending upload") lead the list, kept even when the server part of the list cannot be read (B49). `DeliveryChallan.outboxId/outboxState/outboxError`. Both apps start the session at sign-in; the phone's Challan Book shows Pending sync / Needs review with Send again and Discard; editor, purchase wizard and vendor return say "saved on this phone"; the photo step scrolls (B52). Tests: `outbox_sync_engine_test.dart` (8), `outbox_challan_repository_test.dart` (5). | Sync, Challans, Mobile, Tests |
+| 86 | B50, B51, B53. `ReplicaSession.changedTables` relays `ReplicaSyncService.changedTables`; `ItemsProvider(replicaChanges:)` re-reads on `local_items` (one at a time, a burst costs one more), the phone passes it. `LocalFirstChallanRepository(currentUserId:)`: on an unreachable server, `_fromCopy` reads `local_delivery_challans` filtered by type and `created_by`, pending first; both apps pass the signed-in user. `DeliveryChallanItem.weightUnitSymbol`; the purchase wizard's three weight labels use it. Tests: `items_provider_replica_changes_test.dart` (4), two more in `outbox_challan_repository_test.dart`. | Sync, Items, Challans, Mobile, Tests |

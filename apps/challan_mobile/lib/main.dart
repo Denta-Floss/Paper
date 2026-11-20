@@ -676,6 +676,8 @@ class MyApp extends StatelessWidget {
               isHydrated: () => ReplicaSession.instance.isHydrated,
               // Challans made without a connection are kept and sent later.
               outbox: () => OutboxSession.instance.engine,
+              // Offline, the Challan Book reads this user's challans from the copy (B53).
+              currentUserId: () => context.read<AuthProvider>().user?.id,
             );
           },
         ),
@@ -767,9 +769,14 @@ class MyApp extends StatelessWidget {
           update: (context, auth, repository, previous) => previous ?? VendorHistoryProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, ItemRepository, ItemsProvider>(
-          create: (context) => ItemsProvider(repository: context.read<ItemRepository>()),
+          // Follows the replica: an item changed anywhere is re-read once the
+          // phone's copy holds the change (B50).
+          create: (context) => ItemsProvider(
+            repository: context.read<ItemRepository>(),
+            replicaChanges: ReplicaSession.instance.changedTables,
+          ),
           update: (context, auth, repository, previous) =>
-              previous ?? ItemsProvider(repository: repository),
+              previous ?? ItemsProvider(repository: repository, replicaChanges: ReplicaSession.instance.changedTables),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, FavoritesRepository, FavoritesProvider>(
           create: (context) => FavoritesProvider(repository: context.read<FavoritesRepository>()),

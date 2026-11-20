@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -21,6 +23,14 @@ class ReplicaSession {
 
   ReplicaSyncService? _service;
   Set<String>? _tables;
+
+  final StreamController<Set<String>> _changedTables = StreamController<Set<String>>.broadcast();
+  StreamSubscription<Set<String>>? _changedRelay;
+
+  /// The local tables the replica just applied changes to — live, or on a
+  /// catch-up. Outlives a service swap (sign-in as someone else), so a provider
+  /// can listen once.
+  Stream<Set<String>> get changedTables => _changedTables.stream;
 
   /// Null until [start] has run once.
   ReplicaSyncService? get service => _service;
@@ -58,6 +68,8 @@ class ReplicaSession {
           fetchBootstrap: () => api.fetchBootstrap(tables: tables),
           tables: tables,
         );
+        await _changedRelay?.cancel();
+        _changedRelay = _service!.changedTables.listen(_changedTables.add);
       }
       final service = _service!;
       await service.start(namespace);

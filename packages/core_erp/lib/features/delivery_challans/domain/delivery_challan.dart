@@ -144,7 +144,15 @@ class DeliveryChallanItem {
   final Map<int, String> customVariationValues;
   final String note;
   final String quantityPcs;
+
+  /// The line's weight, in [weightUnitSymbol] — whatever the item is counted
+  /// in. A sheet's weight is typed in kilograms and stored that way
+  /// (`delivery_challan_items.weight`); the item's own unit (Box, Pc) says how
+  /// it is counted, never what this number means (B51).
   final String weight;
+
+  /// The unit [weight] is in, for every challan line.
+  static const String weightUnitSymbol = 'kg';
 
   /// Per-sheet weight breakdown for purchase intake. One entry per received
   /// sheet; the entries sum to [weight] (total-in = total-out). Empty when the

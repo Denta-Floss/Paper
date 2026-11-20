@@ -595,8 +595,6 @@ class _ItemsStep extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
               final line = lines[i];
-              final def = context.read<ItemsProvider>().findById(line.itemId);
-              final unit = (def != null && def.unitConversions.isNotEmpty) ? def.unitConversions.first.unitSymbol : 'kg';
               return ListTile(
                 tileColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -606,7 +604,7 @@ class _ItemsStep extends StatelessWidget {
                   [
                     if (line.variationPathLabel.isNotEmpty) line.variationPathLabel,
                     'Qty: ${line.quantityPcs}',
-                    if (line.weight != '0' && line.weight != '0.0') 'Wt: ${line.weight} $unit',
+                    if (line.weight != '0' && line.weight != '0.0') 'Wt: ${line.weight} ${DeliveryChallanItem.weightUnitSymbol}',
                   ].join('  ·  '),
                 ),
                 trailing: IconButton(
@@ -1434,7 +1432,7 @@ class _SheetTagsPanelState extends State<_SheetTagsPanel> {
       if (widget.item.variationPathLabel.isNotEmpty) widget.item.variationPathLabel,
       'Qty: ${widget.item.quantityPcs}',
       if (widget.item.weight.isNotEmpty && widget.item.weight != '0' && widget.item.weight != '0.0')
-        'Wt: ${widget.item.weight} kg',
+        'Wt: ${widget.item.weight} ${DeliveryChallanItem.weightUnitSymbol}',
     ].join('  ·  ');
 
     return Card(
@@ -1545,7 +1543,7 @@ class _SheetTagsPanelState extends State<_SheetTagsPanel> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: Text(
-                    '${_fmtWeight(tag.weight)} kg',
+                    '${_fmtWeight(tag.weight)} ${DeliveryChallanItem.weightUnitSymbol}',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: SoftErpTheme.accent),
                   ),
                 ),

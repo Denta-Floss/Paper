@@ -61,8 +61,40 @@ class QuickCreateVariationPropertyResult {
 const Object _keepField = Object();
 
 class ItemsProvider extends ChangeNotifier {
-  ItemsProvider({required ItemRepository repository})
-    : _repository = repository;
+  /// [replicaChanges] — the replica's "these local tables just changed"
+  /// (ReplicaSession.changedTables). Given one, the list re-reads whenever
+  /// `local_items` changed, live or on a catch-up. It fires after the replica
+  /// holds the change, so the re-read cannot see the row as it was. The phone
+  /// follows item changes this way (B50); the desktop uses [initialize]'s
+  /// socket events.
+  ItemsProvider({required ItemRepository repository, Stream<Set<String>>? replicaChanges})
+    : _repository = repository {
+    _replicaSub = replicaChanges?.listen((tables) {
+      if (tables.contains(kItemsReplicaTable)) _refreshForReplica();
+    });
+  }
+
+  static const String kItemsReplicaTable = 'local_items';
+
+  StreamSubscription<Set<String>>? _replicaSub;
+  Future<void>? _replicaRefresh;
+  bool _replicaDirty = false;
+
+  /// One re-read at a time; changes arriving during it cost one more, not one each.
+  void _refreshForReplica() {
+    if (_disposed) return;
+    if (_replicaRefresh != null) {
+      _replicaDirty = true;
+      return;
+    }
+    _replicaRefresh = refresh().whenComplete(() {
+      _replicaRefresh = null;
+      if (_replicaDirty) {
+        _replicaDirty = false;
+        _refreshForReplica();
+      }
+    });
+  }
 
   final ItemRepository _repository;
 
@@ -358,6 +390,7 @@ class ItemsProvider extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _fetchTimer?.cancel();
+    _replicaSub?.cancel();
     SocketService.instance.off('item_added', _onItemAnnounced);
     SocketService.instance.off('item_updated', _onItemAnnounced);
     SocketService.instance.off('item_deleted', _onItemDeleted);

@@ -32,6 +32,14 @@ class _Unreachable extends _NoList {
   }) async => throw const SocketException('Connection refused');
 }
 
+class _Refusing extends _NoList {
+  @override
+  Future<List<DeliveryChallan>> getChallans({
+    ChallanType? type, DeliveryChallanStatus? status, String search = '', DateTime? dateFrom,
+    DateTime? dateTo, int? orderId, int? itemId, int? variationLeafNodeId, bool mineOnly = false,
+  }) async => throw ChallanApiException('Not allowed');
+}
+
 Map<String, dynamic> _challanJson(int id, String no, String status) => <String, dynamic>{
       'id': id, 'type': 'delivery', 'challanNo': no, 'challan_no': no, 'status': status,
       'date': '2026-11-20', 'items': <dynamic>[], 'orderIds': <dynamic>[],
@@ -111,6 +119,45 @@ void main() {
     await offlineList.createChallan(draft);
     final mine = await offlineList.getChallans(mineOnly: true);
     expect(mine.single.isPendingSync, isTrue);
+  });
+
+  test('offline, the book reads this user\'s past challans from the copy, after what is waiting (B53)', () async {
+    final copy = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    await copy.execute('CREATE TABLE local_delivery_challans (id INTEGER PRIMARY KEY, challan_date TEXT, raw_payload_json TEXT)');
+    Future<void> put(int id, String no, String date, int by, String type) => copy.insert('local_delivery_challans', <String, Object?>{
+          'id': id, 'challan_date': date,
+          'raw_payload_json': jsonEncode(<String, dynamic>{..._challanJson(id, no, 'issued'), 'date': date, 'created_by': by, 'type': type}),
+        });
+    await put(7, 'DC-0007', '2026-11-18', 1, 'delivery');
+    await put(8, 'DC-0008', '2026-11-19', 2, 'delivery'); // someone else's
+    await put(9, 'RC-0009', '2026-11-19', 1, 'reception');
+    final offline = LocalFirstChallanRepository(
+      remote: _Unreachable(), replica: () async => copy, isHydrated: () => true, outbox: () => engine,
+      currentUserId: () => 1,
+    );
+    await offline.createChallan(draft);
+
+    final mine = await offline.getChallans(mineOnly: true);
+    expect(mine.map((c) => c.challanNo), <String>['Pending upload', 'RC-0009', 'DC-0007'],
+        reason: 'waiting first, then the copy newest first, and not user 2\'s');
+    final deliveries = await offline.getChallans(mineOnly: true, type: ChallanType.delivery);
+    expect(deliveries.map((c) => c.challanNo), <String>['Pending upload', 'DC-0007']);
+
+    final noUser = LocalFirstChallanRepository(
+      remote: _Unreachable(), replica: () async => copy, isHydrated: () => true,
+    );
+    await expectLater(noUser.getChallans(mineOnly: true), throwsA(isA<SocketException>()),
+        reason: 'with no user to match, "mine" is not guessed');
+    await copy.close();
+  });
+
+  test('a refusal from the server is not mistaken for being offline', () async {
+    final copy = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final refused = LocalFirstChallanRepository(
+      remote: _Refusing(), replica: () async => copy, isHydrated: () => true, currentUserId: () => 1,
+    );
+    await expectLater(refused.getChallans(mineOnly: true), throwsA(isA<ChallanApiException>()));
+    await copy.close();
   });
 
   test('back online: sent in order, issued on the challan the server made, then off the pending list', () async {
