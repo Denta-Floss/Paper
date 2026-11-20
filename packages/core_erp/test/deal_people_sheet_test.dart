@@ -41,6 +41,16 @@ class _FakeGroupRepository implements GroupRepository {
 }
 
 class _FakeItemRepository implements ItemRepository {
+
+  // Whole-item saves and the editor read the part fresh from the server
+  // (B42). Here the server is this fake's own list.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    for (final item in await getItems()) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   final List<ItemDefinition> stored = [];
   final List<CreateItemInput> created = [];
   final List<UpdateItemInput> updated = [];

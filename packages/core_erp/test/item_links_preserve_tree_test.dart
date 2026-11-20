@@ -18,6 +18,16 @@ import 'package:flutter_test/flutter_test.dart';
 // would have fired on the first part anyone gave tooling to.
 
 class _Repo implements ItemRepository {
+
+  // Whole-item saves and the editor read the part fresh from the server
+  // (B42). Here the server is this fake's own list.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    for (final item in await getItems()) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   _Repo(this.stored);
 
   final List<ItemDefinition> stored;

@@ -131,7 +131,20 @@ class ItemSheetBinding extends SheetBinding<ItemDefinition> {
       return null;
     }
 
-    final existing = row.entityId == null ? null : _liveItem(row.entityId!);
+    // The full record from the server, not the list's copy: the update below
+    // is a full replace built from it, and the list may lack fields or be older
+    // than someone else's edit (B42).
+    ItemDefinition? existing;
+    if (row.entityId != null) {
+      try {
+        existing = await items.fetchFresh(row.entityId!);
+      } catch (_) {
+        _lastError =
+            'The part could not be read from the server, so the edit was not '
+            'saved. Try again when the connection is back.';
+        return null;
+      }
+    }
     final identity = _partIdentity(row, existing);
     if (row.entityId != null && existing == null) {
       _lastError =

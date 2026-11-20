@@ -160,11 +160,15 @@ class ItemsScreen extends StatefulWidget {
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
     final body = SubmitFormShortcuts(
-      child: _ItemEditorSheet(
+      child: _FullItemRecord(
         item: item,
-        initialName: initialName,
-        initialGroupId: initialGroupId,
-        onCreatePipeline: onCreatePipeline,
+        onClose: (context) => Navigator.of(context).maybePop(),
+        builder: (full) => _ItemEditorSheet(
+          item: full,
+          initialName: initialName,
+          initialGroupId: initialGroupId,
+          onCreatePipeline: onCreatePipeline,
+        ),
       ),
     );
     if (isNarrow) {
@@ -13526,9 +13530,12 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
   Widget _buildDetailsPane() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      child: _ItemEditorSheet(
-        key: _baseEditorKey,
+      child: _FullItemRecord(
         item: widget.item,
+        onClose: (_) => _close(),
+        builder: (full) => _ItemEditorSheet(
+        key: _baseEditorKey,
+        item: full,
         initialName: widget.initialName,
         initialGroupId: widget.initialGroupId,
         onCreatePipeline: widget.onCreatePipeline,
@@ -13554,6 +13561,7 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
             _summary = summary;
           });
         },
+      ),
       ),
     );
   }
@@ -13891,6 +13899,8 @@ class _ItemWorkflowWindowState extends State<_ItemWorkflowWindow>
     );
   }
 
+  // No _FullItemRecord here: a variant row holds what the create or update
+  // just returned, which is the server's full record already.
   Widget _buildVariantEditorRow(int index, ItemDefinition item) {
     return SingleChildScrollView(
       child: _ItemEditorSheet(
@@ -14261,6 +14271,137 @@ class _SpawnedVariantTile extends StatelessWidget {
                 padding: EdgeInsets.zero,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens an existing part from the server's full record, never the list's copy.
+///
+/// The editor saves a part by sending back everything it holds — every field
+/// it does not carry is written as empty — so it must start from the full
+/// record. The list may not carry every field, and one older than another
+/// user's edit would write that edit away (B42). A new part (no [item]) needs
+/// nothing loaded and builds at once.
+class _FullItemRecord extends StatefulWidget {
+  const _FullItemRecord({
+    required this.item,
+    required this.builder,
+    required this.onClose,
+  });
+
+  final ItemDefinition? item;
+  final Widget Function(ItemDefinition? full) builder;
+  final void Function(BuildContext context) onClose;
+
+  @override
+  State<_FullItemRecord> createState() => _FullItemRecordState();
+}
+
+class _FullItemRecordState extends State<_FullItemRecord> {
+  Future<ItemDefinition?>? _load;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  void _start() {
+    final item = widget.item;
+    if (item == null || item.id <= 0) return;
+    _load = context.read<ItemsProvider>().fetchFresh(item.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final load = _load;
+    if (load == null) return widget.builder(widget.item);
+    return FutureBuilder<ItemDefinition?>(
+      future: load,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return _panel(
+            children: const <Widget>[
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Opening the part…',
+                style: TextStyle(fontSize: 15, color: SoftErpTheme.textSecondary),
+              ),
+            ],
+          );
+        }
+        final full = snapshot.data;
+        if (snapshot.hasError || full == null) {
+          final gone = !snapshot.hasError;
+          return _panel(
+            children: <Widget>[
+              Text(
+                gone ? 'This part no longer exists.' : 'The part could not be opened.',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: SoftErpTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                gone
+                    ? 'It was deleted after this list was loaded.'
+                    : 'Editing needs the full part from the server, and the '
+                        'server could not be reached. Editing the copy on this '
+                        'screen could undo changes made elsewhere.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  AppButton(
+                    label: 'Close',
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () => widget.onClose(context),
+                  ),
+                  if (!gone) ...<Widget>[
+                    const SizedBox(width: 12),
+                    AppButton(
+                      label: 'Try again',
+                      icon: Icons.refresh,
+                      onPressed: () => setState(_start),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          );
+        }
+        return widget.builder(full);
+      },
+    );
+  }
+
+  Widget _panel({required List<Widget> children}) {
+    return Center(
+      child: Material(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 360, maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: children),
           ),
         ),
       ),

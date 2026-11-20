@@ -141,6 +141,23 @@ final _unstamped = ItemDefinition(
 );
 
 class _FakeItemRepository implements ItemRepository {
+  /// What the server holds, when it differs from the list (B42).
+  ItemDefinition? server;
+
+  /// The server cannot be reached.
+  bool offline = false;
+
+  // Whole-item saves and the editor read the part fresh from the server
+  // (B42). Here the server is [server], else this fake's own list.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    if (offline) throw StateError('no connection');
+    if (server != null && server!.id == id) return server;
+    for (final item in await getItems()) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   UpdateItemInput? lastUpdate;
   CreateItemInput? lastCreate;
   List<ItemSetMembership> membership = const <ItemSetMembership>[];
@@ -320,12 +337,17 @@ Future<_FakeItemRepository> _open(
   ItemDefinition? item = const _Unset(),
   List<ItemSetMembership> membership = const <ItemSetMembership>[],
   List<InventorySetDefinition> sets = const <InventorySetDefinition>[],
+  ItemDefinition? server,
+  bool offline = false,
 }) async {
   tester.view.physicalSize = const Size(1700, 1800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
-  final itemRepo = _FakeItemRepository()..membership = membership;
+  final itemRepo = _FakeItemRepository()
+    ..membership = membership
+    ..server = server
+    ..offline = offline;
   final itemsProvider = ItemsProvider(repository: itemRepo);
   final groupsProvider = GroupsProvider(repository: _FakeGroupRepository());
   final unitsProvider = UnitsProvider(repository: _FakeUnitRepository());
@@ -428,6 +450,39 @@ void main() {
     expect(_textIn(tester, 'item-part-no'), isEmpty);
     expect(find.text('Not stamped yet'), findsOneWidget);
     expect(find.textContaining('Stamped 15/05'), findsNothing);
+  });
+
+  testWidgets('the editor opens on the server\'s record, not the list copy (B42)', (
+    tester,
+  ) async {
+    // The list copy has no CAD file and no attachments — as a slimmed list,
+    // or one from before they were added. Saving from it used to erase them.
+    final repo = await _open(
+      tester,
+      server: _patti.withFiles(
+        cadFileKey: 'cad/patti.dxf',
+        attachments: const <ItemAttachmentDefinition>[
+          ItemAttachmentDefinition(id: 3, label: 'Drawing', objectKey: 'att/3.pdf', fileName: 'drawing.pdf'),
+        ],
+      ),
+    );
+    await tester.enterText(_field('item-part-code'), 'legacy7');
+    await tester.pumpAndSettle();
+    await _save(tester);
+
+    final input = repo.lastUpdate!;
+    expect(input.cadFileKey, 'cad/patti.dxf');
+    expect(input.attachments.map((a) => a.objectKey), <String>['att/3.pdf']);
+  });
+
+  testWidgets('with the server out of reach the editor does not open on the list copy', (
+    tester,
+  ) async {
+    final repo = await _open(tester, offline: true);
+    expect(find.text('The part could not be opened.'), findsOneWidget);
+    expect(find.text('Save Changes'), findsNothing, reason: 'nothing to save from');
+    expect(find.text('Try again'), findsOneWidget);
+    expect(repo.lastUpdate, isNull);
   });
 
   testWidgets('an edit reaches the repository, speaking about identity', (
@@ -1066,4 +1121,41 @@ void _developedForTests() {
     expect(input.developedFor, _developedForGoldMadel);
     expect(input.partCode, 'SADP48', reason: 'the neighbour it sits beside');
   });
+}
+
+extension on ItemDefinition {
+  /// This part as the server holds it, with files the list copy lacks.
+  ItemDefinition withFiles({
+    required String cadFileKey,
+    required List<ItemAttachmentDefinition> attachments,
+  }) =>
+      ItemDefinition(
+        id: id,
+        name: name,
+        alias: alias,
+        shortCode: shortCode,
+        partNo: partNo,
+        partCode: partCode,
+        displayName: displayName,
+        quantity: quantity,
+        groupId: groupId,
+        unitId: unitId,
+        unitConversions: unitConversions,
+        propertySchema: propertySchema,
+        namingFormat: namingFormat,
+        isArchived: isArchived,
+        usageCount: usageCount,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        variationTree: variationTree,
+        defaultPipelineId: defaultPipelineId,
+        baseItemId: baseItemId,
+        photoUrl: photoUrl,
+        cadFileKey: cadFileKey,
+        cadFileName: 'patti.dxf',
+        attachments: attachments,
+        developedFor: developedFor,
+        machines: machines,
+        dies: dies,
+      );
 }

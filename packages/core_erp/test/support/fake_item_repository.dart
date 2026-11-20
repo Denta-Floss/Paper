@@ -13,6 +13,16 @@ import 'package:core_erp/features/production_pipelines/domain/pipeline_stage_nod
 /// Counts the calls that should NOT happen when the replica can answer, which
 /// is the property the local-first path exists for.
 class FakeItemRepository implements ItemRepository {
+
+  // Whole-item saves and the editor read the part fresh from the server
+  // (B42). Here the server is this fake's own list.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    for (final item in items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   List<ItemDefinition> items = const <ItemDefinition>[];
   int getItemsCalls = 0;
   int getItemCalls = 0;

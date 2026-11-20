@@ -151,6 +151,16 @@ class _FakeItems extends ItemsProvider {
 /// The panel never calls the repository — it reads `items` and writes through
 /// `ProcessRouteService`. noSuchMethod keeps this free as the interface grows.
 class _NullRepo implements ItemRepository {
+
+  // Whole-item saves and the editor read the part fresh from the server
+  // (B42). Here the server is this fake's own list.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    for (final item in await getItems()) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

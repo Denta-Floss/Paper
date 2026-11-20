@@ -62,6 +62,23 @@ class _FakeGroupRepository implements GroupRepository {
 }
 
 class _FakeItemRepository implements ItemRepository {
+  /// What the server holds where it differs from the list (B42).
+  final Map<int, ItemDefinition> server = <int, ItemDefinition>{};
+
+  /// The server cannot be reached.
+  bool offline = false;
+
+  // Whole-item saves read the part fresh from the server (B42). Here the
+  // server is [server], else this fake's own list.
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    if (offline) throw StateError('no connection');
+    if (server.containsKey(id)) return server[id];
+    for (final item in await getItems()) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   final List<CreateItemInput> created = [];
   final List<ItemDefinition> stored = [];
   int _nextId = 500;
@@ -811,6 +828,51 @@ void main() {
           reason: 'the second value is not dropped');
       expect(sent.variationTree.map((n) => n.name), contains('Finish'),
           reason: 'a property the sheet has no column for is kept');
+    });
+
+    test('an edit is saved over the server\'s record, not the list copy (B42)',
+        () async {
+      final o = await open(stored());
+      final full = stored();
+      o.repo.server[full.id] = ItemDefinition(
+        id: full.id,
+        name: full.name,
+        alias: full.alias,
+        displayName: full.displayName,
+        quantity: full.quantity,
+        groupId: full.groupId,
+        unitId: full.unitId,
+        isArchived: false,
+        usageCount: 0,
+        createdAt: full.createdAt,
+        updatedAt: full.updatedAt,
+        variationTree: full.variationTree,
+        developedFor: full.developedFor,
+        cadFileKey: 'cad/patti.dxf',
+        cadFileName: 'patti.dxf',
+        attachments: const <ItemAttachmentDefinition>[
+          ItemAttachmentDefinition(id: 4, label: 'Drawing', objectKey: 'att/4.pdf', fileName: 'd.pdf'),
+        ],
+      );
+      final row = o.binding.toDrafts([stored()]).single;
+      row.set(3, const CellValue(columnId: 3, textValue: 'Patti B'));
+
+      expect(await o.binding.saveRow(row), isNotNull, reason: o.binding.lastError ?? '');
+      final sent = o.repo.updated.single;
+      expect(sent.cadFileKey, 'cad/patti.dxf', reason: 'the list copy had none; the server does');
+      expect(sent.attachments.map((a) => a.objectKey), <String>['att/4.pdf']);
+    });
+
+    test('with the server out of reach an edit is refused, not saved from the list copy',
+        () async {
+      final o = await open(stored());
+      o.repo.offline = true;
+      final row = o.binding.toDrafts([stored()]).single;
+      row.set(3, const CellValue(columnId: 3, textValue: 'Patti B'));
+
+      expect(await o.binding.saveRow(row), isNull);
+      expect(o.repo.updated, isEmpty);
+      expect(o.binding.lastError, contains('could not be read from the server'));
     });
 
     test('the deal keeps its date, cost and contractor when untouched', () async {

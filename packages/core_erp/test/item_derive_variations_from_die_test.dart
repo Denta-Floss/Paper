@@ -69,6 +69,19 @@ class _FakeUnitRepository implements UnitRepository {
 }
 
 class _FakeItemRepository implements ItemRepository {
+  _FakeItemRepository([this.server = const <ItemDefinition>[]]);
+
+  /// What the server holds. The list screen shows nothing; the editor reads
+  /// the part it opens from here (B42).
+  final List<ItemDefinition> server;
+
+  @override
+  Future<ItemDefinition?> getItemFresh(int id) async {
+    for (final item in server) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
   @override
   Future<void> init() async {}
   @override
@@ -152,7 +165,7 @@ void main() {
         providers: [
           Provider<VariationTreeService>.value(value: variationService),
           ChangeNotifierProvider<ItemsProvider>(
-            create: (_) => ItemsProvider(repository: _FakeItemRepository()),
+            create: (_) => ItemsProvider(repository: _FakeItemRepository(<ItemDefinition>[itemWithDie])),
           ),
           ChangeNotifierProvider<GroupsProvider>(
             create: (_) => GroupsProvider(repository: _FakeGroupRepository()),

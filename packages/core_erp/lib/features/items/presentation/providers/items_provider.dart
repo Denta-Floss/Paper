@@ -707,9 +707,9 @@ class ItemsProvider extends ChangeNotifier {
     required int unitId,
     required double unitsPerPrimary,
   }) async {
-    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final current = await _currentForSave(itemId);
     if (current == null) {
-      _errorMessage = 'Item not found. Please select the item again.';
+      _errorMessage = _saveReadFailure ?? 'Item not found. Please select the item again.';
       notifyListeners();
       return null;
     }
@@ -754,10 +754,10 @@ class ItemsProvider extends ChangeNotifier {
     required int propertyNodeId,
     required String valueName,
   }) async {
-    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final current = await _currentForSave(itemId);
     final trimmedValueName = valueName.trim();
     if (current == null) {
-      _errorMessage = 'Item not found.';
+      _errorMessage = _saveReadFailure ?? 'Item not found.';
       notifyListeners();
       return null;
     }
@@ -895,11 +895,11 @@ class ItemsProvider extends ChangeNotifier {
     required String inputType,
     required String valueName,
   }) async {
-    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final current = await _currentForSave(itemId);
     final trimmedPropertyName = propertyName.trim();
     final trimmedValueName = valueName.trim();
     if (current == null) {
-      _errorMessage = 'Item not found.';
+      _errorMessage = _saveReadFailure ?? 'Item not found.';
       notifyListeners();
       return null;
     }
@@ -995,10 +995,10 @@ class ItemsProvider extends ChangeNotifier {
     // property declared as a number or a material came out untyped.
     String inputType = 'Text',
   }) async {
-    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final current = await _currentForSave(itemId);
     final trimmedPropertyName = propertyName.trim();
     if (current == null) {
-      _errorMessage = 'Item not found.';
+      _errorMessage = _saveReadFailure ?? 'Item not found.';
       notifyListeners();
       return null;
     }
@@ -1218,6 +1218,32 @@ class ItemsProvider extends ChangeNotifier {
     return _save(() => _repository.saveSectionTree(itemId, tree));
   }
 
+  /// Why the last [_currentForSave] came back empty, when it was not simply a
+  /// part that no longer exists.
+  String? _saveReadFailure;
+
+  /// The part as the server holds it, to build a whole-item save from.
+  ///
+  /// Never the copy in [_items]. A save here is a full replace —
+  /// `UpdateItemRequest` sends attachments, unit conversions, die and machine
+  /// links and the whole tree every time — so it has to start from the full
+  /// record: the list may not carry every field, and a list older than another
+  /// user's edit would write that edit away (B42). One small request per
+  /// save; null when the part is gone or the server cannot be reached, and the
+  /// save does not happen.
+  Future<ItemDefinition?> _currentForSave(int itemId) async {
+    _saveReadFailure = null;
+    try {
+      return await fetchFresh(itemId);
+    } catch (error) {
+      _saveReadFailure =
+          'The part could not be read from the server, so nothing was saved: '
+          'saving from the copy on this screen could undo changes made '
+          'elsewhere. Try again when the connection is back.';
+      return null;
+    }
+  }
+
   Future<ItemDefinition?> _updateOneField(
     int itemId,
     UpdateItemInput Function(ItemDefinition current) build,
@@ -1231,9 +1257,9 @@ class ItemsProvider extends ChangeNotifier {
     while (_isSaving) {
       await (_saveIdle ??= Completer<void>()).future;
     }
-    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final current = await _currentForSave(itemId);
     if (current == null) {
-      _errorMessage = 'Item not found.';
+      _errorMessage = _saveReadFailure ?? 'Item not found.';
       notifyListeners();
       return null;
     }
